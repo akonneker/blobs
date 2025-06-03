@@ -6,17 +6,18 @@ pub mod world_gen; // Make world_gen public if main.rs is the crate root
 pub mod config;    // Make config public
 
 use game::Game;
-// use world::{EnergySource, World};
-use types::{TeamId};
 use clap::Parser;
 use std::path::PathBuf;
-use rune::{Diagnostics, Unit, Sources, Context};
-use std::sync::Arc;
-use rune::termcolor::{StandardStream, ColorChoice};
 use std::fs;
+use rhai::{Engine, Array, INT};
+use rhai::packages::Package;    // needed for 'Package' trait
+use rhai_rand::RandomPackage;
 
 use crate::config::{FileConfig, GameConfig, CellConfig}; // Use our new config structs
 use crate::world_gen::{generate_terrain, generate_energy}; // Use items from world_gen
+use crate::cell::Cell;
+use crate::types::{CellAction, Direction, CellMessage, Coordinate, CellId, TeamId, Pheromone};
+use crate::game::CellContext;
 
 /// A programming game where teams of cells compete in a 2D world
 #[derive(Parser)]
@@ -48,34 +49,6 @@ struct Args {
     // cell_initial_energy: Option<u32>,
     // #[arg(long)]
     // starting_cells_per_team: Option<usize>,
-}
-
-fn load_team_mind(path: &PathBuf) -> Result<Arc<Unit>, String> {
-    let context = Context::with_default_modules().map_err(|e| e.to_string())?;
-    let mut sources = Sources::new();
-
-    if !path.exists() {
-        return Err(format!("Script file '{}' not found.", path.display()));
-    }
-
-    sources.insert(rune::Source::from_path(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-
-    let mut diagnostics = Diagnostics::new();
-
-    let result = rune::prepare(&mut sources)
-        .with_context(&context)
-        .with_diagnostics(&mut diagnostics)
-        .build();
-
-    if !diagnostics.is_empty() {
-        let mut writer = StandardStream::stderr(ColorChoice::Always);
-        diagnostics.emit(&mut writer, &sources).map_err(|e| e.to_string())?;
-    }
-
-    match result {
-        Ok(unit) => Ok(Arc::new(unit)),
-        Err(e) => Err(format!("Failed to compile mind script '{}': {}. See diagnostics above.", path.display(), e)),
-    }
 }
 
 // fn generate_world(width: usize, height: usize, terrain: Vec<i32>, energy: Vec<u32>) -> World {
@@ -124,15 +97,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             file_config.general.max_iterations.unwrap_or(1_048_576) // Default if not in CLI or file
         ),
         terrain_type: cli_args.terrain_type.unwrap_or(file_config.world.terrain_type),
-        terrain_levels: file_config.world.terrain_levels, // Assuming this primarily comes from file for now
-        seed: cli_args.seed.or(file_config.general.seed), // CLI seed takes precedence, then file, then None
-        energy_options: file_config.world.energy_options.clone(), // Clone from file_config
-        // cell_config: file_config.cell.clone(), // If CellConfig is cloneable and we take it wholesale
-        // Or, if we want to allow CLI overrides for cell_config fields:
-        cell_config: CellConfig {
-            min_energy: file_config.cell.min_energy, // cli_args.cell_min_energy.unwrap_or(file_config.cell.min_energy),
-            initial_energy: file_config.cell.initial_energy, // cli_args.cell_initial_energy.unwrap_or(file_config.cell.initial_energy),
-            starting_cells_per_team: file_config.cell.starting_cells_per_team, // cli_args.starting_cells_per_team.unwrap_or(file_config.cell.starting_cells_per_team),
+        terrain_levels: file_config.world.terrain_levels, 
+        seed: cli_args.seed.or(file_config.general.seed), 
+        energy_options: file_config.world.energy_options.clone(), 
+        cell_config: CellConfig { // Ensure all fields from file_config.cell are used
+            min_energy: file_config.cell.min_energy, 
+            initial_energy: file_config.cell.initial_energy, 
+            starting_cells_per_team: file_config.cell.starting_cells_per_team, 
+            max_energy: file_config.cell.max_energy, // New
+            min_attack_power: file_config.cell.min_attack_power, // New
+            max_attack_power: file_config.cell.max_attack_power, // New
+            max_energy_for_attack_scaling: file_config.cell.max_energy_for_attack_scaling, // New
         },
     };
 
@@ -143,31 +118,89 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Terrain type: '{}', Levels: {}", game_config.terrain_type, game_config.terrain_levels);
     println!("Max iterations: {}", game_config.max_iterations);
     println!("Energy config: {:?}", game_config.energy_options);
-    println!("Cell config: Min Energy: {}, Initial Energy: {}, Starting Cells/Team: {}",
+    println!("Cell config: Min Energy: {}, Initial Energy: {}, Starting Cells/Team: {}, Max Energy: {}, Min Attack: {}, Max Attack: {}, Attack Scaling Energy: {}",
              game_config.cell_config.min_energy,
              game_config.cell_config.initial_energy,
-             game_config.cell_config.starting_cells_per_team);
+             game_config.cell_config.starting_cells_per_team,
+             game_config.cell_config.max_energy,
+             game_config.cell_config.min_attack_power,
+             game_config.cell_config.max_attack_power,
+             game_config.cell_config.max_energy_for_attack_scaling);
 
+    let mut engine = Engine::new();
+    // Create new 'RandomPackage' instance
+    let random = RandomPackage::new();
+
+    // Load the package into the `Engine`
+    random.register_into_engine(&mut engine);
+
+    
+
+    // Register basic ID and Coordinate types
+    engine.register_type_with_name::<CellId>("CellId")
+        .register_get("id", |c: &mut CellId| c.0 as INT);
+    engine.register_type_with_name::<TeamId>("TeamId")
+        .register_get("id", |t: &mut TeamId| t.0 as INT);
+    engine.register_type_with_name::<Coordinate>("Coordinate")
+        .register_get("x", |c: &mut Coordinate| c.x as INT)
+        .register_get("y", |c: &mut Coordinate| c.y as INT);
+
+    // Cell struct: Rhai can access public fields of registered Clone types.
+    engine.register_type_with_name::<Cell>("Cell");
+    // CellContext struct: Also relies on Rhai accessing public fields.
+    engine.register_type_with_name::<CellContext>("CellContext");
+
+    // Direction Enum: Expose variants via an exported module.
+    engine.register_type_with_name::<Direction>("Direction");
+    #[cfg(feature = "rhai_exports")]
+    engine.register_static_module("Direction", rhai::exported_module!(crate::types::rhai_exports::rhai_direction_module));
+
+    // CellMessage Struct: Register type and a constructor function.
+    engine.register_type_with_name::<CellMessage>("CellMessage");
+    engine.register_fn("new_cell_message", |arr: Array| -> CellMessage {
+        let mut data_arr = [0u8; 512];
+        for (i, item) in arr.into_iter().enumerate() {
+            if i < 512 {
+                data_arr[i] = item.as_int().unwrap_or(0) as u8;
+            }
+        }
+        CellMessage { data: data_arr }
+    });
+
+    // CellAction Enum: Register type and expose variants via an exported module.
+    engine.register_type_with_name::<CellAction>("CellAction");
+    #[cfg(feature = "rhai_exports")]
+    engine.register_static_module("CellAction", rhai::exported_module!(crate::types::rhai_exports::rhai_cell_action_module));
+
+    // Register a global function for creating the Split action due to fixed-size array complexity
+    engine.register_fn(
+        "create_split_action",
+        |dir: Direction, energy: INT, marker: INT, memory_arr: Array| -> CellAction {
+            let mut actual_memory = [0u8; 2048];
+            for (i, item) in memory_arr.into_iter().enumerate() {
+                if i < 2048 {
+                    actual_memory[i] = item.as_int().unwrap_or(0) as u8;
+                }
+            }
+            CellAction::Split(dir, energy as i32, marker as u32, actual_memory)
+        },
+    );
 
     let mut game = Game::new(
         game_config.width,
         game_config.height,
         game_config.max_iterations,
-        game_config.cell_config.clone(), // Pass the cell_config
-        game_config.seed, // Pass seed for deterministic starting positions
+        game_config.cell_config.clone(),
+        game_config.seed,
+        engine, // Pass the configured engine to the Game
     );
 
     // Load team minds
     for (team_id_idx, mind_path) in game_config.mind_paths.iter().enumerate() {
-        match load_team_mind(mind_path) {
-            Ok(mind) => {
-                game.add_team(TeamId(team_id_idx), mind);
-                println!("Loaded team {} from {:?}", team_id_idx, mind_path);
-            }
-            Err(e) => {
-                eprintln!("Error loading team mind from {:?}: {}", mind_path, e);
-                return Err(e.into());
-            }
+        let result = game.add_team(TeamId(team_id_idx), mind_path);
+        match result {
+            Ok(()) => println!("Loaded team {} from {:?}", team_id_idx, mind_path),
+            Err(e) => eprintln!("Error loading team mind from {:?}: {}", mind_path, e),
         }
     }
     

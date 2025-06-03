@@ -27,22 +27,28 @@ impl Default for EnergyConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Deserialize, Debug, Clone)] // Add Clone back, remove Default from here
 pub struct CellConfig {
-    #[serde(default = "default_cell_min_energy")]
     pub min_energy: u32,
-    #[serde(default = "default_cell_initial_energy")]
     pub initial_energy: u32,
-    #[serde(default = "default_starting_cells_per_team")]
     pub starting_cells_per_team: usize,
+    pub max_energy: u32,
+    pub min_attack_power: u32,
+    pub max_attack_power: u32,
+    pub max_energy_for_attack_scaling: u32,
 }
 
+// Keep the manual impl Default to set specific values
 impl Default for CellConfig {
     fn default() -> Self {
-        Self {
-            min_energy: 10, // Example default
-            initial_energy: 100, // Example default
-            starting_cells_per_team: 1, // Example default
+        CellConfig {
+            min_energy: 10,
+            initial_energy: 100,
+            starting_cells_per_team: 5,
+            max_energy: 500,
+            min_attack_power: 5,
+            max_attack_power: 50,
+            max_energy_for_attack_scaling: 200,
         }
     }
 }

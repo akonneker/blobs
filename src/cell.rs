@@ -1,6 +1,4 @@
 use crate::types::{CellId, TeamId, CellMessage};
-use rune::Any;
-use rune::alloc::vec::Vec as RuneVec;
 
 #[derive(Debug, Clone)]
 pub struct Cell {
@@ -15,17 +13,6 @@ pub struct Cell {
     pub message_queue: Vec<CellMessage>,
     pub defending: bool,
     // Add other cell properties like senses, memory, etc.
-}
-
-#[derive(Debug, Any)]
-struct CellInterface {
-    #[rune(get)] pub energy: u32, 
-    #[rune(get)] pub min_energy: u32, // Cost to exist, dropped on death
-    #[rune(get)] pub marker: u32,
-    #[rune(get)] pub loaded: bool,
-    #[rune(get)] pub age: u32,
-    #[rune(get)] pub memory: RuneVec<u8>,
-    #[rune(get)] pub message_queue: RuneVec<RuneVec<u8>>,
 }
 
 impl Cell {

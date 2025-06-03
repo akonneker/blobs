@@ -6,14 +6,13 @@ use std::collections::HashMap;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use std::path::PathBuf;
 
-use rune::{Vm, Unit, Any, FromValue};
-use rune::runtime::RuntimeContext;
+use rhai::{Engine, AST, Scope};
 
-use std::sync::Arc;
 use std::cmp::Ordering;
 
-#[derive(Debug, Clone, Copy, Any)]
+#[derive(Debug, Clone, Copy)]
 pub struct CellContext {
     pub elevation: [i32; 9],
     pub energy: [u32; 9],
@@ -23,7 +22,7 @@ pub struct CellContext {
 
 pub struct Game {
     pub world: World,
-    pub teams: HashMap<TeamId, Arc<Unit>>,
+    pub teams: HashMap<TeamId, AST>,
     pub cells: HashMap<CellId, Cell>,
     pub coordinate_map: HashMap<Coordinate, CellId>,
     pub inv_coordinate_map: HashMap<CellId, Coordinate>,
@@ -31,7 +30,7 @@ pub struct Game {
     pub max_iterations: u64,
     pub cell_config: CellConfig,
     rng: StdRng,
-    runtime: Option<Arc<RuntimeContext>>,
+    engine: Engine,
     next_cell_id: usize,
 }
 
@@ -44,6 +43,7 @@ pub enum CellInteraction {
     LiftTerrain(CellId, Coordinate),
     DumpTerrain(CellId, Coordinate),
     Move(CellId, u32, Coordinate),
+    Eat(CellId, Coordinate),
 }
 
 impl CellInteraction {
@@ -56,6 +56,7 @@ impl CellInteraction {
             CellInteraction::LiftTerrain(..) => 4,
             CellInteraction::DumpTerrain(..) => 5,
             CellInteraction::Move(..) => 6,
+            CellInteraction::Eat(..) => 7,
         }
     }
 
@@ -88,6 +89,7 @@ impl PartialEq for CellInteraction {
             (CellInteraction::DumpTerrain(s1, s2), CellInteraction::DumpTerrain(o1, o2)) => 
                 s1 == o1 && s2 == o2,
             (CellInteraction::Move(s1, _, s3), CellInteraction::Move(o1, _, o3)) => s1 == o1 && s3 == o3,
+            (CellInteraction::Eat(s1, s2), CellInteraction::Eat(o1, o2)) => s1 == o1 && s2 == o2,
             // This case should ideally not be reached if discriminants are the same and all variants are covered above.
             // However, it acts as a safeguard if a new variant is added and not updated here.
             _ => self.discriminant() == other.discriminant(), // True if same variant, false otherwise (already covered by initial check)
@@ -115,7 +117,7 @@ impl Ord for CellInteraction {
 }
 
 impl Game {
-    pub fn new(world_width: usize, world_height: usize, max_iterations: u64, cell_config: CellConfig, seed: Option<u64>) -> Self {
+    pub fn new(world_width: usize, world_height: usize, max_iterations: u64, cell_config: CellConfig, seed: Option<u64>, engine: Engine) -> Self {
         let actual_seed = seed.unwrap_or(0); // Use 0 as a default seed if None
         let rng = StdRng::seed_from_u64(actual_seed);
 
@@ -129,13 +131,24 @@ impl Game {
             max_iterations,
             cell_config,
             rng, 
-            runtime: None,
+            engine: engine,
             next_cell_id: 0,
         }
     }
 
-    pub fn add_team(&mut self, team_id: TeamId, mind_function: Arc<Unit>) {
-        self.teams.insert(team_id, mind_function.clone());
+    pub fn add_team(&mut self, team_id: TeamId, mind_path: &PathBuf) -> Result<(), String> {
+        if !mind_path.exists() {
+            return Err(format!("Script file '{}' not found.", mind_path.display()));
+        }
+        
+        let ast_result = self.engine.compile_file(mind_path.clone());
+        
+        let mind_function: AST;
+        match ast_result {
+            Ok(ast) => mind_function = ast,
+            Err(e) => return Err(format!("Failed to compile mind script '{}': {}. See diagnostics above.", mind_path.display(), e)),
+        }
+        self.teams.insert(team_id, mind_function);
         // Place starting cells for this team
         for _ in 0..self.cell_config.starting_cells_per_team {
             let mut attempts = 0;
@@ -147,10 +160,11 @@ impl Game {
                     let cell_id_val = self.next_cell_id;
                     self.next_cell_id += 1;
                     let new_cell_id = CellId(cell_id_val);
+                    let initial_energy_for_cell = self.cell_config.initial_energy.min(self.cell_config.max_energy);
                     let cell = Cell::new(
                         new_cell_id,
                         team_id,
-                        self.cell_config.initial_energy,
+                        initial_energy_for_cell,
                         self.cell_config.min_energy,
                     );
                     self.cells.insert(new_cell_id, cell);
@@ -166,6 +180,7 @@ impl Game {
                 }
             }
         }
+        Ok(())
     }
 
     pub fn run(&mut self) {
@@ -205,84 +220,80 @@ impl Game {
         }
     }
 
-    pub fn get_cell_interactions(&mut self, team_vms: &mut HashMap<TeamId, Vm>) -> Vec<CellInteraction> {
+    pub fn get_cell_interactions(&mut self) -> Vec<CellInteraction> {
         let mut interactions: Vec<CellInteraction> = Vec::new();
         for (coordinate, cell_id) in &self.coordinate_map {
             let cell_copy = self.cells.get(cell_id).unwrap().clone();
             let cell_position = *coordinate;
             let cell_energy = cell_copy.energy;
+            let cell_team_id = cell_copy.team_id;
             let context = self.get_cell_context(*coordinate);
-            if let Some(vm) = team_vms.get_mut(&cell_copy.team_id) {
-                let mind_result = vm.call(["mind"], (cell_copy, context));
-                match mind_result {
-                    Ok(output_value) => {
-                        let action_result: Result<CellAction, _> = FromValue::from_value(output_value);
-                        match action_result {
-                            Ok(action) => {
-                                match action {
-                                    CellAction::Split(direction, energy, marker, memory) => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
-                                        interactions.push(CellInteraction::Split(*cell_id, cell_energy, target_coordinate, energy, marker, memory));
-                                    }
-                                    CellAction::Defend => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = true;
-                                    }
-                                    CellAction::LiftTerrain => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        interactions.push(CellInteraction::LiftTerrain(*cell_id, cell_position));
-                                    }
-                                    CellAction::DumpTerrain => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        interactions.push(CellInteraction::DumpTerrain(*cell_id, cell_position));
-                                    }
-                                    CellAction::SetPheromone(pheromone) => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        interactions.push(CellInteraction::SetPheromone(*cell_id, cell_position, pheromone));
-                                    }
-                                    CellAction::Attack(direction) => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
-                                        let target_cell = self.get_cell_at(target_coordinate);
-                                        match target_cell {
-                                            Some(target_cell) => {
-                                                interactions.push(CellInteraction::Attack(*cell_id, cell_energy, target_cell.id));
-                                            }
-                                            None => {}
-                                        }
-                                    }
-                                    CellAction::SendMessage(direction, message) => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
-                                        let target_cell = self.get_cell_at(target_coordinate);
-                                        match target_cell {
-                                            Some(target_cell) => {
-                                                interactions.push(CellInteraction::SendMessage(target_cell.id, message));
-                                            }
-                                            None => {}
-                                        }
-                                    }
-                                    CellAction::Move(direction) => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                        let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
-                                        interactions.push(CellInteraction::Move(*cell_id, cell_energy, target_coordinate));
-                                    }
-                                    CellAction::DoNothing => {
-                                        self.cells.get_mut(cell_id).unwrap().defending = false;
-                                    }
+            let mut scope = Scope::new();
+            scope.push("cell", cell_copy);
+            scope.push("context", context);
+            let mind_result = self.engine.eval_ast_with_scope::<CellAction>(&mut scope, &self.teams[&cell_team_id]);
+            match mind_result {
+                Ok(output_value) => {
+                    match output_value {
+                        CellAction::Split(direction, energy, marker, memory) => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
+                            interactions.push(CellInteraction::Split(*cell_id, cell_energy, target_coordinate, energy, marker, memory));
+                        }
+                        CellAction::Defend => {
+                            self.cells.get_mut(cell_id).unwrap().defending = true;
+                        }
+                        CellAction::LiftTerrain => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            interactions.push(CellInteraction::LiftTerrain(*cell_id, cell_position));
+                        }
+                        CellAction::DumpTerrain => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            interactions.push(CellInteraction::DumpTerrain(*cell_id, cell_position));
+                        }
+                        CellAction::SetPheromone(pheromone) => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            interactions.push(CellInteraction::SetPheromone(*cell_id, cell_position, pheromone));
+                        }
+                        CellAction::Attack(direction) => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
+                            let target_cell = self.get_cell_at(target_coordinate);
+                            match target_cell {
+                                Some(target_cell) => {
+                                    interactions.push(CellInteraction::Attack(*cell_id, cell_energy, target_cell.id));
                                 }
-                            }
-                            Err(e) => {
-                                eprintln!("Error parsing mind result for cell {:?}: {}", cell_id, e);
+                                None => {}
                             }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Error calling mind for cell {:?}: {}", cell_id, e);
+                        CellAction::SendMessage(direction, message) => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
+                            let target_cell = self.get_cell_at(target_coordinate);
+                            match target_cell {
+                                Some(target_cell) => {
+                                    interactions.push(CellInteraction::SendMessage(target_cell.id, message));
+                                }
+                                None => {}
+                            }
+                        }
+                        CellAction::Move(direction) => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            let target_coordinate = relative_position(cell_position, direction, self.world.dimensions);
+                            interactions.push(CellInteraction::Move(*cell_id, cell_energy, target_coordinate));
+                        }
+                        CellAction::Eat => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                            interactions.push(CellInteraction::Eat(*cell_id, cell_position));
+                        }
+                        CellAction::DoNothing => {
+                            self.cells.get_mut(cell_id).unwrap().defending = false;
+                        }
                     }
                 }
-            } else {
-                eprintln!("Error: VM not found for team {:?}", cell_copy.team_id);
+                Err(e) => {
+                    eprintln!("Error parsing mind result for cell {:?}: {}", cell_id, e);
+                }
             }
         }
         interactions.sort();
@@ -290,8 +301,7 @@ impl Game {
     }
 
     pub fn tick(&mut self) {
-        let mut team_vms = self.generate_vms();
-        let interactions = self.get_cell_interactions(&mut team_vms);
+        let interactions = self.get_cell_interactions();
 
         for interaction in interactions {
             match interaction {
@@ -318,33 +328,53 @@ impl Game {
                         }
 
                         // Proceed with attack logic (already implemented by user/previous steps)
-                        if let Some(target_cell) = self.cells.get_mut(&target_id) {
-                            let mut damage = attacker_energy_snapshot / 4; 
-                            if target_cell.defending {
-                                damage /= 2; 
-                            }
-                            if damage > target_cell.energy { 
-                                target_cell.energy = 0;
+                        if let Some(target_cell_mut) = self.cells.get_mut(&target_id) {
+                            // New Attack Power Calculation
+                            let cfg = &self.cell_config;
+                            let mut calculated_damage = if cfg.max_energy_for_attack_scaling == 0 { // Avoid division by zero
+                                cfg.max_attack_power // or min_attack_power, depending on desired behavior for 0 scaling energy
+                            } else if attacker_energy_snapshot >= cfg.max_energy_for_attack_scaling {
+                                cfg.max_attack_power
                             } else {
-                                target_cell.energy -= damage;
+                                let lerp_factor = attacker_energy_snapshot as f32 / cfg.max_energy_for_attack_scaling as f32;
+                                (cfg.min_attack_power as f32 + lerp_factor * (cfg.max_attack_power - cfg.min_attack_power) as f32).round() as u32
+                            };
+
+                            calculated_damage = calculated_damage.max(cfg.min_attack_power); // Ensure it's at least min_attack_power
+
+                            if target_cell_mut.defending {
+                                calculated_damage /= 2; 
                             }
-                            if target_cell.energy == 0 {
-                                println!("Cell {:?} killed cell {:?}", attacker_id, target_id);
+
+                            if calculated_damage > target_cell_mut.energy { 
+                                target_cell_mut.energy = 0;
+                            } else {
+                                target_cell_mut.energy -= calculated_damage;
+                            }
+
+                            if target_cell_mut.energy == 0 {
+                                println!("Cell {:?} (energy snapshot {}) killed cell {:?} with {} damage (raw {}). Target was {}defending.", 
+                                    attacker_id, attacker_energy_snapshot, target_id, calculated_damage, 
+                                    // to see raw before defense: re-calculate or store intermediate before /2
+                                    if attacker_energy_snapshot >= cfg.max_energy_for_attack_scaling { cfg.max_attack_power } 
+                                    else { (cfg.min_attack_power as f32 + (attacker_energy_snapshot as f32 / cfg.max_energy_for_attack_scaling as f32) * (cfg.max_attack_power - cfg.min_attack_power) as f32).round() as u32 }, 
+                                    if target_cell_mut.defending { "" } else { "not "}
+                                );
                                 if let Some(killed_target_pos) = self.inv_coordinate_map.remove(&target_id) {
                                     self.coordinate_map.remove(&killed_target_pos);
-                                    // Drop energy
-                                    let dropped_energy = self.cells.get(&target_id).map_or(0, |c| c.min_energy);
-                                    if dropped_energy > 0 {
-                                        self.world.set_energy_at(killed_target_pos, Some(EnergySource::Scattered(dropped_energy)));
-                                        println!("Cell {:?} dropped {} energy at {:?} upon death.", target_id, dropped_energy, killed_target_pos);
+                                    let killed_cell_min_energy = self.cells.get(&target_id).map_or(0, |c| c.min_energy);
+                                    let killed_cell_loaded = self.cells.get(&target_id).map_or(false, |c| c.loaded);
+
+                                    if killed_cell_min_energy > 0 {
+                                        self.world.set_energy_at(killed_target_pos, Some(EnergySource::Scattered(killed_cell_min_energy)));
+                                        println!("Cell {:?} dropped {} energy at {:?} upon death.", target_id, killed_cell_min_energy, killed_target_pos);
                                     }
-                                    // Drop terrain if loaded
-                                    if self.cells.get(&target_id).map_or(false, |c| c.loaded) {
+                                    if killed_cell_loaded {
                                         self.world.set_elevation_at(killed_target_pos, self.world.elevation_at(killed_target_pos) + 1);
                                         println!("Cell {:?} dropped terrain at {:?} upon death.", target_id, killed_target_pos);
                                     }
                                 }
-                                self.cells.remove(&target_id);
+                                self.cells.remove(&target_id); // Remove after getting min_energy and loaded status
                             }
                         }
                     } else {
@@ -465,18 +495,77 @@ impl Game {
                         continue;
                     }
                 }
+                CellInteraction::Eat(cell_id, position) => {
+                    if let Some(cell) = self.cells.get_mut(&cell_id) {
+                        // Check if cell is already at max energy
+                        if cell.energy >= self.cell_config.max_energy {
+                            println!("Cell {:?} attempt to eat at {:?} failed: already at max energy ({}/{})", cell_id, position, cell.energy, self.cell_config.max_energy);
+                            continue; // Do not eat, leave tile energy as is
+                        }
+
+                        let world_idx = position.y * self.world.dimensions.0 + position.x;
+                        let mut energy_gained = 0;
+                        let mut original_source_present = false;
+                        let mut source_to_restore: Option<EnergySource> = None; // To store original if eat fails partially
+
+                        if world_idx < self.world.energy.len() {
+                            if let Some(energy_source_at_pos) = self.world.energy[world_idx].clone() { // Clone to inspect
+                                original_source_present = true;
+                                source_to_restore = Some(energy_source_at_pos.clone()); // Keep a copy
+
+                                match energy_source_at_pos {
+                                    EnergySource::Scattered(amount) => {
+                                        energy_gained = amount;
+                                        if cell.energy + energy_gained > self.cell_config.max_energy {
+                                            energy_gained = self.cell_config.max_energy - cell.energy;
+                                        }
+                                        if energy_gained > 0 { // if any energy can be gained
+                                           println!("Cell {:?} eating {} scattered energy (available {}) at {:?}. Energy {} -> {}", 
+                                                cell_id, energy_gained, amount, position, cell.energy, cell.energy + energy_gained);
+                                           cell.energy += energy_gained;
+                                           if amount == energy_gained { // Consumed all
+                                               self.world.energy[world_idx] = None; 
+                                           } else { // Consumed partially
+                                               self.world.energy[world_idx] = Some(EnergySource::Scattered(amount - energy_gained));
+                                           }
+                                        } else {
+                                            println!("Cell {:?} cannot eat more scattered energy at {:?}. Already at {}/{}", cell_id, position, cell.energy, self.cell_config.max_energy);
+                                            // No energy gained, source remains as is (no need to restore self.world.energy[world_idx] = source_to_restore)
+                                        }
+                                    }
+                                    EnergySource::Plant { rate, current_energy, max_energy } => {
+                                        energy_gained = current_energy;
+                                        if cell.energy + energy_gained > self.cell_config.max_energy {
+                                            energy_gained = self.cell_config.max_energy - cell.energy;
+                                        }
+                                        if energy_gained > 0 { // if any energy can be gained
+                                            println!("Cell {:?} eating {} energy from plant (available {}) at {:?}. Energy {} -> {}", 
+                                                cell_id, energy_gained, current_energy, position, cell.energy, cell.energy + energy_gained);
+                                            cell.energy += energy_gained;
+                                            self.world.energy[world_idx] = Some(EnergySource::Plant {
+                                                rate,
+                                                current_energy: current_energy - energy_gained, 
+                                                max_energy,
+                                            });
+                                        } else {
+                                            println!("Cell {:?} cannot eat more plant energy at {:?}. Already at {}/{}", cell_id, position, cell.energy, self.cell_config.max_energy);
+                                            // No energy gained, source remains as is
+                                        }
+                                    }
+                                }
+                            } else { // No energy source at position
+                                println!("Cell {:?} attempt to eat at {:?} failed: no energy source found.", cell_id, position);
+                            }
+                        } else {
+                            eprintln!("Error: Eat action for cell {:?} at {:?} - position is out of world bounds.", cell_id, position);
+                        }
+                    } else {
+                        // Cell might have died before its eat action is processed
+                    }
+                }
             }
         }
         // TODO: Update cell ages, apply plant growth, pheromone decay, etc.
-    }
-
-    pub fn generate_vms(&mut self) -> HashMap<TeamId, Vm> {
-        let mut team_vms: HashMap<TeamId, Vm> = HashMap::new();
-        for (team_id, mind_function) in &self.teams {
-            let vm = Vm::new(self.runtime.clone().unwrap(), mind_function.clone());
-            team_vms.insert(*team_id, vm);
-        }
-        team_vms
     }
     
     //Action resolution rules:
