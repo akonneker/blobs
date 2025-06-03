@@ -1,0 +1,15 @@
+// Simple Rune script for demonstration
+pub fn greet(name) {
+    `Hello, ${name} from a Rune file!`
+}
+
+pub fn add(a, b) {
+    a + b
+}
+
+pub fn main() {
+    println!("world");
+    let result = add(10, 20);
+    println!("{}",  result);
+    add(10, 20) // The last expression is the return value of main
+}

@@ -1,0 +1,63 @@
+# Sample configuration for Cells Redux
+
+[general]
+# Maximum number of iterations for the game simulation.
+# If commented out or not present, a default value will be used (currently 1048576).
+max_iterations = 1000000
+
+# Seed for random number generation.
+# If commented out or not present, the game will not be seeded (or use a default seed if implemented).
+seed = 12345
+
+[world]
+# World dimensions
+width = 150
+height = 100
+
+# Type of terrain to generate. Options: "flat", "noise"
+terrain_type = "noise"
+
+# Number of discrete elevation levels for the terrain.
+# More levels mean more varied terrain height.
+terrain_levels = 10 # Default is 10
+
+[world.energy_options]
+# Configuration for energy sources in the world.
+
+# Number of scattered energy sources (e.g., loose energy packets)
+num_scattered = 75
+
+# Number of energy-generating plants
+num_plants = 15
+
+# Energy distribution for scattered sources.
+# Options:
+# Constant = <value>
+# Uniform = { min = <value>, max = <value> }
+# PseudoNormal = { mean = <value>, std_dev = <value> } (Values are clamped at 0)
+# Binomial = { n = <value>, p = <value> } (N trials, P probability of success for each)
+scattered_energy = { Constant = 50 }
+# Example: scattered_energy = { Uniform = { min = 20, max = 80 } }
+# Example: scattered_energy = { PseudoNormal = { mean = 50, std_dev = 15 } }
+# Example: scattered_energy = { Binomial = { n = 100, p = 0.5 } } # Results in ~50 energy
+
+# Energy generation rate for plants
+plant_rate = { Uniform = { min = 5, max = 15 } }
+
+# Initial energy for plants when they are created
+plant_current_energy = { Constant = 75 }
+# Example: plant_current_energy = { PseudoNormal = { mean = 80, std_dev = 20 } }
+
+# Maximum energy capacity for plants
+plant_max_energy = { Constant = 200 }
+# Example: plant_max_energy = { Uniform = { min = 150, max = 250 } }
+
+[cell] # New section for cell configuration
+# Minimum energy a cell must have to exist. This energy is dropped when the cell dies.
+min_energy = 25 # Default is 10
+
+# Initial energy for newly created cells (both at game start and from splits, before parent transfers energy for split).
+initial_energy = 100 # Default is 100. For splits, parent must provide MORE than min_energy.
+
+# Number of cells each team starts with.
+starting_cells_per_team = 2 # Default is 1 
