@@ -117,19 +117,19 @@ impl World {
     pub fn pheromone_at(&self, position: Coordinate) -> Option<Pheromone> {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        self.pheromone[x_wrapped * self.dimensions.0 + y_wrapped]
+        self.pheromone[y_wrapped * self.dimensions.0 + x_wrapped]
     }
 
     pub fn set_pheromone_at(&mut self, position: Coordinate, pheromone: Option<Pheromone>) {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        self.pheromone[x_wrapped * self.dimensions.0 + y_wrapped] = pheromone;
+        self.pheromone[y_wrapped * self.dimensions.0 + x_wrapped] = pheromone;
     }
 
     pub fn energy_at(&self, position: Coordinate) -> u32 {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        match self.energy[x_wrapped * self.dimensions.0 + y_wrapped] {
+        match self.energy[y_wrapped * self.dimensions.0 + x_wrapped] {
             Some(EnergySource::Scattered(energy)) => energy,
             Some(EnergySource::Plant { rate: _, current_energy, max_energy: _ }) => current_energy,
             None => 0,
@@ -139,19 +139,19 @@ impl World {
     pub fn set_energy_at(&mut self, position: Coordinate, energy: Option<EnergySource>) {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        self.energy[x_wrapped * self.dimensions.0 + y_wrapped] = energy; 
+        self.energy[y_wrapped * self.dimensions.0 + x_wrapped] = energy; 
     }
 
     pub fn elevation_at(&self, position: Coordinate) -> i32 {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        self.elevation[x_wrapped * self.dimensions.0 + y_wrapped]
+        self.elevation[y_wrapped * self.dimensions.0 + x_wrapped]
     }
     
     pub fn set_elevation_at(&mut self, position: Coordinate, elevation: i32) {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        self.elevation[x_wrapped * self.dimensions.0 + y_wrapped] = elevation;
+        self.elevation[y_wrapped * self.dimensions.0 + x_wrapped] = elevation;
     }
 
     pub fn get_neighborhood(&self, position: Coordinate) -> Neighborhood {

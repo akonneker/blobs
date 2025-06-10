@@ -183,10 +183,13 @@ impl Game {
         Ok(())
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, verbose: bool) {
         while self.iteration < self.max_iterations {
+            if verbose {
+                println!("Iteration {}", self.iteration);
+            }
+            self.tick(verbose);
             self.iteration += 1;
-            self.tick();
         }
     }
 
@@ -206,7 +209,10 @@ impl Game {
     }
 
     pub fn get_cell_at(&self, position: Coordinate) -> Option<&Cell> {
-        self.cells.get(&self.coordinate_map[&position])
+        match self.coordinate_map.get(&position) {
+            Some(cell_id) => self.cells.get(cell_id),
+            None => None,
+        }
     }
 
     pub fn get_cell_context(&self, coordinate: Coordinate) -> CellContext {
@@ -229,9 +235,13 @@ impl Game {
             let cell_team_id = cell_copy.team_id;
             let context = self.get_cell_context(*coordinate);
             let mut scope = Scope::new();
-            scope.push("cell", cell_copy);
-            scope.push("context", context);
-            let mind_result = self.engine.eval_ast_with_scope::<CellAction>(&mut scope, &self.teams[&cell_team_id]);
+            let mind_result = self.engine.call_fn::<CellAction>(
+                &mut scope, 
+                &self.teams[&cell_team_id], 
+                "mind", 
+                (cell_copy, context)
+            );
+
             match mind_result {
                 Ok(output_value) => {
                     match output_value {
@@ -300,10 +310,13 @@ impl Game {
         interactions
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, verbose: bool) {
         let interactions = self.get_cell_interactions();
 
         for interaction in interactions {
+            if verbose {
+                println!("Interaction: {:?}", interaction);
+            }
             match interaction {
                 CellInteraction::SendMessage(receiver_id, message) => {
                     if let Some(cell) = self.cells.get_mut(&receiver_id) {
@@ -565,7 +578,24 @@ impl Game {
                 }
             }
         }
-        // TODO: Update cell ages, apply plant growth, pheromone decay, etc.
+        // Increment age for all living cells
+        for (_cell_id, cell) in self.cells.iter_mut() {
+            cell.age = cell.age.saturating_add(1);
+        }
+
+        // Apply plant growth
+        for energy_source_option in self.world.energy.iter_mut() {
+            if let Some(energy_source) = energy_source_option {
+                if let EnergySource::Plant { rate, current_energy, max_energy } = energy_source {
+                    let growth = *rate;
+                    if *current_energy < *max_energy { // Only grow if not already at max
+                        *current_energy = (*current_energy + growth).min(*max_energy);
+                    }
+                }
+            }
+        }
+
+        // TODO: Apply pheromone decay, etc.
     }
     
     //Action resolution rules:

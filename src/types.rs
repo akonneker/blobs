@@ -93,8 +93,7 @@ pub enum EnergyDistribution {
 }
 
 // ---- Rhai Export Modules ----
-#[cfg(feature = "rhai_exports")] // Optional: use a feature flag if you build without Rhai sometimes
-pub mod rhai_exports { // Changed module name for clarity
+pub mod rhai_exports {
     use super::{Direction, CellMessage, CellAction, Pheromone};
     use rhai::plugin::*;
 

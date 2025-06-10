@@ -1,23 +1,25 @@
-mod world;
-mod cell;
-mod game;
-mod types;
-pub mod world_gen; // Make world_gen public if main.rs is the crate root
-pub mod config;    // Make config public
+// Remove the old module declarations as they are now in lib.rs
+// mod world;
+// mod cell;
+// mod game;
+// mod types;
+// pub mod world_gen; 
+// pub mod config;
 
-use game::Game;
+// Use the new library crate `cells_redux` to access its public modules
+use cells_redux::game::Game;
+use cells_redux::config::{FileConfig, GameConfig, CellConfig};
+use cells_redux::world_gen::{generate_terrain, generate_energy};
+use cells_redux::types::{TeamId, CellAction, Direction, CellMessage, Coordinate, CellId};
+use cells_redux::game::CellContext;
+use cells_redux::cell::Cell;
+
 use clap::Parser;
 use std::path::PathBuf;
 use std::fs;
 use rhai::{Engine, Array, INT};
 use rhai::packages::Package;    // needed for 'Package' trait
 use rhai_rand::RandomPackage;
-
-use crate::config::{FileConfig, GameConfig, CellConfig}; // Use our new config structs
-use crate::world_gen::{generate_terrain, generate_energy}; // Use items from world_gen
-use crate::cell::Cell;
-use crate::types::{CellAction, Direction, CellMessage, Coordinate, CellId, TeamId, Pheromone};
-use crate::game::CellContext;
 
 /// A programming game where teams of cells compete in a 2D world
 #[derive(Parser)]
@@ -42,6 +44,10 @@ struct Args {
     terrain_type: Option<String>,
     #[arg(long)]
     seed: Option<u64>,
+    
+    /// Enable verbose output
+    #[arg(long, short, action = clap::ArgAction::SetTrue)]
+    verbose: bool,
     // Add CLI overrides for cell config if desired, e.g.:
     // #[arg(long)]
     // cell_min_energy: Option<u32>,
@@ -152,8 +158,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Direction Enum: Expose variants via an exported module.
     engine.register_type_with_name::<Direction>("Direction");
-    #[cfg(feature = "rhai_exports")]
-    engine.register_static_module("Direction", rhai::exported_module!(crate::types::rhai_exports::rhai_direction_module));
+    
+    engine.register_static_module("Direction", rhai::exported_module!(cells_redux::types::rhai_exports::rhai_direction_module).into());
 
     // CellMessage Struct: Register type and a constructor function.
     engine.register_type_with_name::<CellMessage>("CellMessage");
@@ -169,8 +175,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // CellAction Enum: Register type and expose variants via an exported module.
     engine.register_type_with_name::<CellAction>("CellAction");
-    #[cfg(feature = "rhai_exports")]
-    engine.register_static_module("CellAction", rhai::exported_module!(crate::types::rhai_exports::rhai_cell_action_module));
+    
+    engine.register_static_module("CellAction", rhai::exported_module!(cells_redux::types::rhai_exports::rhai_cell_action_module).into());
 
     // Register a global function for creating the Split action due to fixed-size array complexity
     engine.register_fn(
@@ -219,7 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     game.world.energy = energy_vec;
     
     println!("Starting game run...");
-    game.run();
+    game.run(cli_args.verbose);
     println!("Game finished.");
 
     Ok(())
