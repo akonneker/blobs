@@ -1,7 +1,8 @@
 use crate::types::{Coordinate, Pheromone, Direction};
+use serde::{Serialize, Deserialize};
 
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EnergySource {
     Scattered(u32), // Amount of energy
     Plant { rate: u32, current_energy: u32, max_energy: u32 }, // Rate of production, current and max energy
@@ -9,8 +10,8 @@ pub enum EnergySource {
 
 /*
  0 1 2
- 3 4 5
- 6 7 8
+ 3 8 4
+ 5 6 7
 */
 
 
@@ -31,7 +32,7 @@ impl Neighborhood {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct World {
     pub dimensions: (usize, usize), // Width and height
     pub elevation: Vec<i32>,
@@ -42,45 +43,42 @@ pub struct World {
 
 
 
-pub fn relative_position(position: Coordinate, direction: Direction, dimensions: (usize, usize)) -> Coordinate {
+pub fn relative_position(position: Coordinate, direction: Option<Direction>, dimensions: (usize, usize)) -> Coordinate {
     let (width, height) = dimensions;
     match direction {
-        Direction::North => Coordinate { 
+        Some(Direction::North) => Coordinate { 
             x: position.x, 
             y: if position.y == 0 { height - 1 } else { position.y - 1 }
         },
-        Direction::South => Coordinate { 
+        Some(Direction::South) => Coordinate { 
             x: position.x, 
             y: (position.y + 1) % height 
         },
-        Direction::East => Coordinate { 
+        Some(Direction::East) => Coordinate { 
             x: (position.x + 1) % width, 
             y: position.y 
         },
-        Direction::West => Coordinate { 
+        Some(Direction::West) => Coordinate { 
             x: if position.x == 0 { width - 1 } else { position.x - 1 }, 
             y: position.y 
         },
-        Direction::NorthEast => Coordinate { 
+        Some(Direction::NorthEast) => Coordinate { 
             x: (position.x + 1) % width,
             y: if position.y == 0 { height - 1 } else { position.y - 1 }
         },
-        Direction::NorthWest => Coordinate { 
+        Some(Direction::NorthWest) => Coordinate { 
             x: if position.x == 0 { width - 1 } else { position.x - 1 },
             y: if position.y == 0 { height - 1 } else { position.y - 1 }
         },
-        Direction::SouthEast => Coordinate { 
+        Some(Direction::SouthEast) => Coordinate { 
             x: (position.x + 1) % width,
             y: (position.y + 1) % height
         },
-        Direction::SouthWest => Coordinate { 
+        Some(Direction::SouthWest) => Coordinate { 
             x: if position.x == 0 { width - 1 } else { position.x - 1 },
             y: (position.y + 1) % height
         },
-        Direction::Center => Coordinate { 
-            x: position.x, 
-            y: position.y 
-        },
+        None => position,
     }
 }
 
@@ -157,11 +155,14 @@ impl World {
     pub fn get_neighborhood(&self, position: Coordinate) -> Neighborhood {
         let mut neighborhood = Neighborhood::new();
         for direction in Direction::all() {
-            let neighbor_position = relative_position(position, direction, self.dimensions);
+            let neighbor_position = relative_position(position, Some(direction), self.dimensions);
             neighborhood.elevation[direction.index()] = self.elevation_at(neighbor_position);
             neighborhood.energy[direction.index()] = self.energy_at(neighbor_position);
             neighborhood.pheromone[direction.index()] = self.pheromone_at(neighbor_position);
         }
+        neighborhood.elevation[8] = self.elevation_at(position);
+        neighborhood.energy[8] = self.energy_at(position);
+        neighborhood.pheromone[8] = self.pheromone_at(position);
         neighborhood
     }
 } 

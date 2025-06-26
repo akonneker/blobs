@@ -1,0 +1,8 @@
+[package]
+name = "blob_mind_utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blob_interface = { path = "../../blob_interface" }
+tinyrand = "0.5.0" 

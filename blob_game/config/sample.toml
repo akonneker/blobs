@@ -11,24 +11,24 @@
 
 [world]
 # World dimensions
-width = 50
-height = 30
+width = 256
+height = 256
 
 # Type of terrain to generate. Options: "flat", "noise"
 terrain_type = "noise"
 
 # Number of discrete elevation levels for the terrain.
 # More levels mean more varied terrain height.
-terrain_levels = 5    # Number of distinct elevation levels for noise terrain
+terrain_levels = 32    # Number of distinct elevation levels for noise terrain
 
 [world.energy_options]
 # Configuration for energy sources in the world.
 
 # Number of scattered energy sources (e.g., loose energy packets)
-num_scattered = 100
+num_scattered = 1000
 
 # Number of energy-generating plants
-num_plants = 20
+num_plants = 500
 
 # Energy distribution for scattered sources.
 # Options:
@@ -60,7 +60,7 @@ min_energy = 10
 initial_energy = 100
 
 # Number of cells each team starts with.
-starting_cells_per_team = 5
+starting_cells_per_team = 12
 
 # New: Absolute maximum energy a cell can hold
 max_energy = 500
@@ -72,4 +72,25 @@ min_attack_power = 5
 max_attack_power = 50
 
 # New: Energy level at which max_attack_power is achieved
-max_energy_for_attack_scaling = 200 
+max_energy_for_attack_scaling = 200
+
+[memory] # New section for WebAssembly memory configuration
+# Maximum number of WebAssembly memory pages (each page is 64KB)
+# Default: 1024 pages = 64MB
+max_pages = 1024
+
+# Maximum variable bytes for the WebAssembly instance (in bytes)
+# Default: 1GB (1024 * 1024 * 1024)
+max_var_bytes = 1073741824
+
+# Timeout for plugin execution in seconds
+# Default: 1 second
+timeout_seconds = 1
+
+[state]
+max_states_in_memory = 100    # Maximum number of game states to keep in memory
+save_interval = 10            # Save state to disk every N iterations
+state_directory = "game_states"  # Directory to store serialized states
+compress_states = true        # Whether to compress saved states
+auto_cleanup = true          # Automatically clean up old states
+max_disk_states = 1000       # Maximum number of states to keep on disk 

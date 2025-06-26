@@ -1,23 +1,11 @@
-[package]
-name = "cells_redux"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-rhai = { version = "1.22.0" }
-rhai-rand = "0.1" 
-rand = "0.9.1"
-clap = { version = "4.5.39", features = ["derive"] }
-libnoise = "1.2.0"
-random = "0.14.0"
-probability = "0.20.3"
-serde = { version = "1.0.219", features = ["derive"] }
-toml = "0.8.22"
-
-[[bin]]
-name = "cells-redux"
-path = "src/main.rs"
-
-[[bin]]
-name = "rhai-runner"
-path = "src/rhai_runner.rs"
+[workspace]
+resolver = "3"
+members = [
+    "blob_interface", 
+    "blob_game", 
+    "minds/simple_mind", 
+    "minds/explorer_mind", 
+    "minds/aggressive_mind", 
+    "minds/defensive_mind", 
+    "minds/blob_mind_utils"
+    ]

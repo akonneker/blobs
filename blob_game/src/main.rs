@@ -1,25 +1,31 @@
+// Module declarations for this binary crate
+mod config;
+mod game;
+mod world_gen;
+mod gui;
+
 // Remove the old module declarations as they are now in lib.rs
 // mod world;
 // mod cell;
-// mod game;
 // mod types;
 // pub mod world_gen; 
 // pub mod config;
 
-// Use the new library crate `cells_redux` to access its public modules
-use cells_redux::game::Game;
-use cells_redux::config::{FileConfig, GameConfig, CellConfig};
-use cells_redux::world_gen::{generate_terrain, generate_energy};
-use cells_redux::types::{TeamId, CellAction, Direction, CellMessage, Coordinate, CellId};
-use cells_redux::game::CellContext;
-use cells_redux::cell::Cell;
+// Import from blob_interface crate for shared types and interfaces
+use blob_interface::types::TeamId;
 
+// Import from local modules in this crate
+use crate::{
+    config::{FileConfig, GameConfig, CellConfig},
+    game::Game,
+    world_gen::{generate_terrain, generate_energy},
+};
+
+// External dependencies
 use clap::Parser;
-use std::path::PathBuf;
 use std::fs;
-use rhai::{Engine, Array, INT};
-use rhai::packages::Package;    // needed for 'Package' trait
-use rhai_rand::RandomPackage;
+use std::path::PathBuf;
+
 
 /// A programming game where teams of cells compete in a 2D world
 #[derive(Parser)]
@@ -48,6 +54,22 @@ struct Args {
     /// Enable verbose output
     #[arg(long, short, action = clap::ArgAction::SetTrue)]
     verbose: bool,
+    
+    /// Launch GUI instead of running headless
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    gui: bool,
+    
+    /// Run a specific number of steps instead of running to completion
+    #[arg(long)]
+    steps: Option<u64>,
+    
+    /// Load a saved game state from file instead of creating a new game
+    #[arg(long, value_name = "FILE")]
+    load_state: Option<PathBuf>,
+    
+    /// Whether the loaded state file is compressed (auto-detected by extension if not specified)
+    #[arg(long)]
+    compressed: Option<bool>,
     // Add CLI overrides for cell config if desired, e.g.:
     // #[arg(long)]
     // cell_min_energy: Option<u32>,
@@ -115,6 +137,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_attack_power: file_config.cell.max_attack_power, // New
             max_energy_for_attack_scaling: file_config.cell.max_energy_for_attack_scaling, // New
         },
+        memory_config: file_config.memory.clone(), // Add memory configuration
+        state_config: file_config.state.clone(), // Add state configuration
     };
 
     if let Some(seed_val) = game_config.seed {
@@ -133,64 +157,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              game_config.cell_config.max_attack_power,
              game_config.cell_config.max_energy_for_attack_scaling);
 
-    let mut engine = Engine::new();
-    // Create new 'RandomPackage' instance
-    let random = RandomPackage::new();
-
-    // Load the package into the `Engine`
-    random.register_into_engine(&mut engine);
-
-    
-
-    // Register basic ID and Coordinate types
-    engine.register_type_with_name::<CellId>("CellId")
-        .register_get("id", |c: &mut CellId| c.0 as INT);
-    engine.register_type_with_name::<TeamId>("TeamId")
-        .register_get("id", |t: &mut TeamId| t.0 as INT);
-    engine.register_type_with_name::<Coordinate>("Coordinate")
-        .register_get("x", |c: &mut Coordinate| c.x as INT)
-        .register_get("y", |c: &mut Coordinate| c.y as INT);
-
-    // Cell struct: Rhai can access public fields of registered Clone types.
-    engine.register_type_with_name::<Cell>("Cell");
-    // CellContext struct: Also relies on Rhai accessing public fields.
-    engine.register_type_with_name::<CellContext>("CellContext");
-
-    // Direction Enum: Expose variants via an exported module.
-    engine.register_type_with_name::<Direction>("Direction");
-    
-    engine.register_static_module("Direction", rhai::exported_module!(cells_redux::types::rhai_exports::rhai_direction_module).into());
-
-    // CellMessage Struct: Register type and a constructor function.
-    engine.register_type_with_name::<CellMessage>("CellMessage");
-    engine.register_fn("new_cell_message", |arr: Array| -> CellMessage {
-        let mut data_arr = [0u8; 512];
-        for (i, item) in arr.into_iter().enumerate() {
-            if i < 512 {
-                data_arr[i] = item.as_int().unwrap_or(0) as u8;
-            }
-        }
-        CellMessage { data: data_arr }
-    });
-
-    // CellAction Enum: Register type and expose variants via an exported module.
-    engine.register_type_with_name::<CellAction>("CellAction");
-    
-    engine.register_static_module("CellAction", rhai::exported_module!(cells_redux::types::rhai_exports::rhai_cell_action_module).into());
-
-    // Register a global function for creating the Split action due to fixed-size array complexity
-    engine.register_fn(
-        "create_split_action",
-        |dir: Direction, energy: INT, marker: INT, memory_arr: Array| -> CellAction {
-            let mut actual_memory = [0u8; 2048];
-            for (i, item) in memory_arr.into_iter().enumerate() {
-                if i < 2048 {
-                    actual_memory[i] = item.as_int().unwrap_or(0) as u8;
-                }
-            }
-            CellAction::Split(dir, energy as i32, marker as u32, actual_memory)
-        },
-    );
 
     let mut game = Game::new(
         game_config.width,
@@ -198,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         game_config.max_iterations,
         game_config.cell_config.clone(),
         game_config.seed,
-        engine, // Pass the configured engine to the Game
+        game_config.memory_config.clone()
     );
 
     // Load team minds
@@ -224,9 +190,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let energy_vec = generate_energy(game_config.width, game_config.height, game_config.seed, &game_config.energy_options);
     game.world.energy = energy_vec;
     
-    println!("Starting game run...");
-    game.run(cli_args.verbose);
-    println!("Game finished.");
+    // Check if we should load a saved state instead of using the new game
+    let mut game = if let Some(state_file) = &cli_args.load_state {
+        println!("Loading game state from: {:?}", state_file);
+        
+        // Auto-detect compression from file extension if not specified
+        let is_compressed = cli_args.compressed.unwrap_or_else(|| {
+            state_file.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext == "gz")
+                .unwrap_or(false)
+        });
+        
+        // Load the state
+        let state = Game::load_state(
+            state_file.to_str().ok_or("Invalid state file path")?,
+            is_compressed,
+        )?;
+        
+        println!("Loaded state from iteration {} (max: {})", state.iteration, state.max_iterations);
+        
+        // Create team paths from CLI args
+        let team_paths: Vec<(TeamId, PathBuf)> = game_config.mind_paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| (TeamId(i), path.clone()))
+            .collect();
+        
+        // Reconstruct game with teams
+        Game::from_state_with_teams(state, &team_paths, game_config.seed)
+            .map_err(|e| format!("Failed to reconstruct game from state: {}", e))?
+    } else {
+        // Use the newly created game
+        game
+    };
+    
+    if cli_args.gui {
+        println!("Launching GUI mode...");
+        gui::launch_gui(game, cli_args.verbose)?;
+    } else if let Some(steps) = cli_args.steps {
+        println!("Running {} steps...", steps);
+        let executed = game.step(steps, cli_args.verbose)?;
+        println!("Executed {} steps. Final iteration: {}/{}", executed, game.iteration, game.max_iterations);
+        
+        // Optionally save final state image
+        if let Err(e) = game.generate_iteration_image(8, true) {
+            eprintln!("Failed to save final state image: {}", e);
+        }
+    } else {
+        println!("Starting game run...");
+        game.run(cli_args.verbose)?;
+        println!("Game finished.");
+    }
 
     Ok(())
 }

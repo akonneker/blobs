@@ -1,9 +1,10 @@
-use crate::world::EnergySource;
+
 use std::collections::HashSet;
 use libnoise::prelude::*;
 use probability::prelude::*;
 use rand::prelude::*;
-use crate::types::EnergyDistribution;
+use blob_interface::types::EnergyDistribution;
+use blob_interface::world::EnergySource;
 use crate::config::EnergyConfig;
 
 
