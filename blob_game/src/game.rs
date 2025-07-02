@@ -160,6 +160,10 @@ impl Game {
     }
 
     pub fn add_team(&mut self, team_id: TeamId, mind_path: &PathBuf) -> Result<(), String> {
+        self.add_team_with_start_id(team_id, mind_path, 0)
+    }
+
+    pub fn add_team_with_start_id(&mut self, team_id: TeamId, mind_path: &PathBuf, start_id: u32) -> Result<(), String> {
         if !mind_path.exists() {
             return Err(format!("Script file '{}' not found.", mind_path.display()));
         }
@@ -183,14 +187,19 @@ impl Game {
         self.teams.insert(team_id, mind_function);
         self.seeds.insert(team_id, self.rng.random_range(0..u64::MAX));
         
-        // Place starting cells for this team in a cluster
-        self.place_team_cluster(team_id)?;
+        // Place starting cells for this team in a cluster with the specified start_id
+        self.place_team_cluster_with_start_id(team_id, start_id)?;
         
         Ok(())
     }
 
     /// Place a team's starting cells in a spiral checkerboard cluster with a central plant
     fn place_team_cluster(&mut self, team_id: TeamId) -> Result<(), String> {
+        self.place_team_cluster_with_start_id(team_id, 0)
+    }
+
+    /// Place a team's starting cells in a spiral checkerboard cluster with a central plant
+    fn place_team_cluster_with_start_id(&mut self, team_id: TeamId, start_id: u32) -> Result<(), String> {
         let num_teams = self.teams.len();
         let team_index = team_id.0;
         
@@ -222,16 +231,19 @@ impl Game {
                 self.next_cell_id += 1;
                 let new_cell_id = CellId(cell_id_val);
                 let initial_energy_for_cell = self.cell_config.initial_energy.min(self.cell_config.max_energy);
-                let cell = Cell::new(
+                let mut cell = Cell::new(
                     new_cell_id,
                     team_id,
                     initial_energy_for_cell,
                     self.cell_config.min_energy,
+                    self.cell_config.max_energy,
                 );
+                // Set the marker to the start_id
+                cell.marker = start_id;
                 self.cells.insert(new_cell_id, cell);
                 self.coordinate_map.insert(position, new_cell_id);
                 self.inv_coordinate_map.insert(new_cell_id, position);
-                println!("Placed starting cell {:?} for team {:?} at {:?}", new_cell_id, team_id, position);
+                println!("Placed starting cell {:?} for team {:?} at {:?} with marker {}", new_cell_id, team_id, position, start_id);
             } else {
                 eprintln!("Warning: Position {:?} already occupied when placing team {:?}", position, team_id);
             }
@@ -392,11 +404,11 @@ impl Game {
 
     pub fn get_markers_at(&self, position: Coordinate) -> [Option<u32>; 8] {
         let mut markers = [None; 8];
-        for direction in Direction::all() {
-            let neighbor_position = relative_position(position, Some(direction), self.world.dimensions);
+        for direction in Direction::all().iter() {
+            let neighbor_position = relative_position(position, Some(*direction), self.world.dimensions);
             let neighbor = self.get_cell_at(neighbor_position);
             if let Some(marker) = neighbor.map(|c| c.marker) {
-                markers[marker as usize] = Some(marker);
+                markers[direction.index()] = Some(marker);
             }
         }
         markers
@@ -661,6 +673,7 @@ impl Game {
                                     parent_cell.team_id, 
                                     energy_for_child,
                                     self.cell_config.min_energy, // New child also has min_energy requirement
+                                    self.cell_config.max_energy, // New child also has max_energy limit
                                 );
                                 self.cells.insert(child_id, new_cell);
                                 self.coordinate_map.insert(target_coordinate, child_id);

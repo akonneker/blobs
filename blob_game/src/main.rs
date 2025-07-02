@@ -16,7 +16,7 @@ use blob_interface::types::TeamId;
 
 // Import from local modules in this crate
 use crate::{
-    config::{FileConfig, GameConfig, CellConfig},
+    config::{FileConfig, GameConfig, CellConfig, TeamConfig},
     game::Game,
     world_gen::{generate_terrain, generate_energy},
 };
@@ -25,15 +25,19 @@ use crate::{
 use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
-
+use rand::Rng;
 
 /// A programming game where teams of cells compete in a 2D world
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Args {
-    /// Paths to Rune script files containing team minds
+    /// Paths to team configuration TOML files or WASM files
     #[arg(required = true)]
-    mind_paths: Vec<PathBuf>,
+    team_paths: Vec<PathBuf>,
+
+    /// Override start_ids for teams (in order). If fewer IDs than teams, remaining teams get random IDs
+    #[arg(long, value_delimiter = ',')]
+    team_ids: Option<Vec<u32>>,
 
     /// Path to the configuration TOML file
     #[arg(long, short = 'c')]
@@ -70,13 +74,144 @@ struct Args {
     /// Whether the loaded state file is compressed (auto-detected by extension if not specified)
     #[arg(long)]
     compressed: Option<bool>,
-    // Add CLI overrides for cell config if desired, e.g.:
-    // #[arg(long)]
-    // cell_min_energy: Option<u32>,
-    // #[arg(long)]
-    // cell_initial_energy: Option<u32>,
-    // #[arg(long)]
-    // starting_cells_per_team: Option<usize>,
+}
+
+fn is_wasm_file(path: &PathBuf) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase() == "wasm")
+        .unwrap_or(false)
+}
+
+fn is_toml_file(path: &PathBuf) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase() == "toml")
+        .unwrap_or(false)
+}
+
+fn generate_random_ids(count: usize, existing_ids: &[u32]) -> Vec<u32> {
+    use std::collections::HashSet;
+    
+    let mut rng = rand::thread_rng();
+    let existing_set: HashSet<u32> = existing_ids.iter().copied().collect();
+    let mut random_ids = Vec::new();
+    
+    for _ in 0..count {
+        loop {
+            let id = rng.gen_range(1..=u32::MAX);
+            if !existing_set.contains(&id) && !random_ids.contains(&id) {
+                random_ids.push(id);
+                break;
+            }
+        }
+    }
+    
+    random_ids
+}
+
+fn load_team_configs_mixed(team_paths: &[PathBuf], team_id_overrides: Option<&[u32]>) -> Result<Vec<TeamConfig>, Box<dyn std::error::Error>> {
+    let mut team_configs = Vec::new();
+    let mut used_ids = Vec::new();
+    
+    // First pass: load all configs and collect explicitly specified IDs
+    for (i, path) in team_paths.iter().enumerate() {
+        if !path.exists() {
+            return Err(format!("Team file not found: {:?}", path).into());
+        }
+        
+        let team_config = if is_toml_file(path) {
+            // Load from TOML config file
+            let config_str = fs::read_to_string(path)
+                .map_err(|e| format!("Failed to read team config file {:?}: {}", path, e))?;
+            
+            let mut config: TeamConfig = toml::from_str(&config_str)
+                .map_err(|e| format!("Failed to parse team config TOML from {:?}: {}", path, e))?;
+            
+            // Validate that the mind_path exists
+            if !config.mind_path.exists() {
+                return Err(format!("Mind file not found: {:?} (specified in {:?})", config.mind_path, path).into());
+            }
+            
+            // Apply ID override if provided
+            if let Some(overrides) = team_id_overrides {
+                if i < overrides.len() {
+                    config.start_id = overrides[i];
+                }
+            }
+            
+            config
+        } else if is_wasm_file(path) {
+            // Create config from WASM file
+            let start_id = if let Some(overrides) = team_id_overrides {
+                if i < overrides.len() {
+                    overrides[i]
+                } else {
+                    0 // Will be replaced with random ID later
+                }
+            } else {
+                0 // Will be replaced with random ID later
+            };
+            
+            TeamConfig {
+                mind_path: path.clone(),
+                start_id,
+            }
+        } else {
+            return Err(format!("Unsupported file type: {:?}. Expected .wasm or .toml file.", path).into());
+        };
+        
+        if team_config.start_id != 0 {
+            used_ids.push(team_config.start_id);
+        }
+        team_configs.push(team_config);
+    }
+    
+    // Second pass: assign random IDs to configs that still have ID 0
+    let configs_needing_ids: Vec<usize> = team_configs
+        .iter()
+        .enumerate()
+        .filter(|(_, config)| config.start_id == 0)
+        .map(|(i, _)| i)
+        .collect();
+    
+    if !configs_needing_ids.is_empty() {
+        let random_ids = generate_random_ids(configs_needing_ids.len(), &used_ids);
+        for (config_index, random_id) in configs_needing_ids.into_iter().zip(random_ids) {
+            team_configs[config_index].start_id = random_id;
+        }
+    }
+    
+    Ok(team_configs)
+}
+
+fn validate_unique_start_ids(team_configs: &[TeamConfig]) -> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::HashSet;
+    
+    let mut seen_ids = HashSet::new();
+    let mut duplicates = Vec::new();
+    
+    for (i, config) in team_configs.iter().enumerate() {
+        if !seen_ids.insert(config.start_id) {
+            duplicates.push((i, config.start_id));
+        }
+    }
+    
+    if !duplicates.is_empty() {
+        let mut error_msg = String::from("Error: Duplicate start_id values found!\n");
+        error_msg.push_str("Each team must have a unique start_id.\n");
+        error_msg.push_str("Duplicate start_ids:\n");
+        
+        for (team_index, start_id) in duplicates {
+            error_msg.push_str(&format!("  Team {} has start_id {}\n", team_index, start_id));
+        }
+        
+        error_msg.push_str("\nPlease update your team configuration files to use unique start_id values,");
+        error_msg.push_str(" or use the --team-ids argument to override them.");
+        return Err(error_msg.into());
+    }
+    
+    Ok(())
 }
 
 // fn generate_world(width: usize, height: usize, terrain: Vec<i32>, energy: Vec<u32>) -> World {
@@ -116,9 +251,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Load team configurations (supports both TOML configs and direct WASM files)
+    let team_configs = load_team_configs_mixed(&cli_args.team_paths, cli_args.team_ids.as_deref())?;
+    
+    // Validate that all start_ids are unique
+    validate_unique_start_ids(&team_configs)?;
+    
+    println!("Loaded {} team configurations:", team_configs.len());
+    for (i, config) in team_configs.iter().enumerate() {
+        let file_type = if is_toml_file(&cli_args.team_paths[i]) { "TOML config" } else { "WASM file" };
+        println!("  Team {}: mind_path={:?}, start_id={} (from {})", 
+                 i, config.mind_path, config.start_id, file_type);
+    }
+
     // Combine file config with CLI overrides
     let game_config = GameConfig {
-        mind_paths: cli_args.mind_paths,
+        team_configs,
         width: cli_args.width.unwrap_or(file_config.world.width),
         height: cli_args.height.unwrap_or(file_config.world.height),
         max_iterations: cli_args.max_iterations.unwrap_or(
@@ -167,12 +315,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         game_config.memory_config.clone()
     );
 
-    // Load team minds
-    for (team_id_idx, mind_path) in game_config.mind_paths.iter().enumerate() {
-        let result = game.add_team(TeamId(team_id_idx), mind_path);
+    // Load team minds with their start_ids
+    for (team_id_idx, team_config) in game_config.team_configs.iter().enumerate() {
+        let result = game.add_team_with_start_id(TeamId(team_id_idx), &team_config.mind_path, team_config.start_id);
         match result {
-            Ok(()) => println!("Loaded team {} from {:?}", team_id_idx, mind_path),
-            Err(e) => eprintln!("Error loading team mind from {:?}: {}", mind_path, e),
+            Ok(()) => println!("Loaded team {} from {:?} with start_id {}", team_id_idx, team_config.mind_path, team_config.start_id),
+            Err(e) => eprintln!("Error loading team mind from {:?}: {}", team_config.mind_path, e),
         }
     }
     
@@ -210,11 +358,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         println!("Loaded state from iteration {} (max: {})", state.iteration, state.max_iterations);
         
-        // Create team paths from CLI args
-        let team_paths: Vec<(TeamId, PathBuf)> = game_config.mind_paths
+        // Create team paths from team configs
+        let team_paths: Vec<(TeamId, PathBuf)> = game_config.team_configs
             .iter()
             .enumerate()
-            .map(|(i, path)| (TeamId(i), path.clone()))
+            .map(|(i, config)| (TeamId(i), config.mind_path.clone()))
             .collect();
         
         // Reconstruct game with teams

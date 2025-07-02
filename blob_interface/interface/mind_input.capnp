@@ -9,11 +9,12 @@ struct MindInput {
 struct BlobState {
     energy @0: UInt32;
     minEnergy @1: UInt32;
-    marker @2: UInt32;
-    loaded @3: Bool;
-    age @4: UInt32;
-    memory @5: Data;
-    messageQueue @6: List(Data);
+    maxEnergy @2: UInt32;
+    marker @3: UInt32;
+    loaded @4: Bool;
+    age @5: UInt32;
+    memory @6: Data;
+    messageQueue @7: List(Data);
 }
 
 struct BlobContext {

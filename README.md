@@ -34,21 +34,72 @@ The project is structured as a Cargo workspace with the following main component
 
     The compiled WASM file will be located at `target/wasm32-unknown-unknown/debug/<mind_name>.wasm`.
 
-2.  **Run the game:** The `blob_game` executable takes the paths to the mind WASM files as arguments.
+2.  **Create team configuration files (optional):** You can either use WASM files directly or create TOML configuration files for more control.
+
+    Create a file like `team_simple.toml`:
+    ```toml
+    mind_path = "target/wasm32-unknown-unknown/debug/simple_mind.wasm"
+    start_id = 1
+    ```
+
+    The `start_id` sets the initial marker value for all cells of that team, which can be used for team identification.
+
+3.  **Run the game:** The `blob_game` executable accepts either team configuration files (.toml) or WASM files (.wasm) directly.
 
     To run the game with a GUI, use the `--gui` flag:
 
     ```bash
-    cargo run -p blob_game -- --gui <path_to_mind1>.wasm <path_to_mind2>.wasm
+    # Using team configuration files
+    cargo run -p blob_game -- --gui <team_config1>.toml <team_config2>.toml
+    
+    # Using WASM files directly
+    cargo run -p blob_game -- --gui <mind1>.wasm <mind2>.wasm
+    
+    # Mixed usage
+    cargo run -p blob_game -- --gui team_config.toml mind.wasm
     ```
 
-    For example, to run a game with `simple_mind` and `aggressive_mind`:
+    **Override team IDs:** You can override the start_id for teams using the `--team-ids` argument:
 
     ```bash
-    cargo run -p blob_game -- --gui target/wasm32-unknown-unknown/debug/simple_mind.wasm target/wasm32-unknown-unknown/debug/aggressive_mind.wasm
+    # Override IDs for all teams
+    cargo run -p blob_game -- --gui --team-ids 10,20 mind1.wasm mind2.wasm
+    
+    # Override only first team's ID, second gets random ID
+    cargo run -p blob_game -- --gui --team-ids 42 mind1.wasm mind2.wasm
+    ```
+
+    For example, to run a game with two teams:
+
+    ```bash
+    cargo run -p blob_game -- --gui blob_game/config/team_simple.toml blob_game/config/team_aggressive.toml
     ```
 
     You can also run the game in headless mode by omitting the `--gui` flag. For more options, run `cargo run -p blob_game -- --help`.
+
+## Team Configuration
+
+Teams can be configured in two ways:
+
+### 1. TOML Configuration Files
+Create TOML files that specify both the mind path and start ID:
+
+```toml
+mind_path = "target/wasm32-unknown-unknown/debug/simple_mind.wasm"
+start_id = 42
+```
+
+### 2. Direct WASM Files
+You can pass WASM files directly. When using WASM files directly:
+- If no `--team-ids` argument is provided, teams get random start IDs
+- If `--team-ids` is provided, teams get the specified IDs (in order)
+- If fewer IDs are provided than teams, remaining teams get random IDs
+
+**Team configuration fields:**
+- `mind_path`: Path to the compiled WASM file for the team's mind
+- `start_id`: Initial marker ID for all cells of this team (used for team identification)
+
+The `start_id` is important because minds can use it to distinguish between allied and enemy blobs by comparing marker values.
 
 ## How to Create a Mind
 

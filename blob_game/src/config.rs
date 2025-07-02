@@ -1,7 +1,13 @@
 use serde::{Deserialize, Serialize};
 use blob_interface::types::EnergyDistribution;
 use std::time::Duration;
+use std::path::PathBuf;
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TeamConfig {
+    pub mind_path: PathBuf,
+    pub start_id: u32,
+}
 
 #[derive(Debug, Clone, Deserialize)] // Added Clone
 pub struct EnergyConfig {
@@ -149,7 +155,7 @@ impl Default for StateConfig {
 // This will be the final configuration struct, merging CLI and FileConfig
 #[derive(Debug, Clone)]
 pub struct GameConfig {
-    pub mind_paths: Vec<std::path::PathBuf>,
+    pub team_configs: Vec<TeamConfig>,
     pub width: usize,
     pub height: usize,
     pub max_iterations: u64,

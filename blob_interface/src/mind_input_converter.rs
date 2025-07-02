@@ -15,6 +15,7 @@ pub fn cell_to_mind_input_capnp(cell: &Cell, context: &CellContext, seed: u64) -
     let mut state_builder = mind_input_builder.reborrow().init_state();
     state_builder.set_energy(cell.energy);
     state_builder.set_min_energy(cell.min_energy);
+    state_builder.set_max_energy(cell.max_energy);
     state_builder.set_marker(cell.marker);
     state_builder.set_loaded(cell.loaded);
     state_builder.set_age(cell.age);
@@ -134,6 +135,7 @@ pub fn capnp_to_mind_input(data: &[u8]) -> capnp::Result<(BlobState, CellContext
     let blob_state = BlobState {
         energy: state_reader.get_energy(),
         min_energy: state_reader.get_min_energy(),
+        max_energy: state_reader.get_max_energy(),
         marker: state_reader.get_marker(),
         loaded: state_reader.get_loaded(),
         age: state_reader.get_age(),

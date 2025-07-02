@@ -1,0 +1,2 @@
+mind_path = "target/wasm32-unknown-unknown/debug/simple_mind.wasm"
+start_id = 1 

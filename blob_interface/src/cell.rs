@@ -7,6 +7,7 @@ pub struct Cell {
     pub team_id: TeamId,
     pub energy: u32, 
     pub min_energy: u32, // Cost to exist, dropped on death
+    pub max_energy: u32, // Maximum energy this cell can hold
     pub marker: u32,
     pub loaded: bool,
     pub age: u32,
@@ -17,12 +18,13 @@ pub struct Cell {
 }
 
 impl Cell {
-    pub fn new(id: CellId, team_id: TeamId, initial_energy: u32, min_energy: u32) -> Self {
+    pub fn new(id: CellId, team_id: TeamId, initial_energy: u32, min_energy: u32, max_energy: u32) -> Self {
         Cell {
             id,
             team_id,
             energy: initial_energy,
             min_energy,
+            max_energy,
             marker: 0,
             loaded: false,
             age: 0,
@@ -72,6 +74,7 @@ pub enum CellAction {
 pub struct BlobState {
     pub energy: u32,
     pub min_energy: u32,
+    pub max_energy: u32,
     pub marker: u32,
     pub loaded: bool,
     pub age: u32,

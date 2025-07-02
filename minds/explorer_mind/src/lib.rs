@@ -11,7 +11,6 @@ const PLANT_PHEROMONE: Pheromone = 100;
 const TRAIL_PHEROMONE: Pheromone = 50;
 const EXPLORATION_PHEROMONE: Pheromone = 25;
 const MIN_ENERGY_TO_EXPLORE: u32 = 30;
-const MIN_ENERGY_TO_SPLIT: u32 = 200;
 const SPLIT_ENERGY_AMOUNT: i32 = 80;
 
 // Memory layout (using first 16 bytes of memory)
@@ -117,6 +116,9 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
     let mut rng = StdRand::seed(seed ^ blob_state.age as u64);
     let mut memory = ExplorerMemory::from_blob_memory(&blob_state.memory);
     
+    // Calculate dynamic threshold based on max_energy
+    let min_energy_to_split = (blob_state.max_energy * 4) / 10; // 40% of max energy
+    
     // Priority 1: If we're on a plant, mark it and set pheromone
     if is_on_plant(context) {
         memory.plants_found = memory.plants_found.saturating_add(1);
@@ -126,8 +128,13 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
         return CellAction::SetPheromone(PLANT_PHEROMONE);
     }
     
-    // Priority 2: If we have high energy and found plants, consider splitting
-    if blob_state.energy > MIN_ENERGY_TO_SPLIT && memory.plants_found > 0 {
+    // Priority 2: Eat if there's energy here and we're not at max
+    if has_energy_here(context) && blob_state.energy < blob_state.max_energy {
+        return CellAction::Eat;
+    }
+    
+    // Priority 3: If we have high energy and found plants, consider splitting
+    if blob_state.energy > min_energy_to_split && memory.plants_found > 0 {
         if let Some(direction) = find_safe_move_direction(context, &mut rng) {
             // Create child with exploration knowledge
             let mut child_memory = [0u8; 2048];
@@ -138,19 +145,15 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
         }
     }
     
-    // Priority 3: If we have low energy, try to eat
+    // Priority 4: If we have low energy, try to find energy
     if blob_state.energy < MIN_ENERGY_TO_EXPLORE {
-        if has_energy_here(context) {
-            return CellAction::Eat;
-        }
-        
         // Move towards nearby energy
         if let Some(direction) = find_best_energy_direction(context) {
             return CellAction::Move(direction);
         }
     }
     
-    // Priority 4: Exploration and trail making
+    // Priority 5: Exploration and trail making
     let action = match memory.exploration_mode {
         0 => random_exploration(context, &mut rng), // Random exploration
         1 => systematic_exploration(context, &mut rng, &memory), // Systematic exploration
