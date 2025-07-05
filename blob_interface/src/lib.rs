@@ -7,8 +7,8 @@ pub mod cell;
 pub mod types;
 
 // Cap'n Proto generated files
-pub mod action_capnp;
 pub mod mind_input_capnp;
+pub mod mind_output_capnp;
 
-pub mod action_converter;
 pub mod mind_input_converter;
+pub mod mind_output_converter;

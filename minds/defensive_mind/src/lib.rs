@@ -3,7 +3,7 @@ use tinyrand::{StdRand, Seeded, Rand, RandRange};
 use blob_mind_utils::*;
 
 use blob_interface::cell::{BlobState, CellAction, CellContext};
-use blob_interface::action_converter::cell_action_to_capnp;
+use blob_interface::mind_output_converter::mind_output_to_capnp;
 use blob_interface::mind_input_converter::capnp_to_mind_input;
 
 // Constants for defensive behavior
@@ -83,6 +83,6 @@ pub fn mind_function(input: Vec<u8>) -> FnResult<Vec<u8>> {
     
     let action = defensive_strategy(&blob_state, &cell_context, seed);
     
-    let capnp_vec = cell_action_to_capnp(&action).map_err(|e| Error::msg(e.to_string()))?;
+    let capnp_vec = mind_output_to_capnp(&action, &blob_state.memory).map_err(|e| Error::msg(e.to_string()))?;
     Ok(capnp_vec)
 } 

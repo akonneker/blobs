@@ -30,7 +30,7 @@ pub fn has_energy_nearby(context: &CellContext) -> bool {
     context.energy[0..8].iter().any(|&energy| energy > 0)
 }
 
-/// Find a safe direction to move (no steep elevation changes)
+/// Find a safe direction to move (no steep elevation changes and no occupied cells)
 pub fn find_safe_move_direction(context: &CellContext, rng: &mut StdRand) -> Option<Direction> {
     let directions = Direction::all();
     let center_elevation = context.elevation[8];
@@ -38,7 +38,9 @@ pub fn find_safe_move_direction(context: &CellContext, rng: &mut StdRand) -> Opt
     
     for (i, direction) in directions.iter().enumerate() {
         let elevation_diff = (context.elevation[i] - center_elevation).abs();
-        if elevation_diff <= 1 {
+        let is_occupied = context.markers[i].is_some();
+        
+        if elevation_diff <= 1 && !is_occupied {
             safe_directions.push(*direction);
         }
     }

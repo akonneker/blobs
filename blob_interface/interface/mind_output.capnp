@@ -1,4 +1,10 @@
 @0xd0fda5351ba98b3e;
+
+struct MindOutput {
+    action @0: Action;
+    memory @1: Data;
+}
+
 struct Action {
     union {
         sendMessage @0 : Message;

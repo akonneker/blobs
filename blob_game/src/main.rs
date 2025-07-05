@@ -26,6 +26,11 @@ use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 use rand::Rng;
+use rand::prelude::*;
+use rand::SeedableRng;
+use std::io::{Read, Write};
+use flate2::{Compression, read::GzDecoder, write::GzEncoder};
+use bincode;
 
 /// A programming game where teams of cells compete in a 2D world
 #[derive(Parser)]
@@ -74,6 +79,10 @@ struct Args {
     /// Whether the loaded state file is compressed (auto-detected by extension if not specified)
     #[arg(long)]
     compressed: Option<bool>,
+    
+    /// Save each iteration as a PNG image to the specified directory (default: current directory)
+    #[arg(long, value_name = "DIR")]
+    save_images: Option<Option<PathBuf>>,
 }
 
 fn is_wasm_file(path: &PathBuf) -> bool {
@@ -90,16 +99,16 @@ fn is_toml_file(path: &PathBuf) -> bool {
         .unwrap_or(false)
 }
 
-fn generate_random_ids(count: usize, existing_ids: &[u32]) -> Vec<u32> {
+fn generate_random_ids(count: usize, existing_ids: &[u32], seed: u64) -> Vec<u32> {
     use std::collections::HashSet;
     
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let existing_set: HashSet<u32> = existing_ids.iter().copied().collect();
     let mut random_ids = Vec::new();
     
     for _ in 0..count {
         loop {
-            let id = rng.gen_range(1..=u32::MAX);
+            let id = rng.random_range(1..=u32::MAX);
             if !existing_set.contains(&id) && !random_ids.contains(&id) {
                 random_ids.push(id);
                 break;
@@ -110,7 +119,7 @@ fn generate_random_ids(count: usize, existing_ids: &[u32]) -> Vec<u32> {
     random_ids
 }
 
-fn load_team_configs_mixed(team_paths: &[PathBuf], team_id_overrides: Option<&[u32]>) -> Result<Vec<TeamConfig>, Box<dyn std::error::Error>> {
+fn load_team_configs_mixed(team_paths: &[PathBuf], team_id_overrides: Option<&[u32]>, seed: u64) -> Result<Vec<TeamConfig>, Box<dyn std::error::Error>> {
     let mut team_configs = Vec::new();
     let mut used_ids = Vec::new();
     
@@ -176,7 +185,7 @@ fn load_team_configs_mixed(team_paths: &[PathBuf], team_id_overrides: Option<&[u
         .collect();
     
     if !configs_needing_ids.is_empty() {
-        let random_ids = generate_random_ids(configs_needing_ids.len(), &used_ids);
+        let random_ids = generate_random_ids(configs_needing_ids.len(), &used_ids, seed);
         for (config_index, random_id) in configs_needing_ids.into_iter().zip(random_ids) {
             team_configs[config_index].start_id = random_id;
         }
@@ -252,7 +261,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Load team configurations (supports both TOML configs and direct WASM files)
-    let team_configs = load_team_configs_mixed(&cli_args.team_paths, cli_args.team_ids.as_deref())?;
+    let seed_for_team_ids = cli_args.seed.or(file_config.general.seed).unwrap_or(42);
+    let team_configs = load_team_configs_mixed(&cli_args.team_paths, cli_args.team_ids.as_deref(), seed_for_team_ids)?;
     
     // Validate that all start_ids are unique
     validate_unique_start_ids(&team_configs)?;
@@ -378,16 +388,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gui::launch_gui(game, cli_args.verbose)?;
     } else if let Some(steps) = cli_args.steps {
         println!("Running {} steps...", steps);
-        let executed = game.step(steps, cli_args.verbose)?;
-        println!("Executed {} steps. Final iteration: {}/{}", executed, game.iteration, game.max_iterations);
         
-        // Optionally save final state image
-        if let Err(e) = game.generate_iteration_image(8, true) {
-            eprintln!("Failed to save final state image: {}", e);
+        // Check if we should save images
+        if let Some(save_images_option) = cli_args.save_images {
+            let output_dir = save_images_option.unwrap_or_else(|| PathBuf::from("."));
+            println!("Saving images to directory: {:?}", output_dir);
+            let executed = game.step_with_images(steps, cli_args.verbose, &output_dir)?;
+            println!("Executed {} steps. Final iteration: {}/{}", executed, game.iteration, game.max_iterations);
+        } else {
+            let executed = game.step(steps, cli_args.verbose)?;
+            println!("Executed {} steps. Final iteration: {}/{}", executed, game.iteration, game.max_iterations);
+            
+            // Optionally save final state image
+            if let Err(e) = game.generate_iteration_image(8, true) {
+                eprintln!("Failed to save final state image: {}", e);
+            }
         }
     } else {
         println!("Starting game run...");
-        game.run(cli_args.verbose)?;
+        
+        // Check if we should save images
+        if let Some(save_images_option) = cli_args.save_images {
+            let output_dir = save_images_option.unwrap_or_else(|| PathBuf::from("."));
+            println!("Saving images to directory: {:?}", output_dir);
+            game.run_with_images(cli_args.verbose, &output_dir)?;
+        } else {
+            game.run(cli_args.verbose)?;
+        }
+        
         println!("Game finished.");
     }
 

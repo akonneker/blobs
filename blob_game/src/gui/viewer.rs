@@ -41,6 +41,8 @@ struct GameViewer {
     update_interval: std::time::Duration,
     scene_rect: Rect, // Track the scene view area for zoom/pan
     reset_view_requested: bool, // Flag to request view reset from control panel
+    game_ended: bool, // Track if the game has ended due to team elimination
+    end_summary: String, // Store the game end summary
 }
 
 impl GameViewer {
@@ -50,14 +52,36 @@ impl GameViewer {
             verbose,
             paused: true,
             step_size: 1,
-            auto_step: false,
+            auto_step: true,
             scale: 8,
             board_texture: None,
             last_update: std::time::Instant::now(),
-            update_interval: std::time::Duration::from_millis(500), // 2 FPS default
+            update_interval: std::time::Duration::from_millis(50), // 20 FPS default
             scene_rect: Rect::ZERO, // egui::Scene will initialize this to something valid
             reset_view_requested: false,
+            game_ended: false,
+            end_summary: String::new(),
         }
+    }
+    
+    fn get_team_color(&self, team_id: TeamId) -> egui::Color32 {
+        // Same color palette as used in generate_board_image
+        let team_colors = [
+            [255, 100, 100], // Red
+            [100, 100, 255], // Blue  
+            [255, 255, 100], // Yellow
+            [255, 100, 255], // Magenta
+            [100, 255, 255], // Cyan
+            [255, 165, 0],   // Orange
+            [128, 0, 128],   // Purple
+            [0, 128, 0],     // Dark Green
+            [165, 42, 42],   // Brown
+            [255, 20, 147],  // Deep Pink
+        ];
+        
+        let team_index = team_id.0 % team_colors.len();
+        let color = team_colors[team_index];
+        egui::Color32::from_rgb(color[0], color[1], color[2])
     }
     
     fn update_board_texture(&mut self, ctx: &egui::Context) {
@@ -94,11 +118,24 @@ impl GameViewer {
     }
     
     fn step_game(&mut self) -> Result<(), extism::Error> {
+        if self.game_ended {
+            return Ok(()); // Don't step if game has ended
+        }
+        
         for _ in 0..self.step_size {
             if self.game.iteration >= self.game.max_iterations {
                 break;
             }
             self.game.tick(self.verbose)?;
+            
+            // Check for team elimination after each tick
+            if let Some(surviving_teams) = self.game.check_team_elimination() {
+                self.end_summary = self.game.generate_game_summary(&surviving_teams);
+                self.game_ended = true;
+                self.auto_step = false; // Stop auto-stepping
+                println!("{}", self.end_summary);
+                break;
+            }
         }
         Ok(())
     }
@@ -125,23 +162,38 @@ impl eframe::App for GameViewer {
                 ui.label(format!("Cells alive: {}", self.game.cells.len()));
                 ui.label(format!("Teams: {}", self.game.teams.len()));
                 
+                // Game status
+                if self.game_ended {
+                    ui.colored_label(egui::Color32::RED, "🎮 GAME ENDED");
+                    if ui.button("📊 Show Summary").clicked() {
+                        // Print summary to console again
+                        println!("{}", self.end_summary);
+                    }
+                } else if self.game.iteration >= self.game.max_iterations {
+                    ui.colored_label(egui::Color32::YELLOW, "⏰ MAX ITERATIONS REACHED");
+                } else {
+                    ui.colored_label(egui::Color32::GREEN, "🔄 RUNNING");
+                }
+                
                 ui.separator();
                 
                 // Controls
-                ui.horizontal(|ui| {
-                    if ui.button(if self.paused { "▶ Resume" } else { "⏸ Pause" }).clicked() {
-                        self.paused = !self.paused;
-                    }
-                    
-                    if ui.button("⏭ Step").clicked() {
-                        if let Err(e) = self.step_game() {
-                            eprintln!("Error stepping game: {}", e);
+                ui.add_enabled_ui(!self.game_ended, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button(if self.paused { "▶ Resume" } else { "⏸ Pause" }).clicked() {
+                            self.paused = !self.paused;
                         }
-                        self.update_board_texture(ctx);
-                    }
+                        
+                        if ui.button("⏭ Step").clicked() {
+                            if let Err(e) = self.step_game() {
+                                eprintln!("Error stepping game: {}", e);
+                            }
+                            self.update_board_texture(ctx);
+                        }
+                    });
+                    
+                    ui.checkbox(&mut self.auto_step, "Auto-step");
                 });
-                
-                ui.checkbox(&mut self.auto_step, "Auto-step");
                 
                 ui.add(egui::Slider::new(&mut self.step_size, 1..=100).text("Step size"));
                 
@@ -213,9 +265,15 @@ impl eframe::App for GameViewer {
                 egui::CollapsingHeader::new(format!("Teams ({})", self.game.teams.len()))
                     .default_open(true)
                     .show(ui, |ui| {
-                        // Group cells by team
+                        // Group cells by team and include all teams (even eliminated ones)
                         let mut teams_cells: HashMap<TeamId, Vec<_>> = HashMap::new();
                         
+                        // Initialize all teams with empty vectors
+                        for team_id in self.game.teams.keys() {
+                            teams_cells.insert(*team_id, Vec::new());
+                        }
+                        
+                        // Fill in the teams that have cells
                         for (cell_id, cell) in &self.game.cells {
                             teams_cells.entry(cell.team_id).or_insert_with(Vec::new).push((cell_id, cell));
                         }
@@ -225,7 +283,11 @@ impl eframe::App for GameViewer {
                         sorted_teams.sort_by_key(|(team_id, _)| team_id.0);
                         
                         for (team_id, cells) in sorted_teams {
-                            egui::CollapsingHeader::new(format!("Team {} ({} cells)", team_id.0, cells.len()))
+                            let team_color = self.get_team_color(*team_id);
+                            let team_status = if cells.is_empty() { " [ELIMINATED]" } else { "" };
+                            let header_color = if cells.is_empty() { egui::Color32::GRAY } else { team_color };
+                            
+                            egui::CollapsingHeader::new(egui::RichText::new(format!("Team {} ({} cells){}", team_id.0, cells.len(), team_status)).color(header_color))
                                 .default_open(false)
                                 .show(ui, |ui| {
                                     // Team statistics

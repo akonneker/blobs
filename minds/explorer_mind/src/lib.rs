@@ -2,7 +2,7 @@ use extism_pdk::*;
 use tinyrand::{StdRand, Seeded, Rand, RandRange};
 
 use blob_interface::cell::{BlobState, CellAction, CellContext};
-use blob_interface::action_converter::cell_action_to_capnp;
+use blob_interface::mind_output_converter::mind_output_to_capnp;
 use blob_interface::mind_input_converter::capnp_to_mind_input;
 use blob_interface::types::{Direction, Pheromone};
 
@@ -112,7 +112,7 @@ impl ExplorerMemory {
     }
 }
 
-fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -> CellAction {
+fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -> (CellAction, [u8; 2048]) {
     let mut rng = StdRand::seed(seed ^ blob_state.age as u64);
     let mut memory = ExplorerMemory::from_blob_memory(&blob_state.memory);
     
@@ -125,12 +125,16 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
         memory.last_plant_x = (blob_state.age % 50) as u16; // Rough position estimate
         memory.last_plant_y = (blob_state.age / 50) as u16;
         
-        return CellAction::SetPheromone(PLANT_PHEROMONE);
+        let mut updated_memory = blob_state.memory;
+        memory.write_to_blob_memory(&mut updated_memory);
+        return (CellAction::SetPheromone(PLANT_PHEROMONE), updated_memory);
     }
     
     // Priority 2: Eat if there's energy here and we're not at max
     if has_energy_here(context) && blob_state.energy < blob_state.max_energy {
-        return CellAction::Eat;
+        let mut updated_memory = blob_state.memory;
+        memory.write_to_blob_memory(&mut updated_memory);
+        return (CellAction::Eat, updated_memory);
     }
     
     // Priority 3: If we have high energy and found plants, consider splitting
@@ -141,7 +145,9 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
             memory.exploration_mode = 1; // Set child to systematic exploration
             memory.write_to_blob_memory(&mut child_memory);
             
-            return CellAction::Split(direction, SPLIT_ENERGY_AMOUNT, 1, child_memory);
+            let mut updated_memory = blob_state.memory;
+            memory.write_to_blob_memory(&mut updated_memory);
+            return (CellAction::Split(direction, SPLIT_ENERGY_AMOUNT, 1, child_memory), updated_memory);
         }
     }
     
@@ -149,7 +155,9 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
     if blob_state.energy < MIN_ENERGY_TO_EXPLORE {
         // Move towards nearby energy
         if let Some(direction) = find_best_energy_direction(context) {
-            return CellAction::Move(direction);
+            let mut updated_memory = blob_state.memory;
+            memory.write_to_blob_memory(&mut updated_memory);
+            return (CellAction::Move(direction), updated_memory);
         }
     }
     
@@ -161,7 +169,9 @@ fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -
         _ => random_exploration(context, &mut rng),
     };
     
-    action
+    let mut updated_memory = blob_state.memory;
+    memory.write_to_blob_memory(&mut updated_memory);
+    (action, updated_memory)
 }
 
 fn random_exploration(context: &CellContext, rng: &mut StdRand) -> CellAction {
@@ -237,8 +247,8 @@ fn trail_making(context: &CellContext, rng: &mut StdRand, memory: &ExplorerMemor
 pub fn mind_function(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let (blob_state, cell_context, seed) = capnp_to_mind_input(&input)?;
     
-    let action = explorer_strategy(&blob_state, &cell_context, seed);
+    let (action, updated_memory) = explorer_strategy(&blob_state, &cell_context, seed);
     
-    let capnp_vec = cell_action_to_capnp(&action).map_err(|e| Error::msg(e.to_string()))?;
+    let capnp_vec = mind_output_to_capnp(&action, &updated_memory).map_err(|e| Error::msg(e.to_string()))?;
     Ok(capnp_vec)
 }

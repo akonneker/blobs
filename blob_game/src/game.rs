@@ -2,7 +2,7 @@ use blob_interface::cell::{Cell};
 use blob_interface::world::{World, relative_position, EnergySource};
 use blob_interface::cell::{CellContext, CellAction};
 use blob_interface::types::{Coordinate, CellId, TeamId, Pheromone, CellMessage, Direction};
-use blob_interface::action_converter::{capnp_to_cell_action};
+use blob_interface::mind_output_converter::{capnp_to_mind_output};
 use blob_interface::mind_input_converter::cell_to_mind_input_capnp;
 use crate::config::{CellConfig, MemoryConfig, StateConfig};
 use std::collections::HashMap;
@@ -188,18 +188,18 @@ impl Game {
         self.seeds.insert(team_id, self.rng.random_range(0..u64::MAX));
         
         // Place starting cells for this team in a cluster with the specified start_id
-        self.place_team_cluster_with_start_id(team_id, start_id)?;
+        self.place_team_cluster_with_start_id(team_id, start_id, false)?;
         
         Ok(())
     }
 
     /// Place a team's starting cells in a spiral checkerboard cluster with a central plant
     fn place_team_cluster(&mut self, team_id: TeamId) -> Result<(), String> {
-        self.place_team_cluster_with_start_id(team_id, 0)
+        self.place_team_cluster_with_start_id(team_id, 0, false)
     }
 
     /// Place a team's starting cells in a spiral checkerboard cluster with a central plant
-    fn place_team_cluster_with_start_id(&mut self, team_id: TeamId, start_id: u32) -> Result<(), String> {
+    fn place_team_cluster_with_start_id(&mut self, team_id: TeamId, start_id: u32, verbose: bool) -> Result<(), String> {
         let num_teams = self.teams.len();
         let team_index = team_id.0;
         
@@ -243,9 +243,13 @@ impl Game {
                 self.cells.insert(new_cell_id, cell);
                 self.coordinate_map.insert(position, new_cell_id);
                 self.inv_coordinate_map.insert(new_cell_id, position);
-                println!("Placed starting cell {:?} for team {:?} at {:?} with marker {}", new_cell_id, team_id, position, start_id);
+                if verbose {
+                    println!("Placed starting cell {:?} for team {:?} at {:?} with marker {}", new_cell_id, team_id, position, start_id);
+                }
             } else {
-                eprintln!("Warning: Position {:?} already occupied when placing team {:?}", position, team_id);
+                if verbose {
+                    eprintln!("Warning: Position {:?} already occupied when placing team {:?}", position, team_id);
+                }
             }
         }
         
@@ -302,10 +306,12 @@ impl Game {
                 if positions.len() >= num_cells {
                     break;
                 }
-                // Only add valid positions within world bounds
-                if pos.x < self.world.dimensions.0 && pos.y < self.world.dimensions.1 {
-                    positions.push(pos);
-                }
+                // With torus topology, all positions are valid - wrap coordinates
+                let wrapped_pos = Coordinate {
+                    x: pos.x % self.world.dimensions.0,
+                    y: pos.y % self.world.dimensions.1,
+                };
+                positions.push(wrapped_pos);
             }
             
             ring += 1;
@@ -340,17 +346,26 @@ impl Game {
                     let x = center.x as i32 + dx;
                     let y = center.y as i32 + dy;
                     
-                    // Check bounds
-                    if x >= 0 && y >= 0 {
-                        let coord = Coordinate {
-                            x: x as usize,
-                            y: y as usize,
-                        };
-                        
-                        // Apply checkerboard pattern (match the center's parity)
-                        if (coord.x + coord.y) % 2 == center_parity {
-                            positions.push(coord);
-                        }
+                    // With torus topology, wrap negative coordinates
+                    let wrapped_x = if x < 0 { 
+                        (self.world.dimensions.0 as i32 + x) as usize 
+                    } else { 
+                        (x as usize) % self.world.dimensions.0 
+                    };
+                    let wrapped_y = if y < 0 { 
+                        (self.world.dimensions.1 as i32 + y) as usize 
+                    } else { 
+                        (y as usize) % self.world.dimensions.1 
+                    };
+                    
+                    let coord = Coordinate {
+                        x: wrapped_x,
+                        y: wrapped_y,
+                    };
+                    
+                    // Apply checkerboard pattern (match the center's parity)
+                    if (coord.x + coord.y) % 2 == center_parity {
+                        positions.push(coord);
                     }
                 }
             }
@@ -381,12 +396,84 @@ impl Game {
                 println!("Iteration {}", self.iteration);
             }
             self.tick(verbose)?;
+            
+            // Check for team elimination after each tick
+            if let Some(surviving_teams) = self.check_team_elimination() {
+                let summary = self.generate_game_summary(&surviving_teams);
+                println!("{}", summary);
+                return Ok(());
+            }
         }
+        
+        // If we reach max iterations without elimination, show final status
+        println!("=== SIMULATION COMPLETE ===");
+        println!("Reached maximum iterations: {}", self.max_iterations);
+        
+        let all_teams: Vec<TeamId> = self.teams.keys().cloned().collect();
+        let final_summary = self.generate_game_summary(&all_teams);
+        println!("{}", final_summary);
+        
+        Ok(())
+    }
+
+    /// Run the simulation while saving images of each iteration
+    pub fn run_with_images(&mut self, verbose: bool, output_dir: &PathBuf) -> Result<(), Error> {
+        // Calculate the number of digits needed for zero-padding
+        let max_digits = (self.max_iterations as f64).log10().floor() as usize + 1;
+        
+        // Create output directory if it doesn't exist
+        if !output_dir.exists() {
+            std::fs::create_dir_all(output_dir).map_err(|e| Error::msg(format!("Failed to create output directory: {}", e)))?;
+        }
+        
+        while self.iteration < self.max_iterations {
+            if verbose {
+                println!("Iteration {}", self.iteration);
+            }
+            
+            // Save image before tick (so we capture iteration 0)
+            let filename = format!("iteration_{:0width$}.png", self.iteration, width = max_digits);
+            let filepath = output_dir.join(filename);
+            if let Err(e) = self.generate_board_image(8, Some(filepath.to_str().unwrap()), true) {
+                eprintln!("Warning: Failed to save image for iteration {}: {}", self.iteration, e);
+            }
+            
+            self.tick(verbose)?;
+            
+            // Check for team elimination after each tick
+            if let Some(surviving_teams) = self.check_team_elimination() {
+                // Save final image after elimination
+                let final_filename = format!("iteration_{:0width$}.png", self.iteration, width = max_digits);
+                let final_filepath = output_dir.join(final_filename);
+                if let Err(e) = self.generate_board_image(8, Some(final_filepath.to_str().unwrap()), true) {
+                    eprintln!("Warning: Failed to save final image: {}", e);
+                }
+                
+                let summary = self.generate_game_summary(&surviving_teams);
+                println!("{}", summary);
+                return Ok(());
+            }
+        }
+        
+        // If we reach max iterations without elimination, save final image and show final status
+        let final_filename = format!("iteration_{:0width$}.png", self.iteration, width = max_digits);
+        let final_filepath = output_dir.join(final_filename);
+        if let Err(e) = self.generate_board_image(8, Some(final_filepath.to_str().unwrap()), true) {
+            eprintln!("Warning: Failed to save final image: {}", e);
+        }
+        
+        println!("=== SIMULATION COMPLETE ===");
+        println!("Reached maximum iterations: {}", self.max_iterations);
+        
+        let all_teams: Vec<TeamId> = self.teams.keys().cloned().collect();
+        let final_summary = self.generate_game_summary(&all_teams);
+        println!("{}", final_summary);
+        
         Ok(())
     }
 
     /// Run a specified number of game steps (iterations)
-    /// Returns the number of steps actually executed (may be less if max_iterations is reached)
+    /// Returns the number of steps actually executed (may be less if max_iterations is reached or team elimination occurs)
     pub fn step(&mut self, steps: u64, verbose: bool) -> Result<u64, Error> {
         let mut executed_steps = 0;
         for _ in 0..steps {
@@ -398,6 +485,60 @@ impl Game {
             }
             self.tick(verbose)?;
             executed_steps += 1;
+            
+            // Check for team elimination after each tick
+            if let Some(surviving_teams) = self.check_team_elimination() {
+                let summary = self.generate_game_summary(&surviving_teams);
+                println!("{}", summary);
+                break;
+            }
+        }
+        Ok(executed_steps)
+    }
+
+    /// Run a specified number of game steps while saving images of each iteration
+    /// Returns the number of steps actually executed (may be less if max_iterations is reached or team elimination occurs)
+    pub fn step_with_images(&mut self, steps: u64, verbose: bool, output_dir: &PathBuf) -> Result<u64, Error> {
+        // Calculate the number of digits needed for zero-padding based on max_iterations
+        let max_digits = (self.max_iterations as f64).log10().floor() as usize + 1;
+        
+        // Create output directory if it doesn't exist
+        if !output_dir.exists() {
+            std::fs::create_dir_all(output_dir).map_err(|e| Error::msg(format!("Failed to create output directory: {}", e)))?;
+        }
+        
+        let mut executed_steps = 0;
+        for _ in 0..steps {
+            if self.iteration >= self.max_iterations {
+                break;
+            }
+            if verbose {
+                println!("Iteration {}", self.iteration);
+            }
+            
+            // Save image before tick (so we capture the current state)
+            let filename = format!("iteration_{:0width$}.png", self.iteration, width = max_digits);
+            let filepath = output_dir.join(filename);
+            if let Err(e) = self.generate_board_image(8, Some(filepath.to_str().unwrap()), true) {
+                eprintln!("Warning: Failed to save image for iteration {}: {}", self.iteration, e);
+            }
+            
+            self.tick(verbose)?;
+            executed_steps += 1;
+            
+            // Check for team elimination after each tick
+            if let Some(surviving_teams) = self.check_team_elimination() {
+                // Save final image after elimination
+                let final_filename = format!("iteration_{:0width$}.png", self.iteration, width = max_digits);
+                let final_filepath = output_dir.join(final_filename);
+                if let Err(e) = self.generate_board_image(8, Some(final_filepath.to_str().unwrap()), true) {
+                    eprintln!("Warning: Failed to save final image: {}", e);
+                }
+                
+                let summary = self.generate_game_summary(&surviving_teams);
+                println!("{}", summary);
+                break;
+            }
         }
         Ok(executed_steps)
     }
@@ -441,9 +582,11 @@ impl Game {
             let cell_team_id = cell_copy.team_id;
             let context = self.get_cell_context(*coordinate);
 
-            let seed = self.seeds.get(&cell_team_id).unwrap();
+            let base_seed = self.seeds.get(&cell_team_id).unwrap();
+            // Combine base seed, cell ID, and current iteration for unique randomness each tick
+            let cell_seed = base_seed.wrapping_add(cell_id.0 as u64).wrapping_add(self.iteration);
 
-            let cell_input_res = cell_to_mind_input_capnp(&cell_copy, &context, *seed);
+            let cell_input_res = cell_to_mind_input_capnp(&cell_copy, &context, cell_seed);
 
             let cell_input: Vec<u8>;
             match cell_input_res {
@@ -463,15 +606,17 @@ impl Game {
             };
 
             let action: CellAction;
+            let mut updated_memory: Option<[u8; 2048]> = None;
             match mind_result {
                 Ok(output_value) => {
-                    let action_result = capnp_to_cell_action(&output_value);
-                    match action_result {
-                        Ok(parsed_action) => {
+                    let output_result = capnp_to_mind_output(&output_value);
+                    match output_result {
+                        Ok((parsed_action, memory)) => {
                             action = parsed_action;
+                            updated_memory = Some(memory);
                         }
                         Err(e) => {
-                            eprintln!("Error parsing action for cell {:?}: {}", cell_id, e);
+                            eprintln!("Error parsing mind output for cell {:?}: {}", cell_id, e);
                             action = CellAction::DoNothing;
                         }
                     }
@@ -536,6 +681,13 @@ impl Game {
                 }
                 CellAction::DoNothing => {
                     self.cells.get_mut(cell_id).unwrap().defending = false;
+                }
+            }
+            
+            // Update cell memory after processing the action
+            if let Some(memory) = updated_memory {
+                if let Some(cell) = self.cells.get_mut(cell_id) {
+                    cell.set_memory_array(memory);
                 }
             }
             
@@ -605,25 +757,62 @@ impl Game {
                             }
 
                             if target_cell_mut.energy == 0 {
-                                println!("Cell {:?} (energy snapshot {}) killed cell {:?} with {} damage (raw {}). Target was {}defending.", 
-                                    attacker_id, attacker_energy_snapshot, target_id, calculated_damage, 
-                                    // to see raw before defense: re-calculate or store intermediate before /2
-                                    if attacker_energy_snapshot >= cfg.max_energy_for_attack_scaling { cfg.max_attack_power } 
-                                    else { (cfg.min_attack_power as f32 + (attacker_energy_snapshot as f32 / cfg.max_energy_for_attack_scaling as f32) * (cfg.max_attack_power - cfg.min_attack_power) as f32).round() as u32 }, 
-                                    if target_cell_mut.defending { "" } else { "not "}
-                                );
+                                if verbose {
+                                    println!("Cell {:?} (energy snapshot {}) killed cell {:?} with {} damage (raw {}). Target was {}defending.", 
+                                        attacker_id, attacker_energy_snapshot, target_id, calculated_damage, 
+                                        // to see raw before defense: re-calculate or store intermediate before /2
+                                        if attacker_energy_snapshot >= cfg.max_energy_for_attack_scaling { cfg.max_attack_power } 
+                                        else { (cfg.min_attack_power as f32 + (attacker_energy_snapshot as f32 / cfg.max_energy_for_attack_scaling as f32) * (cfg.max_attack_power - cfg.min_attack_power) as f32).round() as u32 }, 
+                                        if target_cell_mut.defending { "" } else { "not "}
+                                    );
+                                }
                                 if let Some(killed_target_pos) = self.inv_coordinate_map.remove(&target_id) {
                                     self.coordinate_map.remove(&killed_target_pos);
                                     let killed_cell_min_energy = self.cells.get(&target_id).map_or(0, |c| c.min_energy);
                                     let killed_cell_loaded = self.cells.get(&target_id).map_or(false, |c| c.loaded);
 
                                     if killed_cell_min_energy > 0 {
-                                        self.world.set_energy_at(killed_target_pos, Some(EnergySource::Scattered(killed_cell_min_energy)));
-                                        println!("Cell {:?} dropped {} energy at {:?} upon death.", target_id, killed_cell_min_energy, killed_target_pos);
+                                        // Check if there's already an energy source at this position
+                                        let x_wrapped = killed_target_pos.x % self.world.dimensions.0;
+                                        let y_wrapped = killed_target_pos.y % self.world.dimensions.1;
+                                        let world_idx = y_wrapped * self.world.dimensions.0 + x_wrapped;
+                                        
+                                        match self.world.energy[world_idx].clone() {
+                                            Some(EnergySource::Plant { rate, current_energy, max_energy }) => {
+                                                // Add to existing plant, but don't exceed max_energy
+                                                let new_current = (current_energy + killed_cell_min_energy).min(max_energy);
+                                                self.world.energy[world_idx] = Some(EnergySource::Plant {
+                                                    rate,
+                                                    current_energy: new_current,
+                                                    max_energy,
+                                                });
+                                                if verbose {
+                                                    println!("Cell {:?} dropped {} energy into plant at {:?} (plant energy {} -> {})", 
+                                                        target_id, killed_cell_min_energy, killed_target_pos, current_energy, new_current);
+                                                }
+                                            }
+                                            Some(EnergySource::Scattered(existing_amount)) => {
+                                                // Add to existing scattered energy
+                                                self.world.energy[world_idx] = Some(EnergySource::Scattered(existing_amount + killed_cell_min_energy));
+                                                if verbose {
+                                                    println!("Cell {:?} dropped {} energy at {:?} (scattered energy {} -> {})", 
+                                                        target_id, killed_cell_min_energy, killed_target_pos, existing_amount, existing_amount + killed_cell_min_energy);
+                                                }
+                                            }
+                                            None => {
+                                                // No existing energy, create new scattered energy
+                                                self.world.energy[world_idx] = Some(EnergySource::Scattered(killed_cell_min_energy));
+                                                if verbose {
+                                                    println!("Cell {:?} dropped {} energy at {:?} upon death.", target_id, killed_cell_min_energy, killed_target_pos);
+                                                }
+                                            }
+                                        }
                                     }
                                     if killed_cell_loaded {
                                         self.world.set_elevation_at(killed_target_pos, self.world.elevation_at(killed_target_pos) + 1);
-                                        println!("Cell {:?} dropped terrain at {:?} upon death.", target_id, killed_target_pos);
+                                        if verbose {
+                                            println!("Cell {:?} dropped terrain at {:?} upon death.", target_id, killed_target_pos);
+                                        }
                                     }
                                 }
                                 self.cells.remove(&target_id); // Remove after getting min_energy and loaded status
@@ -650,12 +839,11 @@ impl Game {
                         }
 
                         // Proceed with split logic (already implemented by user/previous steps)
-                        if energy_to_child_i32 <= 0 {
-                            continue; 
-                        }
                         let energy_for_child = energy_to_child_i32 as u32;
                         if energy_for_child <= self.cell_config.min_energy { // Child must have more than min_energy
-                            println!("Split by {:?} failed: energy for child ({}) not greater than min_energy ({}).", parent_id, energy_for_child, self.cell_config.min_energy);
+                            if verbose {
+                                println!("Split by {:?} failed: energy for child ({}) not greater than min_energy ({}).", parent_id, energy_for_child, self.cell_config.min_energy);
+                            }
                             continue;
                         }
 
@@ -682,7 +870,9 @@ impl Game {
                                     child_cell_mut.marker = child_marker;
                                     child_cell_mut.set_memory_array(child_memory);
                                 }
-                                println!("Cell {:?} split, creating child {:?} at {:?} with energy {}", parent_id, child_id, target_coordinate, energy_for_child);
+                                if verbose {
+                                    println!("Cell {:?} split, creating child {:?} at {:?} with energy {}", parent_id, child_id, target_coordinate, energy_for_child);
+                                }
                             }
                         }
                     } else {
@@ -752,14 +942,22 @@ impl Game {
                     if let Some(cell) = self.cells.get_mut(&cell_id) {
                         // Check if cell is already at max energy
                         if cell.energy >= self.cell_config.max_energy {
-                            println!("Cell {:?} attempt to eat at {:?} failed: already at max energy ({}/{})", cell_id, position, cell.energy, self.cell_config.max_energy);
+                            if verbose {
+                                println!("Cell {:?} attempt to eat at {:?} failed: already at max energy ({}/{})", cell_id, position, cell.energy, self.cell_config.max_energy);
+                            }
                             continue; // Do not eat, leave tile energy as is
                         }
 
-                        let world_idx = position.y * self.world.dimensions.0 + position.x;
                         let mut energy_gained: u32;
 
-                        if world_idx < self.world.energy.len() {
+                        // Use World's torus-aware methods instead of manual indexing
+                        let current_energy_at_pos = self.world.energy_at(position);
+                        if current_energy_at_pos > 0 {
+                            // Get the actual energy source (need to access directly for modification)
+                            let x_wrapped = position.x % self.world.dimensions.0;
+                            let y_wrapped = position.y % self.world.dimensions.1;
+                            let world_idx = y_wrapped * self.world.dimensions.0 + x_wrapped;
+                            
                             if let Some(energy_source_at_pos) = self.world.energy[world_idx].clone() { // Clone to inspect
 
                                 match energy_source_at_pos {
@@ -769,16 +967,20 @@ impl Game {
                                             energy_gained = self.cell_config.max_energy - cell.energy;
                                         }
                                         if energy_gained > 0 { // if any energy can be gained
-                                           println!("Cell {:?} eating {} scattered energy (available {}) at {:?}. Energy {} -> {}", 
-                                                cell_id, energy_gained, amount, position, cell.energy, cell.energy + energy_gained);
-                                           cell.energy += energy_gained;
-                                           if amount == energy_gained { // Consumed all
-                                               self.world.energy[world_idx] = None; 
-                                           } else { // Consumed partially
-                                               self.world.energy[world_idx] = Some(EnergySource::Scattered(amount - energy_gained));
-                                           }
+                                            if verbose {
+                                                println!("Cell {:?} eating {} scattered energy (available {}) at {:?}. Energy {} -> {}", 
+                                                    cell_id, energy_gained, amount, position, cell.energy, cell.energy + energy_gained);
+                                            }
+                                            cell.energy += energy_gained;
+                                            if amount == energy_gained { // Consumed all
+                                                self.world.energy[world_idx] = None; 
+                                            } else { // Consumed partially
+                                                self.world.energy[world_idx] = Some(EnergySource::Scattered(amount - energy_gained));
+                                            }
                                         } else {
-                                            println!("Cell {:?} cannot eat more scattered energy at {:?}. Already at {}/{}", cell_id, position, cell.energy, self.cell_config.max_energy);
+                                            if verbose {
+                                                println!("Cell {:?} cannot eat more scattered energy at {:?}. Already at {}/{}", cell_id, position, cell.energy, self.cell_config.max_energy);
+                                            }
                                         }
                                     }
                                     EnergySource::Plant { rate, current_energy, max_energy } => {
@@ -787,8 +989,10 @@ impl Game {
                                             energy_gained = self.cell_config.max_energy - cell.energy;
                                         }
                                         if energy_gained > 0 { // if any energy can be gained
-                                            println!("Cell {:?} eating {} energy from plant (available {}) at {:?}. Energy {} -> {}", 
-                                                cell_id, energy_gained, current_energy, position, cell.energy, cell.energy + energy_gained);
+                                            if verbose {
+                                                println!("Cell {:?} eating {} energy from plant (available {}) at {:?}. Energy {} -> {}", 
+                                                    cell_id, energy_gained, current_energy, position, cell.energy, cell.energy + energy_gained);
+                                            }
                                             cell.energy += energy_gained;
                                             self.world.energy[world_idx] = Some(EnergySource::Plant {
                                                 rate,
@@ -796,13 +1000,17 @@ impl Game {
                                                 max_energy,
                                             });
                                         } else {
-                                            println!("Cell {:?} cannot eat more plant energy at {:?}. Already at {}/{}", cell_id, position, cell.energy, self.cell_config.max_energy);
+                                            if verbose {
+                                                println!("Cell {:?} cannot eat more plant energy at {:?}. Already at {}/{}", cell_id, position, cell.energy, self.cell_config.max_energy);
+                                            }
                                             // No energy gained, source remains as is
                                         }
                                     }
                                 }
                             } else { // No energy source at position
-                                println!("Cell {:?} attempt to eat at {:?} failed: no energy source found.", cell_id, position);
+                                if verbose {
+                                    println!("Cell {:?} attempt to eat at {:?} failed: no energy source found.", cell_id, position);
+                                }
                             }
                         } else {
                             eprintln!("Error: Eat action for cell {:?} at {:?} - position is out of world bounds.", cell_id, position);
@@ -836,6 +1044,98 @@ impl Game {
         Ok(())
 
         // TODO: Apply pheromone decay, etc.
+    }
+    
+    /// Check if any team has been completely eliminated
+    /// Returns Some(surviving_teams) if any team died, None if all teams still have cells
+    pub fn check_team_elimination(&self) -> Option<Vec<TeamId>> {
+        let mut team_cell_counts: HashMap<TeamId, usize> = HashMap::new();
+        
+        // Initialize all teams with 0 count
+        for team_id in self.teams.keys() {
+            team_cell_counts.insert(*team_id, 0);
+        }
+        
+        // Count cells for each team
+        for cell in self.cells.values() {
+            *team_cell_counts.entry(cell.team_id).or_insert(0) += 1;
+        }
+        
+        let surviving_teams: Vec<TeamId> = team_cell_counts
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .map(|(team_id, _)| *team_id)
+            .collect();
+        
+        let eliminated_teams: Vec<TeamId> = team_cell_counts
+            .iter()
+            .filter(|(_, count)| **count == 0)
+            .map(|(team_id, _)| *team_id)
+            .collect();
+        
+        if !eliminated_teams.is_empty() {
+            Some(surviving_teams)
+        } else {
+            None
+        }
+    }
+    
+    /// Generate a game summary including team statistics
+    pub fn generate_game_summary(&self, surviving_teams: &[TeamId]) -> String {
+        let mut summary = String::new();
+        summary.push_str("=== GAME OVER ===\n");
+        summary.push_str(&format!("Simulation ended at iteration {}\n", self.iteration));
+        summary.push_str(&format!("Reason: Team elimination\n\n"));
+        
+        // Count cells and calculate statistics for each team
+        let mut team_stats: HashMap<TeamId, (usize, u32, u32)> = HashMap::new(); // (cell_count, total_energy, total_age)
+        
+        // Initialize all teams
+        for team_id in self.teams.keys() {
+            team_stats.insert(*team_id, (0, 0, 0));
+        }
+        
+        // Collect statistics for surviving cells
+        for cell in self.cells.values() {
+            let (cell_count, total_energy, total_age) = team_stats.entry(cell.team_id).or_insert((0, 0, 0));
+            *cell_count += 1;
+            *total_energy += cell.energy;
+            *total_age += cell.age;
+        }
+        
+        // Display results
+        if surviving_teams.len() == 1 {
+            summary.push_str(&format!("WINNER: Team {} (sole survivor)\n\n", surviving_teams[0].0));
+        } else if surviving_teams.len() > 1 {
+            summary.push_str(&format!("SURVIVORS: {} teams remaining\n", surviving_teams.len()));
+            for team_id in surviving_teams {
+                summary.push_str(&format!("  - Team {}\n", team_id.0));
+            }
+            summary.push_str("\n");
+        } else {
+            summary.push_str("EXTINCTION: All teams eliminated\n\n");
+        }
+        
+        // Detailed team statistics
+        summary.push_str("FINAL TEAM STATISTICS:\n");
+        summary.push_str(&format!("{:<8} {:<8} {:<12} {:<12} {:<12}\n", "Team", "Status", "Cells", "Total Energy", "Avg Age"));
+        summary.push_str("─".repeat(60).as_str());
+        summary.push_str("\n");
+        
+        for (team_id, (cell_count, total_energy, total_age)) in team_stats.iter() {
+            let status = if surviving_teams.contains(team_id) { "ALIVE" } else { "ELIMINATED" };
+            let avg_age = if *cell_count > 0 { *total_age / *cell_count as u32 } else { 0 };
+            
+            summary.push_str(&format!(
+                "{:<8} {:<8} {:<12} {:<12} {:<12}\n",
+                team_id.0, status, cell_count, total_energy, avg_age
+            ));
+        }
+        
+        summary.push_str(&format!("\nWorld dimensions: {}x{}\n", self.world.dimensions.0, self.world.dimensions.1));
+        summary.push_str(&format!("Final iteration: {}/{}\n", self.iteration, self.max_iterations));
+        
+        summary
     }
     
     /// Enhanced tick method that includes automatic state saving

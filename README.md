@@ -8,7 +8,8 @@ This project is a simulation of a 2D world where blobs compete for resources. Ea
 
 The core idea is to provide a platform for developing and testing different AI strategies for the blobs. The game is highly customizable, allowing you to change the world generation, cell properties, and more.
 
-Currently the sample minds are AI-generated garbage. Better ones should be pushed in the next few days. I also n
+
+Currently the sample minds are AI-generated garbage. Better ones should be pushed in the next few days.
 
 ## Project Structure
 
@@ -105,7 +106,9 @@ The `start_id` is important because minds can use it to distinguish between alli
 
 To create your own mind, you can start by copying one of the existing minds (e.g., `simple_mind`). A mind is a Rust crate that compiles to WASM and exposes a single function, `mind_function`, which is called by the game on each turn.
 
-The `mind_function` function receives the current state of the blob and its surroundings as input (`MindInput`) and should return an `Action` for the blob to perform. The `blob_interface` crate provides the necessary data structures and serialization functions.
+The `mind_function` function receives the current state of the blob and its surroundings as input (`MindInput`) and should return a `MindOutput` containing both an action and updated memory for the blob to perform. The `blob_interface` crate provides the necessary data structures and serialization functions.
+
+**Important**: Your mind function must return a `MindOutput` struct that includes both the action and updated memory. Memory persists between actions, allowing your mind to maintain state across turns.
 
 Your `Cargo.toml` should be configured to produce a `cdylib` library type:
 
@@ -131,12 +134,22 @@ The use of Cap'n Proto also adds its own restrictions on language usage, but tha
 
 ## The `blob_interface` API
 
-The communication between the game and the minds is defined in the `blob_interface` crate. The two main data structures are:
+The communication between the game and the minds is defined in the `blob_interface` crate. The main data structures are:
 
 -   `MindInput`: This struct contains all the information a mind receives on each turn. This includes:
     -   `BlobState`: The internal state of the blob (energy, memory, etc.).
     -   `BlobContext`: Information about the blob's immediate surroundings (elevation, energy, pheromones, etc.).
--   `Action`: This enum represents the possible actions a blob can perform. This includes moving, attacking, eating, splitting, and more.
+-   `MindOutput`: This struct contains what a mind returns on each turn:
+    -   `Action`: The action the blob should perform (move, attack, eat, split, etc.).
+    -   `Memory`: Updated memory state that will persist to the next turn (2048 bytes).
+
+**Memory Persistence**: Each blob has 2048 bytes of persistent memory that survives across all actions. This allows minds to implement complex behaviors like:
+- Directional movement patterns
+- Resource tracking and exploration strategies  
+- State machines for different behaviors
+- Learning and adaptation over time
+
+The memory is automatically preserved between actions, so your mind can maintain stateful information like current direction, discovered resources, or behavioral modes.
 
 For more details, see the Cap'n Proto schema files in `blob_interface/interface`.
 

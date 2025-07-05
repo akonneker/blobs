@@ -1,4 +1,3 @@
-
 use std::collections::HashSet;
 use libnoise::prelude::*;
 use probability::prelude::*;
@@ -79,14 +78,12 @@ pub fn generate_energy(width: usize, height: usize, seed: Option<u64>, config: &
     let mut occupied_coords = HashSet::new();
     let total_cells = width * height;
 
-
-
     let scattered_energy_values = sample_from_distribution(&config.scattered_energy, seed, config.num_scattered);
     let plant_rate_values = sample_from_distribution(&config.plant_rate, seed, config.num_plants);
     let plant_max_energy_values = sample_from_distribution(&config.plant_max_energy, seed, config.num_plants);
     let plant_current_energy_values = sample_from_distribution(&config.plant_current_energy, seed, config.num_plants);
 
-    let mut rng = rand::rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed.unwrap_or(42));
 
     // Generate Scattered Energy
     for i in 0..config.num_scattered {
