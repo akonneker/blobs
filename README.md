@@ -52,9 +52,13 @@ The project is structured as a Cargo workspace with the following main component
 
 ## How to Create a Mind
 
-To create your own mind, you can start by copying one of the existing minds (e.g., `simple_mind`). A mind is a Rust crate that compiles to WASM and exposes a single function, `mind_function`, which is called by the game on each turn.
+To create your own mind, you can start by copying one of the existing minds
+(for example, `simple_mind`). A mind compiles to WASM and exports
+`reference_mind_function`, which is called once for each ready cell.
 
-The `mind_function` function receives the current state of the blob and its surroundings as input (`MindInput`) and should return an `Action` for the blob to perform. The `blob_interface` crate provides the necessary data structures and serialization functions.
+The function receives canonical Cap'n Proto bytes for one isolated cell and
+returns a complete action, optional anonymous signal, and explicit private-
+memory operation. The schema and bounded converters live in `blob_interface`.
 
 Your `Cargo.toml` should be configured to produce a `cdylib` library type:
 
@@ -65,7 +69,34 @@ crate-type = ["cdylib"]
 
 ### Using Extism and Other Languages
 
-The game uses the [Extism](https://extism.org/) plug-in system to load and run the WASM minds. This means that you are not limited to Rust for writing your minds. Any language that has an [Extism PDK (Plug-in Development Kit)](https://extism.org/docs/category/pdk-documentation) can be used. This includes:
+Mind authors continue to use an [Extism PDK](https://extism.org/docs/category/pdk-documentation),
+so they are not tied to the host's Rust implementation. The default host is
+Extism. An experimental `memory.wasm_executor = "extism_compat"` host executes
+the same byte-oriented PDK contract directly with Wasmtime and avoids much of
+Extism's per-instance host setup. Its workers share one immutable engine,
+compiled module, link plan, and deadline ticker per team pool. Every cell
+decision still creates a fresh store, guest instance, guest memory, and host
+byte arena. The fresh host arena keeps ordinary decision bytes and allocation
+metadata inline, spilling to bounded heap storage for larger PDK calls; that
+storage is never shared across decisions. Stock Extism keeps a worker-local
+compiled descriptor because its
+public compiled type can contain non-thread-safe host user data; no unsafe
+sharing wrapper is used.
+
+The restricted host admits the deterministic PDK memory/input/output imports
+only. It deliberately rejects WASI, configuration, variables, HTTP, custom
+host functions, and logging. A Mind using one of those capabilities is invalid,
+not silently given a shared or persistent resource. Stock Extism remains the
+compatibility oracle. Maintained AssemblyScript and TinyGo artifacts are
+admitted and executed through both hosts in conformance testing.
+
+Online submissions bind the named `extism_pdk_deterministic_v1` profile into
+the signed verification manifest. Admission parses the artifact before
+compilation and rejects modules whose typed imports, required export, memory,
+or table shape falls outside that profile. Executor choice and worker count do
+not enter the canonical match contract.
+
+Extism publishes PDKs for languages including:
 
 -   Rust
 -   Go
@@ -74,20 +105,26 @@ The game uses the [Extism](https://extism.org/) plug-in system to load and run t
 -   AssemblyScript (TypeScript-like)
 -   C/C++
 
-To create a mind in another language, you will need to follow the instructions for that language's PDK to create a WASM module that exports a `mind_function` function. 
+To create a Mind in another language, use that language's PDK to export
+`reference_mind_function: () -> i32`, decode and encode
+`blob_interface/interface/reference_mind.capnp`, and restrict imports to the
+deterministic PDK memory contract. The same artifact can run on stock Extism;
+it does not target a project-specific Wasmtime SDK.
 
-The use of Cap'n Proto also adds its own restrictions on language usage, but that could be swapped out for another serialization scheme.
+Run `scripts/build_language_minds.sh` to build the maintained AssemblyScript
+and Go canaries. The Go target is TinyGo `wasm-unknown`; ordinary
+`GOOS=wasip1` output is rejected because WASI is outside the deterministic
+profile.
 
 ## The `blob_interface` API
 
-The communication between the game and the minds is defined in the `blob_interface` crate. The two main data structures are:
-
--   `MindInput`: This struct contains all the information a mind receives on each turn. This includes:
-    -   `BlobState`: The internal state of the blob (energy, memory, etc.).
-    -   `BlobContext`: Information about the blob's immediate surroundings (elevation, energy, pheromones, etc.).
--   `Action`: This enum represents the possible actions a blob can perform. This includes moving, attacking, eating, splitting, and more.
-
-For more details, see the Cap'n Proto schema files in `blob_interface/interface`.
+The communication boundary is Mind ABI v6 in
+`blob_interface/interface/reference_mind.capnp`. It contains one cell's own
+state, bounded anonymous local observations, action availability, explicit
+private memory, and private random bytes. Outputs cover Wait, Move, Attack,
+Guard, Consume, Split, Regurgitate, Excavate, and DepositTerrain. Local slot
+visibility uses explicit presence bits plus inline scalar values, preserving
+hidden-versus-visible-zero semantics without pointer-backed option objects.
 
 ## Contributing
 

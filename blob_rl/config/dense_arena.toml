@@ -1,0 +1,61 @@
+# Dense arena config — tiny board, forced interactions, loud eat rewards
+# Designed to bootstrap learning with strong action-dependent signals
+
+num_envs = 16
+rollout_length = 128
+total_timesteps = 1_000_000
+eval_interval = 25
+checkpoint_interval = 100
+checkpoint_dir = "./checkpoints/dense_arena"
+
+[ppo]
+clip_epsilon = 0.2
+gamma = 0.99
+gae_lambda = 0.95
+epochs_per_update = 4
+minibatch_size = 128
+learning_rate = 3e-4
+entropy_coeff = 0.02
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+
+[model]
+hidden1 = 128
+hidden2 = 64
+
+[env]
+world_size = 16               # tiny arena — 256 tiles total
+cells_per_team = 4            # fewer cells, more likely to encounter food/enemies
+max_episode_len = 200         # short episodes on tiny board
+num_teams = 2
+
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+min_attack_power = 5
+max_attack_power = 50
+max_energy_for_attack_scaling = 200
+
+# Dense food — ~20% tile coverage
+num_scattered_energy = 30
+scattered_energy_amount = 25
+num_plants = 20
+plant_rate = 3
+plant_max_energy = 100
+
+[reward]
+survive_tick = 0.0            # ZERO — removes constant noise from gradient
+eat_energy = 0.1              # 20× boost: eating 25 energy = +2.5 reward
+kill_enemy = 5.0              # strong kill signal
+cell_died = -2.0
+split_success = 3.0
+team_wins = 10.0
+team_loses = -10.0
+move_toward_food = 0.0        # disabled — food is dense enough
+move_toward_enemy = 0.0       # disabled — board is small enough
+proximity_search_radius = 5
+
+[self_play]
+start_after_timesteps = 500_000
+opponent_update_interval = 50
+max_opponent_pool = 10

@@ -1,0 +1,26 @@
+[package]
+name = "blob_rl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blob_interface = { path = "../blob_interface" }
+blob_engine = { path = "../blob_engine" }
+burn = { version = "0.20", features = ["autodiff", "train"] }
+rayon = "1.10"
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+
+[features]
+default = ["wgpu"]
+wgpu = ["burn/wgpu"]
+ndarray = ["burn/ndarray"]
+
+[dev-dependencies]
+burn = { version = "0.20", features = ["ndarray"] }
+
+[[bin]]
+name = "train"
+path = "src/bin/train.rs"

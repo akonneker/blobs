@@ -1,84 +1,108 @@
+use blob_interface::reference_mind::{
+    ReferenceActionSpace, ReferenceEffort, ReferenceMemoryUpdate, ReferenceMindAction,
+    ReferenceMindDecision, ReferenceMindInput,
+};
+use blob_interface::reference_mind_converter::{
+    ReferenceMindLimits, capnp_to_reference_mind_input, reference_mind_decision_to_capnp,
+};
+use blob_mind_utils::{
+    attack_payload, available_slots, best_energy_slot, choose_slot, current_food, preferred_effort,
+    split_allocation,
+};
 use extism_pdk::*;
-use tinyrand::{StdRand, Seeded, Rand, RandRange};
-use blob_mind_utils::*;
 
-use blob_interface::cell::{BlobState, CellAction, CellContext};
-use blob_interface::action_converter::cell_action_to_capnp;
-use blob_interface::mind_input_converter::capnp_to_mind_input;
-use blob_interface::types::Direction;
+fn decide(input: &ReferenceMindInput) -> ReferenceMindAction {
+    let standard = preferred_effort(
+        &input.action_space,
+        &[ReferenceEffort::Standard, ReferenceEffort::Burst],
+    );
+    let burst = preferred_effort(
+        &input.action_space,
+        &[ReferenceEffort::Burst, ReferenceEffort::Standard],
+    );
+    if input.self_state.assimilated_energy < 40 {
+        if input.action_space.consume_enabled
+            && input.action_space.max_consume_amount > 0
+            && current_food(input) > 0
+        {
+            return ReferenceMindAction::Consume {
+                amount: input.action_space.max_consume_amount,
+            };
+        }
+        if let Some(target_slot) = best_energy_slot(input, input.action_space.move_targets) {
+            return ReferenceMindAction::Move {
+                target_slot,
+                effort: standard,
+            };
+        }
+    }
 
-// Constants for aggressive behavior
-const MIN_ENERGY_TO_ATTACK: u32 = 60;
-const MIN_ENERGY_TO_SPLIT: u32 = 150;
-const SPLIT_ENERGY_AMOUNT: i32 = 70;
+    let occupied_targets: Vec<_> = input
+        .slots
+        .iter()
+        .filter(|slot| {
+            slot.neighbor.is_some()
+                && slot.reachable
+                && ReferenceActionSpace::allows_target(input.action_space.attack_targets, slot.slot)
+        })
+        .map(|slot| slot.slot)
+        .collect();
+    if let (Some(target_slot), Some(payload)) = (
+        choose_slot(&occupied_targets, input.randomness.sample_u64(1)),
+        attack_payload(input, 8),
+    ) {
+        return ReferenceMindAction::Attack {
+            target_slot,
+            effort: burst,
+            payload,
+        };
+    }
 
-fn aggressive_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -> CellAction {
-    let mut rng = StdRand::seed(seed ^ blob_state.age as u64);
-    
-    // Priority 1: If we have low energy, focus on eating
-    if blob_state.energy < 40 {
-        if has_energy_here(context) {
-            return CellAction::Eat;
-        }
-        
-        // Move towards energy aggressively
-        if let Some(direction) = find_best_energy_direction(context) {
-            return CellAction::Move(direction);
-        }
-    }
-    
-    // Priority 2: Attack if we have sufficient energy and detect threats
-    if blob_state.energy > MIN_ENERGY_TO_ATTACK {
-        // Look for nearby cells to attack (simplified - attack in random direction)
-        if rng.next_range(0usize..5) == 0 {
-            let directions = Direction::all();
-            let attack_direction = directions[rng.next_range(0..directions.len())];
-            return CellAction::Attack(attack_direction);
+    if input.self_state.assimilated_energy > 150 {
+        let targets = available_slots(input, input.action_space.split_targets, true);
+        if let (Some(target_slot), Some(child_allocation)) = (
+            choose_slot(&targets, input.randomness.sample_u64(2)),
+            split_allocation(input),
+        ) {
+            return ReferenceMindAction::Split {
+                target_slot,
+                child_allocation,
+                marker: 2,
+                private_memory: Vec::new(),
+            };
         }
     }
-    
-    // Priority 3: Split aggressively if we have high energy
-    if blob_state.energy > MIN_ENERGY_TO_SPLIT {
-        if let Some(direction) = find_safe_move_direction(context, &mut rng) {
-            // Create aggressive child
-            let child_memory = [0u8; 2048]; // Start fresh
-            return CellAction::Split(direction, SPLIT_ENERGY_AMOUNT, 2, child_memory);
-        }
+
+    if let Some(target_slot) = best_energy_slot(input, input.action_space.move_targets) {
+        return ReferenceMindAction::Move {
+            target_slot,
+            effort: burst,
+        };
     }
-    
-    // Priority 4: Move aggressively towards targets
-    if blob_state.energy > 30 {
-        // Prefer moving to higher ground for better position
-        if !is_high_ground(context) {
-            let directions = Direction::all();
-            let center_elevation = context.elevation[8];
-            
-            for (i, direction) in directions.iter().enumerate() {
-                if context.elevation[i] > center_elevation {
-                    let elevation_diff = context.elevation[i] - center_elevation;
-                    if elevation_diff <= 1 {
-                        return CellAction::Move(*direction);
-                    }
-                }
-            }
-        }
-        
-        // Otherwise move randomly but safely
-        if let Some(direction) = find_safe_move_direction(context, &mut rng) {
-            return CellAction::Move(direction);
-        }
+    let targets = available_slots(input, input.action_space.move_targets, true);
+    if let Some(target_slot) = choose_slot(&targets, input.randomness.sample_u64(3)) {
+        return ReferenceMindAction::Move {
+            target_slot,
+            effort: burst,
+        };
     }
-    
-    // Fallback: defend if we can't do anything else
-    CellAction::Defend
+    if input.action_space.guard_enabled {
+        ReferenceMindAction::Guard { effort: standard }
+    } else {
+        ReferenceMindAction::Wait
+    }
 }
 
 #[plugin_fn]
-pub fn mind_function(input: Vec<u8>) -> FnResult<Vec<u8>> {
-    let (blob_state, cell_context, seed) = capnp_to_mind_input(&input)?;
-    
-    let action = aggressive_strategy(&blob_state, &cell_context, seed);
-    
-    let capnp_vec = cell_action_to_capnp(&action).map_err(|e| Error::msg(e.to_string()))?;
-    Ok(capnp_vec)
+pub fn reference_mind_function(bytes: Vec<u8>) -> FnResult<Vec<u8>> {
+    let limits = ReferenceMindLimits::default();
+    let input = capnp_to_reference_mind_input(&bytes, limits)
+        .map_err(|error| Error::msg(error.to_string()))?;
+    let decision = ReferenceMindDecision {
+        action: decide(&input),
+        signal: None,
+        memory_update: ReferenceMemoryUpdate::Retain,
+    };
+    Ok(reference_mind_decision_to_capnp(&decision, limits)
+        .map_err(|error| Error::msg(error.to_string()))?)
 }

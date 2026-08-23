@@ -1,0 +1,66 @@
+# RL Training config matched to blob_game/config/sample.toml
+# Trains a mind on the same board settings as the sample game
+
+# ── Training Settings ──
+# Start small: 4 envs, short rollouts for first training run
+num_envs = 4
+rollout_length = 64
+total_timesteps = 100_000     # ~1 min for a quick test run
+eval_interval = 25
+checkpoint_interval = 50
+checkpoint_dir = "./checkpoints/sample_board"
+
+# ── PPO Hyperparameters ──
+[ppo]
+clip_epsilon = 0.2
+gamma = 0.99
+gae_lambda = 0.95
+epochs_per_update = 4
+minibatch_size = 64
+learning_rate = 3e-4
+entropy_coeff = 0.01          # encourage exploration early
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+
+# ── Model Architecture ──
+[model]
+hidden1 = 128
+hidden2 = 64
+
+# ── Environment (matched to sample.toml) ──
+[env]
+world_size = 256              # sample.toml: width=256, height=256
+cells_per_team = 12           # sample.toml: starting_cells_per_team = 12
+max_episode_len = 2000        # longer episodes on a bigger board
+num_teams = 2
+
+# Cell config (matched to sample.toml)
+min_energy = 10               # sample.toml: min_energy = 10
+initial_energy = 100          # sample.toml: initial_energy = 100
+max_energy = 500              # sample.toml: max_energy = 500
+min_attack_power = 5          # sample.toml: min_attack_power = 5
+max_attack_power = 50         # sample.toml: max_attack_power = 50
+max_energy_for_attack_scaling = 200  # sample.toml: max_energy_for_attack_scaling = 200
+
+# Energy sources (matched to sample.toml)
+num_scattered_energy = 1000   # sample.toml: num_scattered = 1000
+scattered_energy_amount = 25  # sample.toml: scattered_energy = { Constant = 25 }
+num_plants = 500              # sample.toml: num_plants = 500
+plant_rate = 3                # sample.toml: plant_rate = { Uniform = [1, 5] } → avg ~3
+plant_max_energy = 100        # sample.toml: plant_max_energy = { Uniform = [50, 150] } → avg ~100
+
+# ── Reward Shaping ──
+[reward]
+survive_tick = 0.01           # small reward for staying alive
+eat_energy = 0.002            # proportional to energy gained
+kill_enemy = 1.0              # significant reward for kills
+cell_died = -1.0              # penalty for losing a cell
+split_success = 2.0           # encourage reproduction
+team_wins = 10.0              # big bonus for winning
+team_loses = -10.0            # big penalty for losing
+
+# ── Self-Play Curriculum ──
+[self_play]
+start_after_timesteps = 50_000       # start self-play at 50K (half of total)
+opponent_update_interval = 25        # snapshot opponent policy every 25 updates
+max_opponent_pool = 5                # keep 5 past opponents

@@ -7,4 +7,4 @@ use std::error::Error;
 pub fn launch_gui(game: Game, verbose: bool) -> Result<(), Box<dyn Error>> {
     println!("Launching GUI...");
     viewer::run_viewer(game, verbose)
-} 
+}

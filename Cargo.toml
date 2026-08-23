@@ -2,10 +2,15 @@
 resolver = "3"
 members = [
     "blob_interface", 
+    "blob_engine",
+    "blob_rl",
+    "blob_web",
     "blob_game", 
     "minds/simple_mind", 
     "minds/explorer_mind", 
     "minds/aggressive_mind", 
     "minds/defensive_mind", 
-    "minds/blob_mind_utils"
+    "minds/blob_mind_utils",
+    "minds/isolation_canary",
+    "minds/invalid_mind_canary"
     ]

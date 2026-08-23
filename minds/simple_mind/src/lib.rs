@@ -1,107 +1,61 @@
+use blob_interface::reference_mind::{
+    ReferenceEffort, ReferenceMemoryUpdate, ReferenceMindAction, ReferenceMindDecision,
+    ReferenceMindInput,
+};
+use blob_interface::reference_mind_converter::{
+    capnp_to_reference_mind_input, reference_mind_decision_to_capnp, ReferenceMindLimits,
+};
+use blob_mind_utils::{
+    best_energy_slot, choose_slot, current_food, preferred_effort, safe_empty_slots,
+};
 use extism_pdk::*;
-use tinyrand::{StdRand, Seeded, Rand, RandRange};
 
-use blob_interface::cell::{BlobState, CellAction, CellContext};
-use blob_interface::action_converter::cell_action_to_capnp;
-use blob_interface::mind_input_converter::capnp_to_mind_input;
-use blob_interface::types::Direction;
-
-// Helper functions
-fn has_energy_here(context: &CellContext) -> bool {
-    context.energy[8] > 0
-}
-
-fn find_best_energy_direction(context: &CellContext) -> Option<Direction> {
-    let directions = Direction::all();
-    let mut best_direction = None;
-    let mut best_energy = 0u32;
-    
-    for (i, direction) in directions.iter().enumerate() {
-        if context.energy[i] > best_energy {
-            best_energy = context.energy[i];
-            best_direction = Some(*direction);
-        }
+fn decide(input: &ReferenceMindInput) -> ReferenceMindAction {
+    let standard = preferred_effort(
+        &input.action_space,
+        &[
+            ReferenceEffort::Standard,
+            ReferenceEffort::Gentle,
+            ReferenceEffort::Burst,
+        ],
+    );
+    if input.self_state.assimilated_energy < 50 && input.action_space.guard_enabled {
+        return ReferenceMindAction::Guard { effort: standard };
     }
-    
-    best_direction
-}
-
-fn find_safe_move_direction(context: &CellContext, rng: &mut StdRand) -> Option<Direction> {
-    let directions = Direction::all();
-    let center_elevation = context.elevation[8];
-    let mut safe_directions = Vec::new();
-    
-    for (i, direction) in directions.iter().enumerate() {
-        let elevation_diff = (context.elevation[i] - center_elevation).abs();
-        if elevation_diff <= 1 {
-            safe_directions.push(*direction);
-        }
+    if input.action_space.consume_enabled
+        && input.action_space.max_consume_amount > 0
+        && current_food(input) > 0
+    {
+        return ReferenceMindAction::Consume {
+            amount: input.action_space.max_consume_amount,
+        };
     }
-    
-    if safe_directions.is_empty() {
-        None
-    } else {
-        let index = rng.next_range(0..safe_directions.len());
-        Some(safe_directions[index])
+    if let Some(target_slot) = best_energy_slot(input, input.action_space.move_targets) {
+        return ReferenceMindAction::Move {
+            target_slot,
+            effort: standard,
+        };
     }
-}
-
-// Strategy functions
-fn try_defend(blob_state: &BlobState, _context: &CellContext) -> Option<CellAction> {
-    if blob_state.energy < 50 {
-        Some(CellAction::Defend)
-    } else {
-        None
+    let candidates = safe_empty_slots(input, input.action_space.move_targets);
+    if let Some(target_slot) = choose_slot(&candidates, input.randomness.sample_u64(0)) {
+        return ReferenceMindAction::Move {
+            target_slot,
+            effort: standard,
+        };
     }
-}
-
-fn try_eat(_blob_state: &BlobState, context: &CellContext) -> Option<CellAction> {
-    if has_energy_here(context) {
-        Some(CellAction::Eat)
-    } else {
-        None
-    }
-}
-
-fn try_move(blob_state: &BlobState, context: &CellContext) -> Option<CellAction> {
-    if blob_state.energy > 20 {
-        let mut rng = StdRand::seed(blob_state.age as u64);
-        if let Some(direction) = find_safe_move_direction(context, &mut rng) {
-            Some(CellAction::Move(direction))
-        } else {
-            None
-        }
-    } else {
-        None
-    }
+    ReferenceMindAction::Wait
 }
 
 #[plugin_fn]
-pub fn mind_function(input: Vec<u8>) -> FnResult<Vec<u8>> {
-    let (blob_state, cell_context, seed) = capnp_to_mind_input(&input)?;
-    
-    let mut actions: Vec<fn(&BlobState, &CellContext) -> Option<CellAction>> = vec![
-        try_defend,
-        try_eat,
-        try_move,
-    ];
-
-    let mut rand = StdRand::seed(seed);
-    
-    // Randomize the action order
-    for i in (1..actions.len()).rev() {
-        let j = rand.next_range(0..i+1);
-        actions.swap(i, j);
-    }
-
-    let mut output_action = CellAction::DoNothing;
-    for action_fn in actions {
-        if let Some(action) = action_fn(&blob_state, &cell_context) {
-            output_action = action;
-            break;
-        }
-    }
-
-    let capnp_vec = cell_action_to_capnp(&output_action).map_err(|e| Error::msg(e.to_string()))?;
-    Ok(capnp_vec)
+pub fn reference_mind_function(bytes: Vec<u8>) -> FnResult<Vec<u8>> {
+    let limits = ReferenceMindLimits::default();
+    let input = capnp_to_reference_mind_input(&bytes, limits)
+        .map_err(|error| Error::msg(error.to_string()))?;
+    let decision = ReferenceMindDecision {
+        action: decide(&input),
+        signal: None,
+        memory_update: ReferenceMemoryUpdate::Retain,
+    };
+    Ok(reference_mind_decision_to_capnp(&decision, limits)
+        .map_err(|error| Error::msg(error.to_string()))?)
 }

@@ -1,11 +1,14 @@
-use crate::types::{Coordinate, Pheromone, Direction};
-use serde::{Serialize, Deserialize};
-
+use crate::types::{Coordinate, Direction, Pheromone};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EnergySource {
     Scattered(u32), // Amount of energy
-    Plant { rate: u32, current_energy: u32, max_energy: u32 }, // Rate of production, current and max energy
+    Plant {
+        rate: u32,
+        current_energy: u32,
+        max_energy: u32,
+    }, // Rate of production, current and max energy
 }
 
 /*
@@ -13,7 +16,6 @@ pub enum EnergySource {
  3 8 4
  5 6 7
 */
-
 
 pub struct Neighborhood {
     pub elevation: [i32; 9],
@@ -28,7 +30,12 @@ impl Neighborhood {
             energy: [0; 9],
             pheromone: [None; 9],
         }
+    }
+}
 
+impl Default for Neighborhood {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -40,43 +47,68 @@ pub struct World {
     pub pheromone: Vec<Option<Pheromone>>,
 }
 
-
-
-
-pub fn relative_position(position: Coordinate, direction: Option<Direction>, dimensions: (usize, usize)) -> Coordinate {
+pub fn relative_position(
+    position: Coordinate,
+    direction: Option<Direction>,
+    dimensions: (usize, usize),
+) -> Coordinate {
     let (width, height) = dimensions;
     match direction {
-        Some(Direction::North) => Coordinate { 
-            x: position.x, 
-            y: if position.y == 0 { height - 1 } else { position.y - 1 }
+        Some(Direction::North) => Coordinate {
+            x: position.x,
+            y: if position.y == 0 {
+                height - 1
+            } else {
+                position.y - 1
+            },
         },
-        Some(Direction::South) => Coordinate { 
-            x: position.x, 
-            y: (position.y + 1) % height 
+        Some(Direction::South) => Coordinate {
+            x: position.x,
+            y: (position.y + 1) % height,
         },
-        Some(Direction::East) => Coordinate { 
-            x: (position.x + 1) % width, 
-            y: position.y 
-        },
-        Some(Direction::West) => Coordinate { 
-            x: if position.x == 0 { width - 1 } else { position.x - 1 }, 
-            y: position.y 
-        },
-        Some(Direction::NorthEast) => Coordinate { 
+        Some(Direction::East) => Coordinate {
             x: (position.x + 1) % width,
-            y: if position.y == 0 { height - 1 } else { position.y - 1 }
+            y: position.y,
         },
-        Some(Direction::NorthWest) => Coordinate { 
-            x: if position.x == 0 { width - 1 } else { position.x - 1 },
-            y: if position.y == 0 { height - 1 } else { position.y - 1 }
+        Some(Direction::West) => Coordinate {
+            x: if position.x == 0 {
+                width - 1
+            } else {
+                position.x - 1
+            },
+            y: position.y,
         },
-        Some(Direction::SouthEast) => Coordinate { 
+        Some(Direction::NorthEast) => Coordinate {
             x: (position.x + 1) % width,
-            y: (position.y + 1) % height
+            y: if position.y == 0 {
+                height - 1
+            } else {
+                position.y - 1
+            },
         },
-        Some(Direction::SouthWest) => Coordinate { 
-            x: if position.x == 0 { width - 1 } else { position.x - 1 },
-            y: (position.y + 1) % height
+        Some(Direction::NorthWest) => Coordinate {
+            x: if position.x == 0 {
+                width - 1
+            } else {
+                position.x - 1
+            },
+            y: if position.y == 0 {
+                height - 1
+            } else {
+                position.y - 1
+            },
+        },
+        Some(Direction::SouthEast) => Coordinate {
+            x: (position.x + 1) % width,
+            y: (position.y + 1) % height,
+        },
+        Some(Direction::SouthWest) => Coordinate {
+            x: if position.x == 0 {
+                width - 1
+            } else {
+                position.x - 1
+            },
+            y: (position.y + 1) % height,
         },
         None => position,
     }
@@ -84,7 +116,7 @@ pub fn relative_position(position: Coordinate, direction: Option<Direction>, dim
 
 // pub fn relative_distance(position: Coordinate, other: Coordinate, bounds: (usize, usize)) -> u32 {
 //     let (width, height) = bounds;
-    
+
 //     // Calculate x distance considering wrap-around
 //     let x_diff_direct = (position.x as i32 - other.x as i32).abs();
 //     let x_diff_wrap = (width as i32) - x_diff_direct;
@@ -129,15 +161,19 @@ impl World {
         let y_wrapped = position.y % self.dimensions.1;
         match self.energy[y_wrapped * self.dimensions.0 + x_wrapped] {
             Some(EnergySource::Scattered(energy)) => energy,
-            Some(EnergySource::Plant { rate: _, current_energy, max_energy: _ }) => current_energy,
+            Some(EnergySource::Plant {
+                rate: _,
+                current_energy,
+                max_energy: _,
+            }) => current_energy,
             None => 0,
         }
     }
-    
+
     pub fn set_energy_at(&mut self, position: Coordinate, energy: Option<EnergySource>) {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
-        self.energy[y_wrapped * self.dimensions.0 + x_wrapped] = energy; 
+        self.energy[y_wrapped * self.dimensions.0 + x_wrapped] = energy;
     }
 
     pub fn elevation_at(&self, position: Coordinate) -> i32 {
@@ -145,7 +181,7 @@ impl World {
         let y_wrapped = position.y % self.dimensions.1;
         self.elevation[y_wrapped * self.dimensions.0 + x_wrapped]
     }
-    
+
     pub fn set_elevation_at(&mut self, position: Coordinate, elevation: i32) {
         let x_wrapped = position.x % self.dimensions.0;
         let y_wrapped = position.y % self.dimensions.1;
@@ -165,4 +201,4 @@ impl World {
         neighborhood.pheromone[8] = self.pheromone_at(position);
         neighborhood
     }
-} 
+}

@@ -1,0 +1,11 @@
+{
+  "name": "blob-assemblyscript-wait-mind",
+  "private": true,
+  "scripts": {
+    "build": "asc assembly/index.ts --outFile build/assemblyscript_wait_mind.wasm --optimize --noAssert --use abort=assembly/index/myAbort"
+  },
+  "devDependencies": {
+    "@extism/as-pdk": "1.0.0",
+    "assemblyscript": "0.27.37"
+  }
+}

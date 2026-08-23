@@ -62,9 +62,11 @@ pub struct CellMessage {
 
 impl CellMessage {
     pub fn new(data: [u8; 512]) -> Self {
-        CellMessage { data: data.to_vec() }
+        CellMessage {
+            data: data.to_vec(),
+        }
     }
-    
+
     pub fn as_array(&self) -> [u8; 512] {
         let mut array = [0u8; 512];
         let len = self.data.len().min(512);

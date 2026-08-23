@@ -1,0 +1,60 @@
+# Tuned dense arena — stabilized value function for deeper learning
+# Key changes: gamma 0.95 (was 0.99), scaled-down rewards, LR decay
+
+num_envs = 16
+rollout_length = 128
+total_timesteps = 50_000_000
+eval_interval = 25
+checkpoint_interval = 100
+checkpoint_dir = "./checkpoints/dense_arena_v2"
+
+[ppo]
+clip_epsilon = 0.2
+gamma = 0.95                  # was 0.99 — shorter horizon, returns ~20× smaller
+gae_lambda = 0.95
+epochs_per_update = 4
+minibatch_size = 128
+learning_rate = 3e-4
+entropy_coeff = 0.01          # halved — let the policy specialize more
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+
+[model]
+hidden1 = 128
+hidden2 = 64
+
+[env]
+world_size = 16
+cells_per_team = 4
+max_episode_len = 200
+num_teams = 2
+
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+min_attack_power = 5
+max_attack_power = 50
+max_energy_for_attack_scaling = 200
+
+num_scattered_energy = 30
+scattered_energy_amount = 25
+num_plants = 20
+plant_rate = 3
+plant_max_energy = 100
+
+[reward]
+survive_tick = 0.0
+eat_energy = 0.05             # halved (was 0.1) — 25 energy = +1.25
+kill_enemy = 2.0              # reduced (was 5.0)
+cell_died = -1.0              # reduced (was -2.0)
+split_success = 1.5           # reduced (was 3.0)
+team_wins = 3.0               # reduced (was 10.0) — biggest impact on return scale
+team_loses = -3.0             # reduced (was -10.0)
+move_toward_food = 0.0
+move_toward_enemy = 0.0
+proximity_search_radius = 5
+
+[self_play]
+start_after_timesteps = 25_000_000
+opponent_update_interval = 50
+max_opponent_pool = 10

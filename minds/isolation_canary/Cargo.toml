@@ -1,0 +1,11 @@
+[package]
+name = "isolation_canary"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+blob_interface = { path = "../../blob_interface" }
+extism-pdk = { version = "1.4.1", default-features = false }

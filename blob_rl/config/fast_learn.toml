@@ -1,0 +1,64 @@
+# Fast learning config — smaller board, denser interactions
+# Designed for rapid iteration and visible policy improvement
+
+num_envs = 16
+rollout_length = 128
+total_timesteps = 1_000_000
+eval_interval = 25
+checkpoint_interval = 100
+checkpoint_dir = "./checkpoints/fast_learn"
+
+[ppo]
+clip_epsilon = 0.2
+gamma = 0.99
+gae_lambda = 0.95
+epochs_per_update = 4
+minibatch_size = 128
+learning_rate = 3e-4
+entropy_coeff = 0.02          # higher entropy bonus → more exploration early
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+
+[model]
+hidden1 = 128
+hidden2 = 64
+
+[env]
+world_size = 64               # 16× denser than 256×256
+cells_per_team = 12
+max_episode_len = 500         # shorter episodes on small board
+num_teams = 2
+
+# Cell config (same as sample game)
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+min_attack_power = 5
+max_attack_power = 50
+max_energy_for_attack_scaling = 200
+
+# Dense energy — lots of food on a small board
+num_scattered_energy = 500    # ~0.12 per tile (vs 0.015 on 256×256)
+scattered_energy_amount = 25
+num_plants = 200              # ~0.05 per tile (vs 0.008 on 256×256)
+plant_rate = 3
+plant_max_energy = 100
+
+[reward]
+survive_tick = 0.01
+eat_energy = 0.005            # boosted: more signal from eating
+kill_enemy = 2.0              # boosted: strongly reward combat
+cell_died = -1.0
+split_success = 3.0           # boosted: encourage growing the team
+team_wins = 10.0
+team_loses = -10.0
+
+# Proximity-based reward shaping (dense gradient signals)
+move_toward_food = 0.05       # reward per step closer to nearest food
+move_toward_enemy = 0.02      # reward per step closer to nearest enemy (when healthy)
+proximity_search_radius = 10  # tiles to scan for nearest food/enemy
+
+[self_play]
+start_after_timesteps = 500_000
+opponent_update_interval = 50
+max_opponent_pool = 10

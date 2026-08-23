@@ -1,241 +1,115 @@
+use blob_interface::reference_mind::{
+    ReferenceEffort, ReferenceMemoryUpdate, ReferenceMindAction, ReferenceMindDecision,
+    ReferenceMindInput,
+};
+use blob_interface::reference_mind_converter::{
+    ReferenceMindLimits, capnp_to_reference_mind_input, reference_mind_decision_to_capnp,
+};
+use blob_mind_utils::{
+    best_energy_slot, choose_slot, current_food, preferred_effort, safe_empty_slots,
+    split_allocation,
+};
 use extism_pdk::*;
-use tinyrand::{StdRand, Seeded, Rand, RandRange};
 
-use blob_interface::cell::{BlobState, CellAction, CellContext};
-use blob_interface::action_converter::cell_action_to_capnp;
-use blob_interface::mind_input_converter::capnp_to_mind_input;
-use blob_interface::types::{Direction, Pheromone};
+const MEMORY_BYTES: usize = 4;
 
-// Constants for the explorer mind
-const PLANT_PHEROMONE: Pheromone = 100;
-const TRAIL_PHEROMONE: Pheromone = 50;
-const EXPLORATION_PHEROMONE: Pheromone = 25;
-const MIN_ENERGY_TO_EXPLORE: u32 = 30;
-const MIN_ENERGY_TO_SPLIT: u32 = 200;
-const SPLIT_ENERGY_AMOUNT: i32 = 80;
+fn read_u16(memory: &[u8], offset: usize) -> u16 {
+    memory
+        .get(offset..offset + 2)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes)
+        .unwrap_or(0)
+}
 
-// Memory layout (using first 16 bytes of memory)
-// Bytes 0-1: Number of plants found (u16)
-// Bytes 2-3: Current exploration target X (u16) 
-// Bytes 4-5: Current exploration target Y (u16)
-// Bytes 6-7: Last plant X found (u16)
-// Bytes 8-9: Last plant Y found (u16)
-// Bytes 10-11: Exploration mode (u16: 0=random, 1=systematic, 2=trail_making)
-
-// Helper functions
-fn read_u16_from_memory(memory: &[u8], offset: usize) -> u16 {
-    if offset + 1 < memory.len() {
-        u16::from_le_bytes([memory[offset], memory[offset + 1]])
-    } else {
-        0
+fn write_u16(memory: &mut [u8], offset: usize, value: u16) {
+    if let Some(bytes) = memory.get_mut(offset..offset + 2) {
+        bytes.copy_from_slice(&value.to_le_bytes());
     }
 }
 
-fn write_u16_to_memory(memory: &mut [u8], offset: usize, value: u16) {
-    if offset + 1 < memory.len() {
-        let bytes = value.to_le_bytes();
-        memory[offset] = bytes[0];
-        memory[offset + 1] = bytes[1];
+fn decide(input: &ReferenceMindInput, memory: &mut Vec<u8>) -> ReferenceMindAction {
+    if input.action_space.max_private_memory_bytes as usize >= MEMORY_BYTES
+        && memory.len() < MEMORY_BYTES
+    {
+        memory.resize(MEMORY_BYTES, 0);
     }
-}
+    let mut plants_seen = read_u16(memory, 0);
+    let mut cursor = read_u16(memory, 2) as usize;
 
-fn has_energy_here(context: &CellContext) -> bool {
-    context.energy[8] > 0
-}
+    if input.current_tile.plant_energy > 0 {
+        plants_seen = plants_seen.saturating_add(1);
+        write_u16(memory, 0, plants_seen);
+    }
 
-fn is_on_plant(context: &CellContext) -> bool {
-    context.energy[8] > 50 // Assume plants have more energy
-}
+    if input.action_space.consume_enabled
+        && input.action_space.max_consume_amount > 0
+        && current_food(input) > 0
+    {
+        return ReferenceMindAction::Consume {
+            amount: input.action_space.max_consume_amount,
+        };
+    }
 
-fn find_best_energy_direction(context: &CellContext) -> Option<Direction> {
-    let directions = Direction::all();
-    let mut best_direction = None;
-    let mut best_energy = 0u32;
-    
-    for (i, direction) in directions.iter().enumerate() {
-        if context.energy[i] > best_energy {
-            best_energy = context.energy[i];
-            best_direction = Some(*direction);
-        }
-    }
-    
-    best_direction
-}
-
-fn find_safe_move_direction(context: &CellContext, rng: &mut StdRand) -> Option<Direction> {
-    let directions = Direction::all();
-    let center_elevation = context.elevation[8];
-    let mut safe_directions = Vec::new();
-    
-    for (i, direction) in directions.iter().enumerate() {
-        let elevation_diff = (context.elevation[i] - center_elevation).abs();
-        if elevation_diff <= 1 {
-            safe_directions.push(*direction);
-        }
-    }
-    
-    if safe_directions.is_empty() {
-        None
-    } else {
-        let index = rng.next_range(0..safe_directions.len());
-        Some(safe_directions[index])
-    }
-}
-
-struct ExplorerMemory {
-    plants_found: u16,
-    target_x: u16,
-    target_y: u16,
-    last_plant_x: u16,
-    last_plant_y: u16,
-    exploration_mode: u16,
-}
-
-impl ExplorerMemory {
-    fn from_blob_memory(memory: &[u8]) -> Self {
-        ExplorerMemory {
-            plants_found: read_u16_from_memory(memory, 0),
-            target_x: read_u16_from_memory(memory, 2),
-            target_y: read_u16_from_memory(memory, 4),
-            last_plant_x: read_u16_from_memory(memory, 6),
-            last_plant_y: read_u16_from_memory(memory, 8),
-            exploration_mode: read_u16_from_memory(memory, 10),
-        }
-    }
-    
-    fn write_to_blob_memory(&self, memory: &mut [u8]) {
-        write_u16_to_memory(memory, 0, self.plants_found);
-        write_u16_to_memory(memory, 2, self.target_x);
-        write_u16_to_memory(memory, 4, self.target_y);
-        write_u16_to_memory(memory, 6, self.last_plant_x);
-        write_u16_to_memory(memory, 8, self.last_plant_y);
-        write_u16_to_memory(memory, 10, self.exploration_mode);
-    }
-}
-
-fn explorer_strategy(blob_state: &BlobState, context: &CellContext, seed: u64) -> CellAction {
-    let mut rng = StdRand::seed(seed ^ blob_state.age as u64);
-    let mut memory = ExplorerMemory::from_blob_memory(&blob_state.memory);
-    
-    // Priority 1: If we're on a plant, mark it and set pheromone
-    if is_on_plant(context) {
-        memory.plants_found = memory.plants_found.saturating_add(1);
-        memory.last_plant_x = (blob_state.age % 50) as u16; // Rough position estimate
-        memory.last_plant_y = (blob_state.age / 50) as u16;
-        
-        return CellAction::SetPheromone(PLANT_PHEROMONE);
-    }
-    
-    // Priority 2: If we have high energy and found plants, consider splitting
-    if blob_state.energy > MIN_ENERGY_TO_SPLIT && memory.plants_found > 0 {
-        if let Some(direction) = find_safe_move_direction(context, &mut rng) {
-            // Create child with exploration knowledge
-            let mut child_memory = [0u8; 2048];
-            memory.exploration_mode = 1; // Set child to systematic exploration
-            memory.write_to_blob_memory(&mut child_memory);
-            
-            return CellAction::Split(direction, SPLIT_ENERGY_AMOUNT, 1, child_memory);
-        }
-    }
-    
-    // Priority 3: If we have low energy, try to eat
-    if blob_state.energy < MIN_ENERGY_TO_EXPLORE {
-        if has_energy_here(context) {
-            return CellAction::Eat;
-        }
-        
-        // Move towards nearby energy
-        if let Some(direction) = find_best_energy_direction(context) {
-            return CellAction::Move(direction);
-        }
-    }
-    
-    // Priority 4: Exploration and trail making
-    let action = match memory.exploration_mode {
-        0 => random_exploration(context, &mut rng), // Random exploration
-        1 => systematic_exploration(context, &mut rng, &memory), // Systematic exploration
-        2 => trail_making(context, &mut rng, &memory), // Trail making between plants
-        _ => random_exploration(context, &mut rng),
-    };
-    
-    action
-}
-
-fn random_exploration(context: &CellContext, rng: &mut StdRand) -> CellAction {
-    // Place exploration pheromone occasionally
-    if rng.next_range(0usize..10) == 0 {
-        return CellAction::SetPheromone(EXPLORATION_PHEROMONE);
-    }
-    
-    // Move to unexplored areas (avoid existing pheromones)
-    let directions = Direction::all();
-    let mut unexplored_directions = Vec::new();
-    
-    for (i, direction) in directions.iter().enumerate() {
-        if context.pheromone[i].is_none() {
-            unexplored_directions.push(*direction);
-        }
-    }
-    
-    if !unexplored_directions.is_empty() {
-        let index = rng.next_range(0..unexplored_directions.len());
-        return CellAction::Move(unexplored_directions[index]);
-    }
-    
-    // If everywhere has pheromones, just move safely
-    if let Some(direction) = find_safe_move_direction(context, rng) {
-        CellAction::Move(direction)
-    } else {
-        CellAction::DoNothing
-    }
-}
-
-fn systematic_exploration(context: &CellContext, rng: &mut StdRand, _memory: &ExplorerMemory) -> CellAction {
-    // Try to move in a systematic pattern (prefer consistent directions)
-    let preferred_directions = [Direction::North, Direction::East, Direction::South, Direction::West];
-    
-    for direction in preferred_directions.iter() {
-        let dir_index = direction.index();
-        // Check if this direction is safe and has low/no pheromone
-        let elevation_diff = (context.elevation[dir_index] - context.elevation[8]).abs();
-        if elevation_diff <= 1 && context.pheromone[dir_index].unwrap_or(0) < TRAIL_PHEROMONE {
-            return CellAction::Move(*direction);
-        }
-    }
-    
-    // Fallback to random exploration
-    random_exploration(context, rng)
-}
-
-fn trail_making(context: &CellContext, rng: &mut StdRand, memory: &ExplorerMemory) -> CellAction {
-    // If we found plants, create trails between them
-    if memory.plants_found > 1 {
-        // Place trail pheromone
-        if rng.next_range(0usize..3) == 0 {
-            return CellAction::SetPheromone(TRAIL_PHEROMONE);
-        }
-        
-        // Move towards areas with plant pheromones
-        let directions = Direction::all();
-        for (i, direction) in directions.iter().enumerate() {
-            if let Some(pheromone) = context.pheromone[i] {
-                if pheromone >= PLANT_PHEROMONE {
-                    return CellAction::Move(*direction);
-                }
+    if input.self_state.assimilated_energy > 200 && plants_seen > 0 {
+        let targets = safe_empty_slots(input, input.action_space.split_targets);
+        if let (Some(target_slot), Some(child_allocation)) = (
+            choose_slot(&targets, input.randomness.sample_u64(0)),
+            split_allocation(input),
+        ) {
+            let mut child_memory = memory.clone();
+            if !child_memory.is_empty() {
+                let next_cursor = cursor.saturating_add(1) as u16;
+                write_u16(&mut child_memory, 2, next_cursor);
             }
+            return ReferenceMindAction::Split {
+                target_slot,
+                child_allocation,
+                marker: 1,
+                private_memory: child_memory,
+            };
         }
     }
-    
-    // Continue systematic exploration
-    systematic_exploration(context, rng, memory)
+
+    let effort = preferred_effort(
+        &input.action_space,
+        &[ReferenceEffort::Gentle, ReferenceEffort::Standard],
+    );
+    if input.self_state.assimilated_energy < 40
+        && let Some(target_slot) = best_energy_slot(input, input.action_space.move_targets)
+    {
+        return ReferenceMindAction::Move {
+            target_slot,
+            effort,
+        };
+    }
+
+    let targets = safe_empty_slots(input, input.action_space.move_targets);
+    if !targets.is_empty() {
+        cursor %= targets.len();
+        let target_slot = targets[cursor];
+        cursor = (cursor + 1) % targets.len();
+        write_u16(memory, 2, cursor as u16);
+        return ReferenceMindAction::Move {
+            target_slot,
+            effort,
+        };
+    }
+
+    ReferenceMindAction::Wait
 }
 
 #[plugin_fn]
-pub fn mind_function(input: Vec<u8>) -> FnResult<Vec<u8>> {
-    let (blob_state, cell_context, seed) = capnp_to_mind_input(&input)?;
-    
-    let action = explorer_strategy(&blob_state, &cell_context, seed);
-    
-    let capnp_vec = cell_action_to_capnp(&action).map_err(|e| Error::msg(e.to_string()))?;
-    Ok(capnp_vec)
+pub fn reference_mind_function(bytes: Vec<u8>) -> FnResult<Vec<u8>> {
+    let limits = ReferenceMindLimits::default();
+    let input = capnp_to_reference_mind_input(&bytes, limits)
+        .map_err(|error| Error::msg(error.to_string()))?;
+    let mut memory = input.private_memory.clone();
+    let action = decide(&input, &mut memory);
+    let decision = ReferenceMindDecision {
+        action,
+        signal: None,
+        memory_update: ReferenceMemoryUpdate::Replace(memory),
+    };
+    Ok(reference_mind_decision_to_capnp(&decision, limits)
+        .map_err(|error| Error::msg(error.to_string()))?)
 }
