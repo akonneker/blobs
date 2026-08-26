@@ -1,0 +1,56 @@
+const styles = String.raw`
+  :host { --ink:#edf4df; --muted:#91a38f; --panel:rgba(18,32,27,.9); --line:rgba(202,225,184,.14); --moss:#a8d46f; --amber:#f2b84b; --clay:#df735a; display:block; min-height:100vh; color:var(--ink); background:radial-gradient(circle at 12% 4%,rgba(105,151,76,.2),transparent 30rem),radial-gradient(circle at 88% 15%,rgba(75,132,122,.16),transparent 32rem),#09120f; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  * { box-sizing:border-box; } button,input { font:inherit; }
+  .shell { width:min(1480px,100%); margin:0 auto; padding:28px clamp(18px,4vw,56px) 52px; }
+  .masthead { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; padding-bottom:22px; border-bottom:1px solid var(--line); }
+  .eyebrow,.label,th { color:var(--muted); font:700 11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.14em; text-transform:uppercase; }
+  h1 { margin:5px 0 0; font:500 clamp(34px,5vw,66px)/.95 Georgia,"Times New Roman",serif; letter-spacing:-.04em; } h2 { margin:0; font:500 21px/1.2 Georgia,serif; }
+  .lede { max-width:720px; margin:13px 0 0; color:var(--muted); font-size:14px; line-height:1.6; }
+  .controls { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:9px; }
+  button,.upload,.nav { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 15px; border:1px solid var(--line); border-radius:999px; color:var(--ink); background:rgba(255,255,255,.035); cursor:pointer; text-decoration:none; }
+  button:hover,.upload:hover,.nav:hover { border-color:rgba(168,212,111,.5); background:rgba(168,212,111,.08); } input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
+  .runbar { display:flex; flex-wrap:wrap; gap:12px 26px; align-items:center; padding:18px 0; } .run-item { display:flex; gap:8px; align-items:baseline; font-size:13px; }
+  .trust { margin-left:auto; padding:7px 11px; border-radius:4px; color:#ffd585; background:rgba(242,184,75,.12); font:700 11px/1 ui-monospace,monospace; text-transform:uppercase; }
+  .policies { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+  .policy,.panel,.note { border:1px solid var(--line); border-radius:14px; background:var(--panel); }
+  .policy { padding:20px; } .policy h2 { margin-top:6px; } .record { margin-top:18px; font:500 29px/1 Georgia,serif; } .record small { color:var(--muted); font:11px ui-monospace,monospace; }
+  .stack { display:flex; height:7px; margin-top:14px; overflow:hidden; border-radius:99px; background:rgba(255,255,255,.05); } .stack i:nth-child(1){background:var(--moss)} .stack i:nth-child(2){background:var(--clay)} .stack i:nth-child(3){background:var(--amber)}
+  .policy p,.weights { color:var(--muted); font-size:11px; line-height:1.55; } .weights { margin-top:12px; font-family:ui-monospace,monospace; }
+  .panel { margin-top:16px; overflow:hidden; } .panel-head { display:flex; justify-content:space-between; gap:20px; padding:19px 20px; border-bottom:1px solid var(--line); } .panel-note { color:var(--muted); font-size:11px; }
+  .table-wrap { overflow:auto; } table { width:100%; min-width:840px; border-collapse:collapse; } th { padding:12px 16px; text-align:left; } td { padding:13px 16px; border-top:1px solid var(--line); font-size:12px; } tbody tr:hover { background:rgba(168,212,111,.035); }
+  .rate { font:500 18px Georgia,serif; } .note { display:grid; grid-template-columns:auto 1fr; gap:13px; margin-top:16px; padding:17px 19px; color:var(--muted); font-size:12px; line-height:1.55; } .note strong { color:#ffd585; }
+  .empty,.error { margin:72px auto; max-width:600px; padding:30px; text-align:center; } .error { color:#ffd1c6; }
+  :host(.drop-active) { outline:2px dashed var(--moss); outline-offset:-10px; }
+  @media(max-width:1050px){.policies{grid-template-columns:repeat(2,1fr)}} @media(max-width:720px){.masthead{flex-direction:column}.controls{justify-content:flex-start}.policies{grid-template-columns:1fr}.trust{width:100%;margin-left:0}}
+`;
+
+const escapeHtml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+const numeric = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+const compact = new Intl.NumberFormat("en", { notation:"compact", maximumFractionDigits:1 });
+
+class BlobAdjudicationSensitivityViewer extends HTMLElement {
+  static observedAttributes = ["src"];
+  constructor(){ super(); this.attachShadow({mode:"open"}); this._data=null; }
+  connectedCallback(){ this.installDropTarget(); this.renderLoading(); if(this.getAttribute("src")) this.load(this.getAttribute("src")); }
+  attributeChangedCallback(name,oldValue,newValue){ if(name==="src"&&oldValue!==newValue&&this.isConnected&&newValue) this.load(newValue); }
+  async load(url){ try { const response=await fetch(url,{cache:"no-store"}); if(!response.ok) throw new Error(`Sensitivity report request failed (${response.status})`); this.commit(await response.json()); } catch(error){ this.renderError(error); } }
+  commit(value){ if(numeric(value?.schema_version)!==2||value?.report_kind!=="blob_adjudication_sensitivity"||!Array.isArray(value?.policies)) throw new Error("Expected an adjudication-sensitivity schema 2 report"); if(value.server_verified===true||value.replay_committed===true) throw new Error("Counterfactual reports cannot claim trusted match status"); this._data=value; this.render(); }
+  renderLoading(){ this.shadowRoot.innerHTML=`<style>${styles}</style><main class="shell"><div class="empty"><p class="eyebrow">Winning-criteria lab</p><h1>Reading sensitivity report…</h1></div></main>`; }
+  renderError(error){ this.shadowRoot.innerHTML=`<style>${styles}</style><main class="shell"><div class="error"><p class="eyebrow">Could not load sensitivity report</p><h2>${escapeHtml(error?.message||error)}</h2></div></main>`; }
+  render(){ const data=this._data; const study=this.getAttribute("study")||"custom"; const horizons=[...new Set(data.policies.flatMap((policy)=>policy.groups.map((group)=>numeric(group.sim_time_limit_quanta))))].sort((a,b)=>a-b); const variants=[...new Set(data.policies.flatMap((policy)=>policy.groups.map((group)=>group.variant)))]; const usesHorizons=horizons.length>1; const axes=usesHorizons?horizons:variants;
+    this.shadowRoot.innerHTML=`<style>${styles}</style><main class="shell">
+      <header class="masthead"><div><div class="eyebrow">Tinker / simulation observatory</div><h1>Adjudication lab</h1><p class="lede">Apply explicit counterfactual weights to canonical deadline draws. Extermination outcomes never change, and no policy shown here becomes an official winning condition.</p></div><div class="controls"><a class="nav" href="?view=adjudication&study=horizon">Horizons</a><a class="nav" href="?view=adjudication&study=fragmentation">Fragmentation</a><a class="nav" href="?view=adjudication&study=density">Density</a><a class="nav" href="?view=adjudication&study=crowding">Crowding</a><a class="nav" href="?view=controls">Control matrix</a><a class="nav" href="?view=telemetry">Colony telemetry</a><button id="refresh" type="button">Refresh</button><label class="upload">Open JSON<input id="file" type="file" accept="application/json,.json" /></label></div></header>
+      <section class="runbar">${this.runItem("Study",study)}${this.runItem("Analysis",String(data.analysis_config_sha256).slice(0,12))}${this.runItem("Source episodes",data.source_episodes)}${this.runItem("Deadline draws",data.source_deadline_draws)}${this.runItem("Policies",data.policies.length)}${this.runItem(usesHorizons?"Horizons":"Variants",axes.length)}<span class="trust">Local · counterfactual</span></section>
+      <section class="policies">${data.policies.map((policy)=>this.policyCard(policy)).join("")}</section>
+      <section class="panel"><div class="panel-head"><h2>${usesHorizons?"Horizon sensitivity":"Population variants"}</h2><span class="panel-note">Hypothetical W–L–D after resolving deadline draws</span></div><div class="table-wrap"><table><thead><tr><th>Policy</th>${axes.map((axis)=>`<th>${usesHorizons?`${compact.format(axis)} quanta`:escapeHtml(axis)}</th>`).join("")}</tr></thead><tbody>${data.policies.map((policy)=>this.axisRow(policy,axes,usesHorizons)).join("")}</tbody></table></div></section>
+      <aside class="note"><strong>Interpretation limit</strong><span>This is post-hoc scoring from three mirrored seeds per variant. It measures how these already-finished games would be labeled; it does not measure how policies would adapt if the scoring rule were known during training or play.</span></aside>
+    </main>`;
+    this.shadowRoot.getElementById("refresh").addEventListener("click",()=>this.getAttribute("src")&&this.load(this.getAttribute("src"))); this.shadowRoot.getElementById("file").addEventListener("change",(event)=>this.readFile(event.target.files[0])); }
+  runItem(label,value){ return `<span class="run-item"><span class="label">${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></span>`; }
+  policyCard(policy){ const a=policy.overall; const total=Math.max(1,numeric(a.episodes)); const wins=numeric(a.hypothetical_colony_wins), losses=numeric(a.hypothetical_colony_losses), draws=numeric(a.hypothetical_draws); const w=policy.weights; return `<article class="policy"><div class="label">Counterfactual policy</div><h2>${escapeHtml(policy.name)}</h2><div class="record">${wins}–${losses}–${draws} <small>W–L–D</small></div><div class="stack"><i style="width:${100*wins/total}%"></i><i style="width:${100*losses/total}%"></i><i style="width:${100*draws/total}%"></i></div><p>${escapeHtml(policy.description||"")}</p><div class="weights">deadline conversion ${numeric(a.deadline_colony_wins)}–${numeric(a.deadline_colony_losses)}–${numeric(a.deadline_draws)}<br>core ${numeric(w.core_basis_points)/100}% · assimilated ${numeric(w.assimilated_basis_points)/100}% · gut ${numeric(w.gut_basis_points)/100}% · carried ${numeric(w.carried_material_basis_points)/100}% · escrow ${numeric(w.payload_escrow_basis_points)/100}% · margin ${numeric(policy.minimum_victory_margin_mass_energy)}</div></article>`; }
+  axisRow(policy,axes,usesHorizons){ return `<tr><td><strong>${escapeHtml(policy.name)}</strong></td>${axes.map((axis)=>{ const groups=policy.groups.filter((g)=>usesHorizons?numeric(g.sim_time_limit_quanta)===axis:g.variant===axis); const sum=(field)=>groups.reduce((total,g)=>total+numeric(g.aggregate[field]),0); return `<td class="rate">${sum("hypothetical_colony_wins")}–${sum("hypothetical_colony_losses")}–${sum("hypothetical_draws")}</td>`; }).join("")}</tr>`; }
+  async readFile(file){ if(!file)return; try{this.commit(JSON.parse(await file.text()));}catch(error){this.renderError(error);} }
+  installDropTarget(){ this.addEventListener("dragover",(event)=>{event.preventDefault();this.classList.add("drop-active")}); this.addEventListener("dragleave",()=>this.classList.remove("drop-active")); this.addEventListener("drop",(event)=>{event.preventDefault();this.classList.remove("drop-active");this.readFile(event.dataTransfer?.files?.[0])}); }
+}
+
+customElements.define("blob-adjudication-sensitivity-viewer",BlobAdjudicationSensitivityViewer);

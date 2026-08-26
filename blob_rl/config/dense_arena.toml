@@ -1,23 +1,31 @@
 # Dense arena config — tiny board, forced interactions, loud eat rewards
 # Designed to bootstrap learning with strong action-dependent signals
 
+seed = 42
 num_envs = 16
 rollout_length = 128
 total_timesteps = 1_000_000
 eval_interval = 25
+eval_episodes = 8
+evaluation_opponents = ["wait", "random", "aggressive"]
+evaluation_snapshots = []
+evaluation_seed = 1_000_000_000
 checkpoint_interval = 100
 checkpoint_dir = "./checkpoints/dense_arena"
 
 [ppo]
 clip_epsilon = 0.2
+value_clip_epsilon = 0.2
 gamma = 0.99
 gae_lambda = 0.95
 epochs_per_update = 4
 minibatch_size = 128
+recurrent_unroll_steps = 16
 learning_rate = 3e-4
 entropy_coeff = 0.02
 value_loss_coeff = 0.5
 max_grad_norm = 0.5
+target_kl = 0.03
 
 [model]
 hidden1 = 128
@@ -28,6 +36,7 @@ world_size = 16               # tiny arena — 256 tiles total
 cells_per_team = 4            # fewer cells, more likely to encounter food/enemies
 max_episode_len = 200         # short episodes on tiny board
 num_teams = 2
+opponent = "aggressive"
 
 min_energy = 10
 initial_energy = 100
@@ -59,3 +68,10 @@ proximity_search_radius = 5
 start_after_timesteps = 500_000
 opponent_update_interval = 50
 max_opponent_pool = 10
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

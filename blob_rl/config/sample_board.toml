@@ -3,24 +3,32 @@
 
 # ── Training Settings ──
 # Start small: 4 envs, short rollouts for first training run
+seed = 42
 num_envs = 4
 rollout_length = 64
 total_timesteps = 100_000     # ~1 min for a quick test run
 eval_interval = 25
+eval_episodes = 8
+evaluation_opponents = ["wait", "random", "aggressive"]
+evaluation_snapshots = []
+evaluation_seed = 1_000_000_000
 checkpoint_interval = 50
 checkpoint_dir = "./checkpoints/sample_board"
 
 # ── PPO Hyperparameters ──
 [ppo]
 clip_epsilon = 0.2
+value_clip_epsilon = 0.2
 gamma = 0.99
 gae_lambda = 0.95
 epochs_per_update = 4
 minibatch_size = 64
+recurrent_unroll_steps = 16
 learning_rate = 3e-4
 entropy_coeff = 0.01          # encourage exploration early
 value_loss_coeff = 0.5
 max_grad_norm = 0.5
+target_kl = 0.03
 
 # ── Model Architecture ──
 [model]
@@ -33,6 +41,7 @@ world_size = 256              # sample.toml: width=256, height=256
 cells_per_team = 12           # sample.toml: starting_cells_per_team = 12
 max_episode_len = 2000        # longer episodes on a bigger board
 num_teams = 2
+opponent = "aggressive"
 
 # Cell config (matched to sample.toml)
 min_energy = 10               # sample.toml: min_energy = 10
@@ -64,3 +73,10 @@ team_loses = -10.0            # big penalty for losing
 start_after_timesteps = 50_000       # start self-play at 50K (half of total)
 opponent_update_interval = 25        # snapshot opponent policy every 25 updates
 max_opponent_pool = 5                # keep 5 past opponents
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

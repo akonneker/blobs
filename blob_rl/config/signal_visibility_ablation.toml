@@ -1,0 +1,22 @@
+# Causal observation ablation for the one-quantum sidecar colony. Signal
+# deposits remain physical and conserved in every variant; only neighboring
+# signal observations change.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/signal-visibility-ablation-v1"
+seeds = [5101, 5209, 5303, 5407, 5501, 5609, 5701, 5801, 5903, 6007, 6101, 6203]
+
+[[variants]]
+name = "full-visibility"
+description = "All eight Moore-neighborhood signal slots are visible"
+
+[[variants]]
+name = "cardinal-visibility"
+description = "Only north, west, east, and south signal slots are visible"
+[variants.rules.neighborhood.observations]
+signal = 90
+
+[[variants]]
+name = "no-neighbor-visibility"
+description = "Deposits remain physical, but no neighboring signal slots are visible"
+[variants.rules.neighborhood.observations]
+signal = 0

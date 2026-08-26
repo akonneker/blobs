@@ -170,6 +170,80 @@ fn replay_round_trip_preserves_full_split_request() {
 }
 
 #[test]
+fn replay_round_trip_preserves_explicit_signal_vector() {
+    let mut rules = uniform_rules();
+    rules.signal_emission_cost = 2;
+    let mut simulation = ReferenceSimulation::new(1, 1, rules).unwrap();
+    let actor = simulation
+        .add_cell(simulation.tile(0, 0).unwrap(), 10, 100, 1)
+        .unwrap();
+    let mut recorder =
+        ReplayRecorder::new(simulation.compiled_ruleset_hash(), simulation.state_hash());
+    let request = ActionRequest::Signal {
+        amounts: [2, 4, 0, 8],
+    };
+    let commitment = commit(&mut simulation, actor, request.clone());
+    let event = recorder
+        .record_with_commitments(&simulation.resolve_next_batch().unwrap(), vec![commitment])
+        .unwrap();
+
+    let decoded = ReplayBatchEvent::from_bytes(&event.to_bytes()).unwrap();
+    assert_eq!(decoded.commitments[0].request, request);
+    assert_eq!(decoded.outcomes[0].request, request);
+    assert_eq!(decoded, event);
+}
+
+#[test]
+fn replay_round_trip_preserves_damage_and_terrain_effects() {
+    let mut simulation = ReferenceSimulation::new(2, 1, uniform_rules()).unwrap();
+    let attacker = simulation
+        .add_cell(simulation.tile(0, 0).unwrap(), 10, 100, 1)
+        .unwrap();
+    let victim = simulation
+        .add_cell(simulation.tile(1, 0).unwrap(), 10, 100, 2)
+        .unwrap();
+    let mut recorder =
+        ReplayRecorder::new(simulation.compiled_ruleset_hash(), simulation.state_hash());
+
+    let attack = commit(
+        &mut simulation,
+        attacker,
+        ActionRequest::Attack {
+            target: EAST,
+            payload: 20,
+            effort: EffortTier::Standard,
+        },
+    );
+    let attack_event = recorder
+        .record_with_commitments(&simulation.resolve_next_batch().unwrap(), vec![attack])
+        .unwrap();
+    let decoded_attack = ReplayBatchEvent::from_bytes(&attack_event.to_bytes()).unwrap();
+    let damage = decoded_attack.outcomes[0].attack_damage.as_ref().unwrap();
+    assert_eq!(damage.victim, victim);
+    assert_eq!(
+        (
+            damage.raw,
+            damage.mitigated,
+            damage.applied,
+            damage.overkill
+        ),
+        (20, 0, 20, 0)
+    );
+
+    let excavate = commit(&mut simulation, attacker, ActionRequest::Excavate);
+    let terrain_event = recorder
+        .record_with_commitments(&simulation.resolve_next_batch().unwrap(), vec![excavate])
+        .unwrap();
+    let decoded_terrain = ReplayBatchEvent::from_bytes(&terrain_event.to_bytes()).unwrap();
+    let terrain = decoded_terrain.outcomes[0].terrain_change.as_ref().unwrap();
+    assert_eq!((terrain.elevation_before, terrain.elevation_after), (0, -1));
+    assert_eq!(
+        terrain.material_mass,
+        simulation.rules().terrain_mass_per_elevation
+    );
+}
+
+#[test]
 fn tampering_reordering_and_chain_splicing_are_rejected() {
     let (events, frames, compiled, initial) = two_batch_replay();
 
@@ -267,10 +341,10 @@ fn replay_hash_golden_vectors() {
             frames[0].len(),
         ),
         (
-            "705815bda8f618eeb42bfd77a1dceb8d1ee5e33d6a6098bead3dd8a554af8150".into(),
-            "7d4606c73b0af3ee6ab9a8c4e9eb2053e0fb3e58502beb77be092dd8d4784bc1".into(),
-            "afffe512cf5cef085397b0127955c2dff666bda2145f2cbdfbbceac8baf71a0a".into(),
-            1000,
+            "66ad67d2ee5b4642a3d908c74dcbea3be6fa6006a4bb38899fd81fb8b566ee49".into(),
+            "80342dc25e401a8a898ebfe934f8018fbc061711aba74f40e3c06ea9f217d14b".into(),
+            "1a8dd858360cdc8e538ca0a2f1d399aeacb6c51ab718f4449e54f77dcec008c3".into(),
+            1004,
         )
     );
     assert_eq!(events[0].sequence, 0);
@@ -379,8 +453,8 @@ fn replay_archive_golden_vector() {
     assert_eq!(
         (archive.archive_hash().to_hex(), archive.to_bytes().len()),
         (
-            "70b5cfc32364a1f49459c4e177a1a62453a406c443f17119d1c3c028b04e7f91".into(),
-            2068,
+            "b6e211369f96e24ead5e96198125706ebdc80835a5be26aa30a939c68183364b".into(),
+            2076,
         )
     );
 }

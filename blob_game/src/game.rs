@@ -1,12 +1,12 @@
-use crate::config::{CellConfig, MemoryConfig, StateConfig};
+use crate::config::{CellConfig, MemoryConfig};
 use crate::plugin_pool::PluginPool;
 use blob_engine::engine::{
     CellConfig as EngineCellConfig, Engine, ReferenceHostMode, ReferenceReplayStreamCheckpoint,
     ReferenceRuntimeCheckpoint, ReplayStreamConfig, TickEvents,
 };
 use blob_engine::resolution::{
-    CanonicalHash, CheckpointLimits, ReferenceCheckpoint, ReferenceObservationBatch,
-    ReferenceRuleset, ReplayBatchEvent, ReplayBundle, ReplayBundleLimits, ReplayLimits,
+    BoundaryRule, CanonicalHash, CheckpointLimits, NeighborhoodSpec, ReferenceCheckpoint,
+    ReferenceObservationBatch, ReferenceRuleset, ReplayBatchEvent, ReplayBundle, ReplayLimits,
     ReplayManifest, ReplayManifestLimits, ReplaySegment, ReplaySegmentLimits,
 };
 use blob_interface::cell::Cell;
@@ -18,9 +18,8 @@ use blob_interface::reference_mind_converter::{
 use blob_interface::types::{CellId, Coordinate, TeamId};
 use blob_interface::world::{EnergySource, World};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use bincode;
 use extism::{Error, Manifest, Wasm};
 use extism_manifest::MemoryOptions;
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
@@ -376,11 +375,11 @@ impl Game {
         }
     }
 
-    pub fn add_team(&mut self, team_id: TeamId, mind_path: &PathBuf) -> Result<(), String> {
+    pub fn add_team(&mut self, team_id: TeamId, mind_path: &Path) -> Result<(), String> {
         self.add_team_with_abi(team_id, mind_path)
     }
 
-    fn add_team_with_abi(&mut self, team_id: TeamId, mind_path: &PathBuf) -> Result<(), String> {
+    fn add_team_with_abi(&mut self, team_id: TeamId, mind_path: &Path) -> Result<(), String> {
         if self.reference_engine.is_some() || self.iteration != 0 {
             return Err("cannot add a team after authoritative execution starts".into());
         }
@@ -392,7 +391,7 @@ impl Game {
         }
 
         let pool_size = self.effective_pool_size();
-        let wasm_file = Wasm::file(mind_path.clone());
+        let wasm_file = Wasm::file(mind_path);
         let manifest = Manifest::new([wasm_file])
             .with_memory_options(
                 MemoryOptions::new()
@@ -508,7 +507,7 @@ impl Game {
 
         // Calculate grid dimensions for team placement
         let teams_per_row = (num_teams as f64).sqrt().ceil() as usize;
-        let teams_per_col = (num_teams + teams_per_row - 1) / teams_per_row; // Ceiling division
+        let teams_per_col = num_teams.div_ceil(teams_per_row);
 
         let row = team_index / teams_per_row;
         let col = team_index % teams_per_row;
@@ -757,6 +756,11 @@ impl Game {
             max_attack_power: self.cell_config.max_attack_power,
             max_energy_for_attack_scaling: self.cell_config.max_energy_for_attack_scaling,
         };
+        let rules = ReferenceRuleset {
+            neighborhood: NeighborhoodSpec::moore_8(BoundaryRule::Wrap),
+            child_core_mass: u64::from(self.cell_config.min_energy),
+            ..ReferenceRuleset::default()
+        };
         let mut engine = Engine::new_with_match_secret(
             self.world.dimensions.0,
             self.world.dimensions.1,
@@ -764,7 +768,7 @@ impl Game {
             config,
             Some(0),
             self.match_secret,
-            ReferenceRuleset::default(),
+            rules,
         );
         engine
             .replace_setup_projection(
@@ -909,10 +913,10 @@ impl Game {
             if old_coordinate == new_coordinate {
                 continue;
             }
-            if let Some(coordinate) = self.inv_coordinate_map.remove(id) {
-                if self.coordinate_map.get(&coordinate) == Some(id) {
-                    self.coordinate_map.remove(&coordinate);
-                }
+            if let Some(coordinate) = self.inv_coordinate_map.remove(id)
+                && self.coordinate_map.get(&coordinate) == Some(id)
+            {
+                self.coordinate_map.remove(&coordinate);
             }
         }
         for id in &events.reference_projection_cells {
@@ -949,11 +953,13 @@ impl Game {
 
     /// Runs the normal pristine-instance WASM decision path and returns the
     /// canonical commitments/report required by server replay verification.
+    #[cfg(test)]
     pub fn tick_reference_for_verification(&mut self, verbose: bool) -> Result<TickEvents, Error> {
         self.tick_reference_with_host_mode(verbose, ReferenceHostMode::MetadataOnly)
     }
 
     /// Materializes the authoritative start frontier without invoking a Mind.
+    #[cfg(test)]
     pub fn initialize_reference_for_verification(&mut self) -> Result<(), Error> {
         self.ensure_reference_engine()?;
         self.sync_reference_host_metadata();
@@ -969,12 +975,14 @@ impl Game {
             .map_err(Error::msg)
     }
 
+    #[cfg(test)]
     pub fn reference_state_hash(&self) -> Option<blob_engine::resolution::CanonicalHash> {
         self.reference_engine
             .as_ref()
             .and_then(Engine::authoritative_state_hash)
     }
 
+    #[cfg(test)]
     pub fn reference_canonical_state_hash(&self) -> Option<CanonicalHash> {
         self.reference_engine
             .as_ref()?
@@ -982,6 +990,7 @@ impl Game {
             .map(|simulation| simulation.state_hash())
     }
 
+    #[cfg(test)]
     pub fn reference_compiled_ruleset_hash(&self) -> Option<CanonicalHash> {
         self.reference_engine
             .as_ref()?
@@ -989,6 +998,7 @@ impl Game {
             .map(|simulation| simulation.compiled_ruleset_hash())
     }
 
+    #[cfg(test)]
     pub fn start_reference_replay_recording(
         &mut self,
         checkpoint_interval: u64,
@@ -1002,14 +1012,16 @@ impl Game {
             .map_err(Error::msg)
     }
 
+    #[cfg(test)]
     pub fn export_reference_replay_bundle(&self) -> Result<ReplayBundle, Error> {
         self.reference_engine
             .as_ref()
             .ok_or_else(|| Error::msg("reference engine was not initialized"))?
-            .export_reference_replay_bundle(ReplayBundleLimits::default())
+            .export_reference_replay_bundle(blob_engine::resolution::ReplayBundleLimits::default())
             .map_err(Error::msg)
     }
 
+    #[cfg(test)]
     pub fn start_reference_replay_streaming(
         &mut self,
         config: ReplayStreamConfig,
@@ -1023,6 +1035,7 @@ impl Game {
             .map_err(Error::msg)
     }
 
+    #[cfg(test)]
     pub fn reference_replay_stream_manifest(&self) -> Result<ReplayManifest, Error> {
         self.reference_engine
             .as_ref()
@@ -1031,12 +1044,14 @@ impl Game {
             .map_err(Error::msg)
     }
 
+    #[cfg(test)]
     pub fn take_reference_replay_segment(&mut self) -> Option<ReplaySegment> {
         self.reference_engine
             .as_mut()
             .and_then(Engine::take_reference_replay_segment)
     }
 
+    #[cfg(test)]
     pub fn flush_reference_replay_stream(&mut self) -> Result<bool, Error> {
         self.reference_engine
             .as_mut()
@@ -1047,22 +1062,6 @@ impl Game {
 
     pub fn tick(&mut self, verbose: bool) -> Result<(), Error> {
         self.tick_reference(verbose)?;
-        Ok(())
-    }
-
-    /// Enhanced tick method that includes automatic state saving
-    pub fn tick_with_auto_save(
-        &mut self,
-        verbose: bool,
-        state_config: &StateConfig,
-    ) -> Result<(), Error> {
-        self.tick(verbose)?;
-
-        // Auto-save state if configured
-        if let Err(e) = self.auto_save_state(state_config) {
-            eprintln!("Warning: Failed to auto-save state: {}", e);
-        }
-
         Ok(())
     }
 
@@ -1169,25 +1168,25 @@ impl Game {
                 }
 
                 // Cell overlay (dominant color)
-                if let Some(cell_id) = coord_map_ref.get(&coord) {
-                    if let Some(cell) = cells_ref.get(cell_id) {
-                        let team_index = cell.team_id.0 % team_colors.len();
-                        let team_color = team_colors[team_index];
+                if let Some(cell_id) = coord_map_ref.get(&coord)
+                    && let Some(cell) = cells_ref.get(cell_id)
+                {
+                    let team_index = cell.team_id.0 % team_colors.len();
+                    let team_color = team_colors[team_index];
 
-                        let energy_ratio = (cell.energy as f32 / max_energy as f32).min(1.0);
-                        let brightness = 0.3 + energy_ratio * 0.7;
+                    let energy_ratio = (cell.energy as f32 / max_energy as f32).min(1.0);
+                    let brightness = 0.3 + energy_ratio * 0.7;
 
-                        base_color[0] = (team_color[0] as f32 * brightness) as u8;
-                        base_color[1] = (team_color[1] as f32 * brightness) as u8;
-                        base_color[2] = (team_color[2] as f32 * brightness) as u8;
+                    base_color[0] = (team_color[0] as f32 * brightness) as u8;
+                    base_color[1] = (team_color[1] as f32 * brightness) as u8;
+                    base_color[2] = (team_color[2] as f32 * brightness) as u8;
 
-                        if cell.defending {
-                            base_color = [255, 255, 255];
-                        } else if cell.loaded {
-                            base_color[0] = (base_color[0] as f32 * 0.7) as u8;
-                            base_color[1] = (base_color[1] as f32 * 0.7) as u8;
-                            base_color[2] = (base_color[2] as f32 * 0.7) as u8;
-                        }
+                    if cell.defending {
+                        base_color = [255, 255, 255];
+                    } else if cell.loaded {
+                        base_color[0] = (base_color[0] as f32 * 0.7) as u8;
+                        base_color[1] = (base_color[1] as f32 * 0.7) as u8;
+                        base_color[2] = (base_color[2] as f32 * 0.7) as u8;
                     }
                 }
 
@@ -1448,76 +1447,6 @@ impl Game {
 
         Ok(game)
     }
-
-    /// Save state automatically based on configuration
-    ///
-    /// Uses the state configuration to determine filename, compression, etc.
-    pub fn auto_save_state(
-        &mut self,
-        state_config: &StateConfig,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.iteration % state_config.save_interval == 0 {
-            // Create state directory if it doesn't exist
-            fs::create_dir_all(&state_config.state_directory)?;
-
-            let filename = format!(
-                "{}/game_state_{:06}.{}",
-                state_config.state_directory,
-                self.iteration,
-                if state_config.compress_states {
-                    "gz"
-                } else {
-                    "bin"
-                }
-            );
-
-            self.save_state(&filename, state_config.compress_states)?;
-
-            // Clean up old states if auto_cleanup is enabled
-            if state_config.auto_cleanup {
-                self.cleanup_old_states(state_config)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Clean up old state files based on configuration
-    fn cleanup_old_states(
-        &self,
-        state_config: &StateConfig,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let dir = fs::read_dir(&state_config.state_directory)?;
-        let mut state_files: Vec<_> = dir
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.is_file() {
-                    let filename = path.file_name()?.to_str()?;
-                    if filename.starts_with("game_state_") {
-                        Some((path.clone(), filename.to_string()))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Sort by filename (which includes iteration number)
-        state_files.sort_by(|a, b| a.1.cmp(&b.1));
-
-        // Remove oldest files if we exceed the limit
-        if state_files.len() > state_config.max_disk_states {
-            let files_to_remove = state_files.len() - state_config.max_disk_states;
-            for (path, _) in state_files.iter().take(files_to_remove) {
-                fs::remove_file(path)?;
-                println!("Cleaned up old state file: {:?}", path);
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -1531,8 +1460,10 @@ mod tests {
 
     /// Helper: Create a game with given pool_size and seed
     fn create_test_game(pool_size: usize, seed: u64) -> Game {
-        let mut memory_config = MemoryConfig::default();
-        memory_config.plugin_pool_size = pool_size;
+        let memory_config = MemoryConfig {
+            plugin_pool_size: pool_size,
+            ..MemoryConfig::default()
+        };
         Game::new(
             64,
             64,
@@ -1544,8 +1475,10 @@ mod tests {
     }
 
     fn create_reference_test_game(pool_size: usize, seed: u64) -> Game {
-        let mut memory_config = MemoryConfig::default();
-        memory_config.plugin_pool_size = pool_size;
+        let memory_config = MemoryConfig {
+            plugin_pool_size: pool_size,
+            ..MemoryConfig::default()
+        };
         Game::new(
             64,
             64,
@@ -1635,7 +1568,7 @@ mod tests {
         let mut game = create_test_game(1, 42);
         game.add_team(TeamId(0), &mind_path).unwrap();
         assert_eq!(game.cells.len(), game.cell_config.starting_cells_per_team);
-        for (_, cell) in &game.cells {
+        for cell in game.cells.values() {
             assert_eq!(cell.team_id, TeamId(0));
             assert_eq!(cell.energy, game.cell_config.initial_energy);
         }
@@ -1711,15 +1644,15 @@ mod tests {
         game.add_team(TeamId(0), &mind_path).unwrap();
         game.world.elevation = generate_terrain(64, 64, Some(42), 10);
 
-        for (_, cell) in &game.cells {
+        for cell in game.cells.values() {
             assert_eq!(cell.age, 0);
         }
         game.tick(false).unwrap();
-        for (_, cell) in &game.cells {
+        for cell in game.cells.values() {
             assert_eq!(cell.age, 1);
         }
         game.tick(false).unwrap();
-        for (_, cell) in &game.cells {
+        for cell in game.cells.values() {
             assert_eq!(cell.age, 2);
         }
     }
@@ -1752,8 +1685,10 @@ mod tests {
         let Some(mind_path) = wasm_mind_path("simple_mind") else {
             return;
         };
-        let mut memory_config = MemoryConfig::default();
-        memory_config.plugin_pool_size = 1;
+        let memory_config = MemoryConfig {
+            plugin_pool_size: 1,
+            ..MemoryConfig::default()
+        };
         let mut game = Game::new(32, 32, 5, CellConfig::default(), Some(42), memory_config);
         game.add_team(TeamId(0), &mind_path).unwrap();
         let executed = game.step(100, false).unwrap();
@@ -1903,6 +1838,7 @@ mod tests {
             "aggressive_mind",
             "defensive_mind",
             "explorer_mind",
+            "colony_mind",
         ]
         .into_iter()
         .enumerate()
@@ -2054,6 +1990,7 @@ mod tests {
             "aggressive_mind",
             "defensive_mind",
             "explorer_mind",
+            "colony_mind",
         ]
         .into_iter()
         .enumerate()
@@ -2183,10 +2120,12 @@ mod tests {
                     (64, 1_000, 16),
                     (128, 5_000, 16),
                 ] {
-                    let mut memory_config = MemoryConfig::default();
-                    memory_config.plugin_pool_size = workers;
-                    memory_config.use_pooling_allocator = use_pooling_allocator;
-                    memory_config.wasm_executor = executor_kind;
+                    let memory_config = MemoryConfig {
+                        plugin_pool_size: workers,
+                        use_pooling_allocator,
+                        wasm_executor: executor_kind,
+                        ..MemoryConfig::default()
+                    };
                     let cell_config = CellConfig {
                         starting_cells_per_team: population,
                         ..CellConfig::default()

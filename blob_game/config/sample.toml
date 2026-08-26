@@ -97,11 +97,3 @@ use_pooling_allocator = true
 # Experimental restricted executor for the Extism PDK guest ABI. Keep `extism`
 # for the proven path; use `extism_compat` for parity/performance evaluation.
 wasm_executor = "extism"
-
-[state]
-max_states_in_memory = 100    # Maximum number of game states to keep in memory
-save_interval = 10            # Save state to disk every N iterations
-state_directory = "game_states"  # Directory to store serialized states
-compress_states = true        # Whether to compress saved states
-auto_cleanup = true          # Automatically clean up old states
-max_disk_states = 1000       # Maximum number of states to keep on disk

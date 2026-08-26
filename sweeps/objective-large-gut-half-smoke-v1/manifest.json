@@ -1,0 +1,201 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/objective_large_gut_half_sweep.toml",
+  "spec_sha256": "ab7f23a3e90ba23113598b3ece49dc6e29cd8db02da95dfe4a882c14c5a571fb",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/objective_large_gut_half_smoke.toml",
+  "base_config_sha256": "e7fa37d2d42047338aa7e001e8d1a1b97233180d36ec9f60ae1849f486355aed",
+  "output_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1",
+  "seeds": [
+    4101,
+    4201,
+    4301
+  ],
+  "variants": [
+    {
+      "name": "field-32",
+      "description": "32x32, 16 cells per team, constant source and population density",
+      "rules": {},
+      "scenario": {}
+    },
+    {
+      "name": "field-64",
+      "description": "64x64, 64 cells per team, constant source and population density",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 64,
+        "num_plants": 64,
+        "num_scattered_energy": 512,
+        "world_size": 64
+      }
+    },
+    {
+      "name": "field-128",
+      "description": "128x128, 256 cells per team, constant source and population density",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 256,
+        "num_plants": 256,
+        "num_scattered_energy": 2048,
+        "world_size": 128
+      }
+    },
+    {
+      "name": "field-256",
+      "description": "256x256, 1024 cells per team, constant source and population density",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 1024,
+        "num_plants": 1024,
+        "num_scattered_energy": 8192,
+        "world_size": 256
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "field-32",
+      "replicate": 0,
+      "training_seed": 4101,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "0a1c0432014a37ebbfee68d0a01601361ec229570287a02b7bd2f066a4da36cf",
+      "experiment_config_sha256": "cdbe84933ae3db0656504516e58d6e0d6fc90a553212b00f7bc22008e587e911",
+      "config_file_sha256": "d8c8565f78aa91d70d6f796261b1a544a9c21d15ca3a13e7a5b88d4db6efe7ff",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-32/seed-4101",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-32/seed-4101/config.toml"
+    },
+    {
+      "variant": "field-32",
+      "replicate": 1,
+      "training_seed": 4201,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "0a1c0432014a37ebbfee68d0a01601361ec229570287a02b7bd2f066a4da36cf",
+      "experiment_config_sha256": "cb695acf0136fbdb39207f07ccde0cfc664f45acd24c61397e14395f7098efd1",
+      "config_file_sha256": "e9af1cb661308b99259ac79e9bcd16fbf3de423e054584502ce7ef1073b4622a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-32/seed-4201",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-32/seed-4201/config.toml"
+    },
+    {
+      "variant": "field-32",
+      "replicate": 2,
+      "training_seed": 4301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "0a1c0432014a37ebbfee68d0a01601361ec229570287a02b7bd2f066a4da36cf",
+      "experiment_config_sha256": "7b2af5756839184b405bc0c9615a33031e6d13e6dd5de2631fe48071baa2de60",
+      "config_file_sha256": "c7e10a20207dae952761359d2123ae3a2852e14cf6b245ccbc980e1b7d43eef9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-32/seed-4301",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-32/seed-4301/config.toml"
+    },
+    {
+      "variant": "field-64",
+      "replicate": 0,
+      "training_seed": 4101,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "7eec868e6352d977e34b30517dea8bbfa4bbf2b288960c406f2f986dac77eada",
+      "scenario_hash": "7ee3250f7d73f07b05bd37ff4f277cffde2f6263b0ef0c4f37a6ea8ec7ea1c50",
+      "experiment_config_sha256": "ee781b094b547bf87d3ecac7eb2e598b7bc95559337a3572563a81b2b37225a2",
+      "config_file_sha256": "4f9bd7e902b9ff9969751e3dd997ffd5d073943e3d7a1a2861d225eaac3aa70c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-64/seed-4101",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-64/seed-4101/config.toml"
+    },
+    {
+      "variant": "field-64",
+      "replicate": 1,
+      "training_seed": 4201,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "7eec868e6352d977e34b30517dea8bbfa4bbf2b288960c406f2f986dac77eada",
+      "scenario_hash": "7ee3250f7d73f07b05bd37ff4f277cffde2f6263b0ef0c4f37a6ea8ec7ea1c50",
+      "experiment_config_sha256": "9e117b62502ec97fd85ed663741abb04c3a5b1249c25a5cf28394b5010286802",
+      "config_file_sha256": "668a8a527195f354c8fd407c82592810694a33c93934ce0982a155647b47a916",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-64/seed-4201",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-64/seed-4201/config.toml"
+    },
+    {
+      "variant": "field-64",
+      "replicate": 2,
+      "training_seed": 4301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "7eec868e6352d977e34b30517dea8bbfa4bbf2b288960c406f2f986dac77eada",
+      "scenario_hash": "7ee3250f7d73f07b05bd37ff4f277cffde2f6263b0ef0c4f37a6ea8ec7ea1c50",
+      "experiment_config_sha256": "ba6f25b18cfd772c3053747ac766abe76ea5dd45af0e0725b40e2fd1ba86b3b1",
+      "config_file_sha256": "294efd54d3826b53d309598d0a5ae499ffffbe0d553d696e0977da6e9ba1a46d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-64/seed-4301",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-64/seed-4301/config.toml"
+    },
+    {
+      "variant": "field-128",
+      "replicate": 0,
+      "training_seed": 4101,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "dd79b240180d01224a114f92d54cda5b66213aabc83a124d40b3f5d107205de4",
+      "scenario_hash": "381a5697f72b3c6098821c942ed7870e205722bb17a305d2c5a1c023eff36c91",
+      "experiment_config_sha256": "ef4a9e2103a71763593cabc7f53a2b50c724e96611b2d3e1c6a2f69251c51077",
+      "config_file_sha256": "67e072eabb7a8945ddb2d6b8b074ef174fe63db5e9e4a350cf86c5873ad4edcc",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-128/seed-4101",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-128/seed-4101/config.toml"
+    },
+    {
+      "variant": "field-128",
+      "replicate": 1,
+      "training_seed": 4201,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "dd79b240180d01224a114f92d54cda5b66213aabc83a124d40b3f5d107205de4",
+      "scenario_hash": "381a5697f72b3c6098821c942ed7870e205722bb17a305d2c5a1c023eff36c91",
+      "experiment_config_sha256": "8a96e22e09ec51daf686adc8985a537a934dad747653acba14a4f9657873788d",
+      "config_file_sha256": "c20913472369f109a4a92628dd2fbe46ec127fdae87bd37f95a2895b2f8711e4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-128/seed-4201",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-128/seed-4201/config.toml"
+    },
+    {
+      "variant": "field-128",
+      "replicate": 2,
+      "training_seed": 4301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "dd79b240180d01224a114f92d54cda5b66213aabc83a124d40b3f5d107205de4",
+      "scenario_hash": "381a5697f72b3c6098821c942ed7870e205722bb17a305d2c5a1c023eff36c91",
+      "experiment_config_sha256": "892e21d98a9f6be71cc3edb938510cddb1112ea8c9426ed4c9f7f994113f61b7",
+      "config_file_sha256": "ca15b875cce2db02455a6b4734112350a35d1d08d2e20db0c9b9a9079fb93e2a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-128/seed-4301",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-128/seed-4301/config.toml"
+    },
+    {
+      "variant": "field-256",
+      "replicate": 0,
+      "training_seed": 4101,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "b189b157af4b56a4888ba523bd317d3ffd6d37032320600e43612e03760b55d5",
+      "scenario_hash": "a21653dbf121edc483b1960841521521712e457bf79fbc0d58af2b66328e7ad3",
+      "experiment_config_sha256": "aed3c92be5adc2e6bb06544b9f3864bb8a3a143c4fa9fa6e730040198d18dfcb",
+      "config_file_sha256": "c0b2138bb3d50409a063a528f1f56a1405690fbafc7fa6711cb7cae7cb24ddc0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-256/seed-4101",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-256/seed-4101/config.toml"
+    },
+    {
+      "variant": "field-256",
+      "replicate": 1,
+      "training_seed": 4201,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "b189b157af4b56a4888ba523bd317d3ffd6d37032320600e43612e03760b55d5",
+      "scenario_hash": "a21653dbf121edc483b1960841521521712e457bf79fbc0d58af2b66328e7ad3",
+      "experiment_config_sha256": "89af25e520b9ee06d004ceee642b1eb85aa0ce6b181d6540cda7718ed1e8fc5e",
+      "config_file_sha256": "9d17c94a5ae2b6974076a8f94353a7f05438671296f02dc65d6053b650d97aee",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-256/seed-4201",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-256/seed-4201/config.toml"
+    },
+    {
+      "variant": "field-256",
+      "replicate": 2,
+      "training_seed": 4301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "b189b157af4b56a4888ba523bd317d3ffd6d37032320600e43612e03760b55d5",
+      "scenario_hash": "a21653dbf121edc483b1960841521521712e457bf79fbc0d58af2b66328e7ad3",
+      "experiment_config_sha256": "3618c09fd7e8199b476fb03e07b3247d3d3ea12fb16dfe8194074f3c2148adb2",
+      "config_file_sha256": "34e44f5bb3f040245a2fe1fb6aa8d6e96d186cc97268fa0533eca3f966a32866",
+      "run_directory": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-256/seed-4301",
+      "config_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/field-256/seed-4301/config.toml"
+    }
+  ]
+}

@@ -289,8 +289,9 @@ Decision {
 }
 ```
 
-The signal is bounded, local, and separately costed. It does not allow a second
-physical action.
+The optional signal sidecar is bounded, local, and separately costed. It does
+not allow a second physical action. A Mind that needs to write several channels
+at once can instead choose the explicit `Signal` primary action.
 
 | Primary action | Intended footprint | Principal state effect |
 | --- | --- | --- |
@@ -301,6 +302,7 @@ physical action.
 | `Consume(amount)` | actor, current tile | Move plant/loose energy into gut, limited by bite rate and gut capacity |
 | `Split(direction, child_energy, marker, child_memory)` | actor, adjacent target | Create a child using escrowed assimilated energy |
 | `Regurgitate(direction, amount)` | actor, adjacent target | Move gut energy to loose energy on the target tile |
+| `Signal([channel_amount; 4])` | actor, current tile | Atomically deposit independent strengths in all four anonymous local channels |
 | `Excavate` | actor, current tile | Convert local terrain into carried material |
 | `DepositTerrain` | actor, current tile | Convert carried material into elevation at the current location |
 
@@ -381,7 +383,7 @@ resolution code. Named semantic kernels remain necessary for choices such as
 snapshot-gated occupancy versus pushing or `all_collide` versus impulse
 arbitration.
 
-### 6.2 Implemented canonical Mind ABI v6
+### 6.2 Implemented canonical Mind ABI v8
 
 The checked-in `reference_mind.capnp` schema is the sole versioned Mind
 boundary. Its input contains only one ready cell's own
@@ -398,13 +400,29 @@ This is necessary because arbitrary WASM state is pristine for every call; a
 bare action would provide no legal persistence channel. All
 standard actions currently implemented by the semantic kernel are represented
 without adapter defaults: Wait, Move, Attack, Guard, Consume, Split,
-Regurgitate, Excavate, and DepositTerrain. ABI version 6 exposes locally
+Regurgitate, Signal, Excavate, and DepositTerrain. ABI version 8 adds a
+variable-strength amount to the optional one-channel signal sidecar and an
+explicit four-channel signal vector. It retains ABI v7's locally
 observable plant capacity and growth rate plus the cell's metabolism remainder
 and the frozen metabolism rate, terrain capabilities, and anonymous
-signal-field channels.
+signal-field channels. It also exposes the active effort-cost ratios and
+per-family cost coefficients. A Mind can therefore derive exact affordability
+from its own mass/energy and each observed slot's distance without any identity,
+peer state, or global information channel.
 Identity-bearing messages and inboxes remain absent because they would require
 different information-flow semantics; they must not be accepted and silently
 ignored.
+
+Learned recurrent policies use this same boundary rather than a privileged
+trainer channel. Their versioned, signed-16-bit-quantized recurrent vector is
+read from the acting cell's private bytes and returned with `Replace`; split
+children receive the same newly computed vector. Empty, malformed, or
+architecture-mismatched bytes reset to zero. GPU/CPU batching remains row-
+separable and receives no cell identity, team identity, peer memory, batch
+aggregate, or cross-row attention. Host cell keys exist only long enough to
+route each output back to its originating private state. Thus recurrence
+changes policy capacity without weakening the strict decision-isolation
+principle.
 
 Cap'n Proto conversion is allocation-bounded and rejects truncated input,
 noncanonical slot ordering, impossible action masks, malformed private random
@@ -413,7 +431,7 @@ private state. The exact schema source and an independent ABI version are bound
 by `reference_mind_abi_hash`. Projection tests prove that translated local
 situations with different engine-private cell keys encode identically.
 
-ABI v6 stores each slot's optional observation channels as inline values plus
+ABI v8 retains v6's inline optional-observation representation plus
 a canonical visibility bitmap. This preserves the distinction between hidden
 and visible zero, including independent neighbor detail masks, while removing
 the former pointer-backed optional object for every scalar. Unknown bits,
@@ -426,9 +444,10 @@ The semantic resolver projects this input and maps every primary action
 losslessly to `ActionRequest`. It atomically installs both the action and the
 bounded explicit memory update; rejected actions still apply that update
 exactly once. `Retain` preserves the existing canonical allocation, while
-`Replace([])` deliberately clears it. Replay format version 8 records the
-tagged update and optional signal in the decision commitment, and authoritative
-native/browser replay applies it before resolution. Live native dispatch uses the `ReferenceMind`/
+`Replace([])` deliberately clears it. Replay format version 10 records the
+tagged update, variable-strength optional signal, and explicit signal vector in
+the decision commitment, and authoritative native/browser replay applies it
+before resolution. Live native dispatch uses the `ReferenceMind`/
 `ReferenceMindFactory` boundary, while every hosted WASM team must export
 `reference_mind_function`. Both paths receive the same canonical projection and
 commit the returned memory operation without defaults supplied by the host.
@@ -802,9 +821,13 @@ WASM uses the serial path.
 Metabolism is not currently lazy. Canonical `assimilated_energy` and
 `metabolism_remainder` are materialized at simulation time `now`, and spent
 energy is deposited at the cell's current tile before any same-time diffusion.
-A true lazy scheme cannot merely attach a timestamp to cell energy: it also
-needs exact exhaustion scheduling and deferred, position-sensitive tile
-deposits. At minimum, a future version would require:
+An exact derived indexed min-heap now maintains absolute exhaustion deadlines:
+sparse energy changes replace one entry, dense digestion rebuilds the heap in
+linear time, and ordinary metabolic accrual preserves each absolute deadline.
+The index is reconstructed after restore or rollback and never enters canonical
+state. A true lazy scheme cannot merely attach a timestamp to cell energy: it
+also needs deferred, position-sensitive tile deposits. At minimum, a future
+version would require:
 
 - per-cell base energy, remainder, and last-materialized time;
 - a derived minimum exhaustion index updated after every energy mutation;
@@ -816,8 +839,9 @@ deposits. At minimum, a future version would require:
 
 Consequently, laziness is most promising for on-demand-integrity RL rollouts
 with long intervals between diffusion or inspection barriers. It cannot remove
-the dense verified-hash cost under the current canonical format. A derived
-exhaustion-time index is the lower-risk prerequisite and should be measured
+the dense verified-hash cost under the current canonical format. The derived
+exhaustion-time prerequisite is now implemented and measured; deferred tile
+deposits and materialization barriers remain the next semantic design slice
 before changing the state representation.
 
 ## 12. RL consequences
@@ -1071,6 +1095,13 @@ causal model:
 Leaderboard seasons freeze all kernels, parameters, artifacts, world-generation
 rules, and scoring rules under a canonical hash.
 
+`ReferenceRuleset` is the strict serializable physics profile. Hosted callers
+must choose their boundary policy and mass thresholds explicitly; the engine
+constructor does not rewrite them. RL TOML accepts partial `[env.rules]`
+overrides, expands them over its documented hosted default before execution,
+and stores the complete expanded profile plus compiled hash in immutable
+artifacts. Reward shaping is intentionally not part of the physics hash.
+
 ## 15. Confirmed reference semantics and remaining parameters
 
 The following choices are accepted for the first reference ruleset:
@@ -1122,11 +1153,17 @@ The following choices are accepted for the first reference ruleset:
     action, and interrupted material escrow joins the ordinary local death
     spill. Elevation-derived terrain mass is included in the conservation
     ledger.
-14. **Signals:** a decision may emit one of four anonymous channels alongside
-    its primary action. The fixed emission cost is paid first from assimilated
-    energy and placed on the actor's current tile; the primary action is then
-    validated against the remaining energy. Signal energy decays at a fixed
-    simulated-time rate into local diffuse energy. Observations expose only
+14. **Signals:** `signal_emission_cost` is a conserved emission quantum, not a
+    fixed per-action fee. A decision may deposit any positive multiple on one
+    anonymous channel alongside a non-Signal primary action, or use the
+    explicit `Signal([amount; 4])` primary action to deposit independent
+    strengths atomically on all four channels. The two forms cannot be combined.
+    Their total amount is paid first from assimilated energy and placed on the
+    actor's current tile; a sidecar's primary action is then validated against
+    the remaining energy. Signal energy decays at a fixed simulated-time rate
+    into local diffuse energy. Successful excavation or terrain deposition
+    clears every channel and decay remainder on that tile, transferring the
+    erased signal energy to local diffuse energy. Observations expose only
     locally masked channel strengths, never sender identity or an inbox.
 15. **Diffusion:** diffuse energy moves on hashed `diffusion_targets` at fixed
     absolute-time intervals. Every step reads one immutable field snapshot and
@@ -1332,7 +1369,7 @@ The first isolated reference milestone is implemented under
   reports and replay frames carry these deltas;
 - the resolution module compiles for `wasm32-unknown-unknown`; native-only host
   modules and dependencies are excluded from that target;
-- the canonical Mind v6 ABI contains only one cell's bounded local projection
+- the canonical Mind v8 ABI contains only one cell's bounded local projection
   and 32 bytes of private random output. It carries canonical
   gut/metabolism/outcome/activity/action-space data plus locally observable
   plant, terrain, and anonymous signal fields, and returns an exact reference
@@ -1344,10 +1381,15 @@ The first isolated reference milestone is implemented under
   independently generated server secret; deterministic local constructors
   derive one from their configured world seed;
 - RL observations are the same canonical anonymous `ReferenceMindInput` used by
-  WASM Minds, padded to 32 local slots (1094 finite features). The fixed
-  1315-entry factorized catalog covers 263 physical action/effort/slot choices
-  crossed with no signal or one of four channels, and a per-observation mask
-  prevents the policy from sampling unavailable choices. Engine-private
+  WASM Minds, padded to 32 local slots (1094 finite features). The policy uses
+  conditional heads for 264 physical action/effort/slot choices, five bounded
+  payload/amount tiers, 16 four-bit channel patterns, and five quantized signal
+  strengths. Ordinary actions are masked to no signal or a one-channel pattern;
+  explicit Signal may select any nonempty channel subset. The ABI itself permits
+  independent channel amounts. Packed
+  per-observation masks make every conditional choice commit-legal without
+  constructing their Cartesian product. PPO and behavior cloning sum only the
+  selected factors' log probabilities. Engine-private
   `CellId` values are host handles only and never enter the observation;
 - native minds are reset before every decision, while untrusted WASM decisions
   use fresh stores/instances created from per-worker compiled modules. Exact

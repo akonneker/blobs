@@ -92,3 +92,85 @@ server's executor implementation or worker policy.
 
 `fetchBytes` and `render` above are application-specific helpers, not package
 exports.
+
+## Local telemetry viewer
+
+Run the dependency-free viewer from the repository root:
+
+```sh
+scripts/serve_telemetry_viewer.sh
+```
+
+Then open `http://localhost:4173`. It loads a sample colony report by default
+and accepts dropped or selected JSON files. The report envelope is versioned; its
+`latest` object is the serializable `ColonyScenarioTelemetry` sample, while
+timeline, spatial, action, and adversarial-check sections are optional viewer
+extensions. Telemetry schema 2 added aggregate occupancy of cell-private rolling
+visitation windows. Schema 3 adds aggregate outcome reliability, contention,
+gut-progress, gross energy-loss, and signal-retention evidence. Visitation
+density is useful for diagnosing exploration memory, but it is not canonical
+board coverage and must not be presented as such. Guarded loss is observational,
+not a causal mitigation measurement.
+
+Telemetry schema 4 adds the explicit Signal action family. Older telemetry is
+rejected rather than treating signal actions as another family.
+
+The UI is implemented as the Shadow-DOM custom element
+`<blob-telemetry-viewer>`. A later tinker.ninja page can import
+`viewer/telemetry-viewer.js` and set either its `src` attribute or its `data`
+property without inheriting or leaking page styles. Browser-loaded reports are
+always shown as local and unverified, even if their JSON claims otherwise. An
+enclosing application may call `setVerifiedTelemetry(report, verification)`
+only after `verifyPublishedMatch` returns a successful result for the same
+run. The component rejects unsuccessful verification results, but the server
+attestation and enclosing site remain the security boundary; the component is
+only presentation.
+
+The same observatory serves the maintained-Mind comparison page at
+`http://localhost:4173/?view=controls`. By default its recorded route reads
+`sweeps/colony-controls-event-frontier-v3/control-matrix-event-frontier.json`. Override that path
+with `CONTROL_MATRIX_REPORT=/absolute/report.json` when starting the server.
+The comparison UI is the independent Shadow-DOM component
+`<blob-control-matrix-viewer>` from `viewer/control-matrix-viewer.js`; keeping
+it separate prevents aggregate policy evaluation from being confused with an
+attested replay.
+
+For live progress, run the matrix with a mutable status destination:
+
+```sh
+cargo run --release -p blob_rl --no-default-features --features ndarray \
+  --bin control-matrix -- sweeps/colony-controls-event-frontier-v3/manifest.json \
+  --max-parallel 4 \
+  --output sweeps/colony-controls-event-frontier-v3/control-matrix-next.json \
+  --live-output sweeps/colony-controls-event-frontier-v3/control-matrix-live.json
+```
+
+Open `http://localhost:4173/?view=controls&live=1` while it runs. The status
+file is atomically replaced after each completed matchup and served with
+`Cache-Control: no-store`. It contains only compact matchup/profile/seat
+aggregates rather than repeating full episode telemetry; the detailed final
+report remains immutable. `CONTROL_MATRIX_LIVE_REPORT` can point the local
+route at a different status file. Both report components label browser-loaded
+data local and unverified, and the comparison component rejects JSON claiming
+server verification or a replay commitment. Final schema-3 reports also show
+the raw per-side terminal core, assimilated, gut, carried, and escrow
+compartments for event-time draws. The viewer deliberately does not turn those
+measurements into a biomass score.
+
+The winning-criteria lab is available at
+`http://localhost:4173/?view=adjudication`. It reads the immutable horizon
+sensitivity report by default and compares explicit gut, carried-material,
+escrow, and minimum-margin policies. Set
+`ADJUDICATION_SENSITIVITY_REPORT=/absolute/report.json` to display another
+analysis. The population studies are available through the same component:
+
+- `?view=adjudication&study=fragmentation`
+- `?view=adjudication&study=density`
+- `?view=adjudication&study=crowding`
+
+Their server routes can be redirected with
+`ADJUDICATION_FRAGMENTATION_REPORT`, `ADJUDICATION_DENSITY_REPORT`, and
+`ADJUDICATION_CROWDING_REPORT`. The navigation and table adapt to either
+multiple horizons or multiple population variants. Every page is deliberately
+labeled local and counterfactual: it cannot turn a post-hoc score into a
+verified match outcome.

@@ -152,6 +152,13 @@ worker-count invariant.
      break even through 200,000 cells. A combined 200,000-cell/262,144-tile
      passive workload is nevertheless about 2x faster with the other dense
      kernels.
+   - An exact derived metabolic-exhaustion index now replaces repeated living-
+     population scans during event scheduling. Sparse energy mutations update
+     an indexed min-heap in logarithmic time; dense digestion rebuilds and
+     heapifies it in linear time. Absolute deadlines remain unchanged by
+     ordinary metabolic accrual. Restore and rollback derive the index from
+     canonical cells, and overflow behavior remains identical to the scan
+     oracle.
    - True lazy metabolism remains deferred. Exact metabolism changes both cell
      energy and the diffuse reservoir at the cell's current tile before
      diffusion, while verified hashes and checkpoints commit fully materialized

@@ -85,6 +85,17 @@ struct ActionSpace {
     signalEnabled @17 : Bool;
     terrainMassPerElevation @18 : UInt64;
     signalEmissionCost @19 : UInt64;
+    effortCostNumerators @20 : List(UInt32);
+    effortCostDenominators @21 : List(UInt32);
+    moveEffortBase @22 : UInt64;
+    moveMassUnitsPerEffort @23 : UInt64;
+    attackEffortBase @24 : UInt64;
+    guardEffortBase @25 : UInt64;
+    consumeEffortBase @26 : UInt64;
+    splitEffortBase @27 : UInt64;
+    regurgitateEffortBase @28 : UInt64;
+    excavateEffortBase @29 : UInt64;
+    depositTerrainEffortBase @30 : UInt64;
 }
 
 struct OptionalOutcome {
@@ -172,6 +183,7 @@ struct OptionalSignalEmission {
 
 struct SignalEmission {
     channel @0 : UInt8;
+    amount @1 : UInt64;
 }
 
 struct ReferenceAction {
@@ -185,7 +197,15 @@ struct ReferenceAction {
         regurgitate @6 : RegurgitateData;
         excavate @7 : Void;
         depositTerrain @8 : Void;
+        signal @9 : SignalVector;
     }
+}
+
+struct SignalVector {
+    amount0 @0 : UInt64;
+    amount1 @1 : UInt64;
+    amount2 @2 : UInt64;
+    amount3 @3 : UInt64;
 }
 
 struct TargetedEffort {

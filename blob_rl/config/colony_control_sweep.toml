@@ -1,0 +1,46 @@
+# Paired colony-versus-control regimes. Each variant is evaluated on the same
+# seeds against simple, aggressive, defensive, and explorer maintained Minds.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/colony-controls-event-frontier-v3"
+seeds = [1103, 2207, 3301]
+
+[[variants]]
+name = "baseline-16"
+description = "16x16 wrapped Moore neighborhood, eight plants, two cells per side"
+
+[[variants]]
+name = "large-32"
+description = "32x32 board with four initial cells and sixteen plants per world"
+[variants.scenario]
+world_size = 32
+cells_per_team = 4
+num_scattered_energy = 128
+num_plants = 16
+
+[[variants]]
+name = "sparse-plants"
+description = "16x16 board with only two productive tiles"
+[variants.scenario]
+num_plants = 2
+
+[[variants]]
+name = "bounded-world"
+description = "16x16 Moore neighborhood with bounded edges"
+[variants.rules.neighborhood]
+boundary_rule = "bounded"
+
+[[variants]]
+name = "blocked-diagonals"
+description = "Diagonal motion is blocked when both orthogonal corners are occupied"
+[variants.rules.neighborhood]
+diagonal_corner_rule = "block_if_both_orthogonals_occupied"
+
+[[variants]]
+name = "expensive-actions"
+description = "Movement, attack, guard, excavation, and deposit have higher base effort costs"
+[variants.rules]
+move_effort_base = 3
+attack_effort_base = 4
+guard_effort_base = 2
+excavate_effort_base = 4
+deposit_terrain_effort_base = 4

@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "package_version": "0.1.0",
+  "code_revision": "7ded31a692297ddcd7fff73b5e55f20f6ceafff3+dirty",
+  "manifest_sha256": "55b3f92b3809f532728ccb91e41f42baf605fd182ad22e0378db6f3fa267d9ff",
+  "mind_abi_version": 8,
+  "mind_abi_hash": "07611c6b14a04980f6512a117ea7fa80693b253d377ae5144fb6dfeb51da1b62",
+  "verification_scope": "local_deterministic",
+  "server_verified": false,
+  "replay_committed": false,
+  "opponents": [
+    "simple",
+    "aggressive",
+    "defensive",
+    "explorer"
+  ],
+  "seeds": [
+    5101,
+    5209,
+    5303,
+    5407,
+    5501,
+    5609,
+    5701,
+    5801,
+    5903,
+    6007,
+    6101,
+    6203
+  ],
+  "sources": [
+    {
+      "candidate": "colony_signal_disabled",
+      "report_sha256": "7641f643c3b9864f85927030c94b0adc2c0269d59d64b427242d4c5d1219edd5"
+    },
+    {
+      "candidate": "colony_signal_one_quantum",
+      "report_sha256": "9eb99f37f8b3e1241cc7b90b1fc99a4895033c6838212e445d63db69ea6483df"
+    },
+    {
+      "candidate": "colony_signal_sidecar",
+      "report_sha256": "dbc6d0b5ca271826be2d490595257f27b95b93917a46c2b7af7cd8bf92bae22d"
+    },
+    {
+      "candidate": "colony_signal_cadenced",
+      "report_sha256": "db21b5647342e306fc9f1bc7c87ec453757f65e5f617bb7a6fe54bc267ec9411"
+    },
+    {
+      "candidate": "colony",
+      "report_sha256": "c56df1e2cafc3463c6356355283ff6e3e18de03f2be4105bacaeffb2d0d5bbf3"
+    }
+  ],
+  "rows": [
+    {
+      "candidate": "colony_signal_disabled",
+      "episodes": 96,
+      "wins": 47,
+      "losses": 37,
+      "timeouts": 12,
+      "explicit_signal_actions": 0,
+      "sidecar_emissions": 0,
+      "signal_energy": 0,
+      "signal_energy_decayed": 0,
+      "signal_energy_erased_by_terrain": 0,
+      "completed_actions": 46439,
+      "mean_environment_signal_energy": 0.0,
+      "mean_observable_signal_variation": 0.0,
+      "paired_vs_disabled": {
+        "improved": 0,
+        "worsened": 0,
+        "unchanged": 96
+      }
+    },
+    {
+      "candidate": "colony_signal_one_quantum",
+      "episodes": 96,
+      "wins": 51,
+      "losses": 23,
+      "timeouts": 22,
+      "explicit_signal_actions": 0,
+      "sidecar_emissions": 32347,
+      "signal_energy": 32347,
+      "signal_energy_decayed": 32264,
+      "signal_energy_erased_by_terrain": 0,
+      "completed_actions": 54951,
+      "mean_environment_signal_energy": 0.7490118577075099,
+      "mean_observable_signal_variation": 11.919631093544137,
+      "paired_vs_disabled": {
+        "improved": 16,
+        "worsened": 3,
+        "unchanged": 77
+      }
+    },
+    {
+      "candidate": "colony_signal_sidecar",
+      "episodes": 96,
+      "wins": 39,
+      "losses": 55,
+      "timeouts": 2,
+      "explicit_signal_actions": 0,
+      "sidecar_emissions": 6243,
+      "signal_energy": 26988,
+      "signal_energy_decayed": 26403,
+      "signal_energy_erased_by_terrain": 203,
+      "completed_actions": 23031,
+      "mean_environment_signal_energy": 6.873812754409769,
+      "mean_observable_signal_variation": 105.54681139755766,
+      "paired_vs_disabled": {
+        "improved": 8,
+        "worsened": 26,
+        "unchanged": 62
+      }
+    },
+    {
+      "candidate": "colony_signal_cadenced",
+      "episodes": 96,
+      "wins": 41,
+      "losses": 48,
+      "timeouts": 7,
+      "explicit_signal_actions": 0,
+      "sidecar_emissions": 3796,
+      "signal_energy": 18326,
+      "signal_energy_decayed": 17972,
+      "signal_energy_erased_by_terrain": 136,
+      "completed_actions": 29651,
+      "mean_environment_signal_energy": 3.961435457953937,
+      "mean_observable_signal_variation": 59.361542581681846,
+      "paired_vs_disabled": {
+        "improved": 8,
+        "worsened": 20,
+        "unchanged": 68
+      }
+    },
+    {
+      "candidate": "colony",
+      "episodes": 96,
+      "wins": 34,
+      "losses": 60,
+      "timeouts": 2,
+      "explicit_signal_actions": 407,
+      "sidecar_emissions": 5700,
+      "signal_energy": 27748,
+      "signal_energy_decayed": 27153,
+      "signal_energy_erased_by_terrain": 159,
+      "completed_actions": 21909,
+      "mean_environment_signal_energy": 6.992079207920792,
+      "mean_observable_signal_variation": 106.74587458745874,
+      "paired_vs_disabled": {
+        "improved": 4,
+        "worsened": 27,
+        "unchanged": 65
+      }
+    }
+  ],
+  "results_sha256": "dcec398e71c675e11cd496d519f990edcd3c5d748ddb6773d5b32774a069848c"
+}

@@ -1,0 +1,23 @@
+# Paired first-pass viability sweep. Planning expands the complete physics
+# profile and creates one immutable training config per variant/seed pair.
+base_config = "default.toml"
+output_dir = "../../sweeps/viability-v2"
+seeds = [101, 202, 303]
+
+[[variants]]
+name = "baseline"
+description = "Documented hosted reference profile"
+
+[[variants]]
+name = "lower-metabolism"
+description = "Half the baseline assimilated-energy upkeep"
+[variants.rules]
+metabolism_rate_numerator = 1
+metabolism_rate_denominator = 2048
+
+[[variants]]
+name = "faster-digestion"
+description = "Double the baseline gut-to-assimilated transfer rate"
+[variants.rules]
+digestion_rate_numerator = 1
+digestion_rate_denominator = 128

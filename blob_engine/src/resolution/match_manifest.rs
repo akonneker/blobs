@@ -437,6 +437,15 @@ fn decode_cursor(reader: &mut Reader<'_>) -> Result<ReplayChainCursor, MatchVeri
     })
 }
 
+fn hash_body(body: &[u8]) -> CanonicalHash {
+    let mut hasher = Sha256::new();
+    hasher.update((MATCH_DOMAIN.len() as u64).to_le_bytes());
+    hasher.update(MATCH_DOMAIN);
+    hasher.update(MATCH_VERIFICATION_FORMAT_VERSION.to_le_bytes());
+    hasher.update(body);
+    CanonicalHash::from_bytes(hasher.finalize().into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,13 +461,4 @@ mod tests {
             Err(MatchVerificationError::UnsupportedRuntimeProfile(2))
         );
     }
-}
-
-fn hash_body(body: &[u8]) -> CanonicalHash {
-    let mut hasher = Sha256::new();
-    hasher.update((MATCH_DOMAIN.len() as u64).to_le_bytes());
-    hasher.update(MATCH_DOMAIN);
-    hasher.update(MATCH_VERIFICATION_FORMAT_VERSION.to_le_bytes());
-    hasher.update(body);
-    CanonicalHash::from_bytes(hasher.finalize().into())
 }

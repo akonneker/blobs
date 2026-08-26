@@ -1,0 +1,35 @@
+# Hold board and resources fixed while changing starting population. This is a
+# crowding/coordination sweep, not an energy-controlled fragmentation sweep.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/colony-population-crowding-v1"
+seeds = [1103, 2207, 3301]
+
+[[variants]]
+name = "crowding-1"
+description = "One initial cell per team on the fixed 16x16 resource field"
+[variants.scenario]
+cells_per_team = 1
+
+[[variants]]
+name = "crowding-2"
+description = "Two initial cells per team on the fixed 16x16 resource field"
+[variants.scenario]
+cells_per_team = 2
+
+[[variants]]
+name = "crowding-4"
+description = "Four initial cells per team on the fixed 16x16 resource field"
+[variants.scenario]
+cells_per_team = 4
+
+[[variants]]
+name = "crowding-8"
+description = "Eight initial cells per team on the fixed 16x16 resource field"
+[variants.scenario]
+cells_per_team = 8
+
+[[variants]]
+name = "crowding-16"
+description = "Sixteen initial cells per team on the fixed 16x16 resource field"
+[variants.scenario]
+cells_per_team = 16

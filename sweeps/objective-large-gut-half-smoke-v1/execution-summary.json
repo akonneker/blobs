@@ -1,0 +1,9 @@
+{
+  "schema_version": 4,
+  "manifest_sha256": "6dd941fe43da87dbf97b782515dc7daf0cfd8d9f59c91c179b4a3aaa98c40800",
+  "total_runs": 12,
+  "succeeded": 12,
+  "failed": 0,
+  "still_running": 0,
+  "aggregate_file": "/Users/adam/code/blobs/sweeps/objective-large-gut-half-smoke-v1/aggregate.json"
+}

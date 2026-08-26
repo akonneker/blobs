@@ -1,0 +1,29 @@
+# Scientific event-time horizon sensitivity. The decision-frontier ceiling in
+# control_eval.toml is an execution guard and is identical for every variant.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/colony-horizon-v1"
+seeds = [1103, 2207, 3301]
+
+[[variants]]
+name = "horizon-262k"
+description = "Draw at the first canonical event frontier at or after 262144 quanta"
+[variants.scenario.victory]
+sim_time_limit_quanta = 262144
+
+[[variants]]
+name = "horizon-524k"
+description = "Draw at the first canonical event frontier at or after 524288 quanta"
+[variants.scenario.victory]
+sim_time_limit_quanta = 524288
+
+[[variants]]
+name = "horizon-1m"
+description = "Draw at the first canonical event frontier at or after 1048576 quanta"
+[variants.scenario.victory]
+sim_time_limit_quanta = 1048576
+
+[[variants]]
+name = "horizon-2m"
+description = "Draw at the first canonical event frontier at or after 2097152 quanta"
+[variants.scenario.victory]
+sim_time_limit_quanta = 2097152

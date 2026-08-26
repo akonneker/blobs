@@ -1,0 +1,35 @@
+services:
+  trainer:
+    image: ${TRAINING_IMAGE:-blobs-training:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.training
+      args:
+        BLOB_CODE_REVISION: ${BLOB_CODE_REVISION:-unversioned-container}
+    init: true
+    user: "${TRAINING_UID:-10001}:${TRAINING_GID:-10001}"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      RAYON_NUM_THREADS: ${TRAINING_THREADS:-8}
+      RUST_BACKTRACE: "1"
+      HOME: /tmp
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    volumes:
+      - ./blob_rl/config:/config:ro
+      - ${TRAINING_OUTPUT_DIR:-./training-output}:/output
+    command:
+      - train
+      - --config
+      - /config/${TRAINING_CONFIG:-default.toml}
+      - --checkpoint-dir
+      - /output/checkpoints
+      - --save-model
+      - /output/final-model

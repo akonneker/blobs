@@ -2,13 +2,15 @@ use blob_interface::reference_mind::{
     ReferenceEffort, ReferenceMemoryUpdate, ReferenceMindAction, ReferenceMindDecision,
     ReferenceMindInput,
 };
+#[cfg(target_arch = "wasm32")]
 use blob_interface::reference_mind_converter::{
     ReferenceMindLimits, capnp_to_reference_mind_input, reference_mind_decision_to_capnp,
 };
 use blob_mind_utils::{
-    best_energy_slot, choose_slot, current_food, preferred_effort, safe_empty_slots,
-    split_allocation,
+    best_energy_slot, choose_slot, current_food, legal_action_or_wait, preferred_effort,
+    safe_empty_slots, split_allocation,
 };
+#[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 
 const MEMORY_BYTES: usize = 4;
@@ -27,7 +29,7 @@ fn write_u16(memory: &mut [u8], offset: usize, value: u16) {
     }
 }
 
-fn decide(input: &ReferenceMindInput, memory: &mut Vec<u8>) -> ReferenceMindAction {
+fn choose_action(input: &ReferenceMindInput, memory: &mut Vec<u8>) -> ReferenceMindAction {
     if input.action_space.max_private_memory_bytes as usize >= MEMORY_BYTES
         && memory.len() < MEMORY_BYTES
     {
@@ -98,18 +100,23 @@ fn decide(input: &ReferenceMindInput, memory: &mut Vec<u8>) -> ReferenceMindActi
     ReferenceMindAction::Wait
 }
 
+pub fn decide(input: &ReferenceMindInput) -> ReferenceMindDecision {
+    let mut memory = input.private_memory.clone();
+    let action = choose_action(input, &mut memory);
+    ReferenceMindDecision {
+        action: legal_action_or_wait(input, action, false),
+        signal: None,
+        memory_update: ReferenceMemoryUpdate::Replace(memory),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn reference_mind_function(bytes: Vec<u8>) -> FnResult<Vec<u8>> {
     let limits = ReferenceMindLimits::default();
     let input = capnp_to_reference_mind_input(&bytes, limits)
         .map_err(|error| Error::msg(error.to_string()))?;
-    let mut memory = input.private_memory.clone();
-    let action = decide(&input, &mut memory);
-    let decision = ReferenceMindDecision {
-        action,
-        signal: None,
-        memory_update: ReferenceMemoryUpdate::Replace(memory),
-    };
+    let decision = decide(&input);
     Ok(reference_mind_decision_to_capnp(&decision, limits)
         .map_err(|error| Error::msg(error.to_string()))?)
 }

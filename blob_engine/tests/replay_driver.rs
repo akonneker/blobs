@@ -239,7 +239,10 @@ fn authoritative_driver_replays_signal_commitments() {
     let mut recorder = ReplayRecorder::new(compiled, simulation.state_hash());
     let started_at = simulation.now();
     let request = ActionRequest::Wait;
-    let signal = Some(ReferenceSignalEmission { channel: 2 });
+    let signal = Some(ReferenceSignalEmission {
+        channel: 2,
+        amount: 3,
+    });
     let next_private_memory = vec![7, 8, 9];
     let receipt = simulation
         .commit_decision_with_signal(actor, request.clone(), signal, next_private_memory.clone())

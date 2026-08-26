@@ -10,6 +10,7 @@ members = [
     "minds/explorer_mind", 
     "minds/aggressive_mind", 
     "minds/defensive_mind", 
+    "minds/colony_mind",
     "minds/blob_mind_utils",
     "minds/isolation_canary",
     "minds/invalid_mind_canary"

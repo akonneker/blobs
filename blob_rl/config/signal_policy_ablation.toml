@@ -1,0 +1,10 @@
+# Candidate-policy ablation on one fixed world/rules profile. Each candidate is
+# run separately against this exact manifest so policy effects are not mixed
+# with rule changes.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/signal-policy-ablation-v1"
+seeds = [5101, 5209, 5303, 5407, 5501, 5609, 5701, 5801, 5903, 6007, 6101, 6203]
+
+[[variants]]
+name = "baseline-rules"
+description = "Default signal cost, decay, visibility, ecology, and victory rules"

@@ -904,15 +904,6 @@ mod tests {
     fn benchmark_maintained_mind_call() {
         const WARMUP_CALLS: usize = 1_000;
         const MEASURED_CALLS: usize = 10_000;
-        let mind_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../target/wasm32-unknown-unknown/release/simple_mind.wasm");
-        if !mind_path.exists() {
-            eprintln!("Skipping: build simple_mind.wasm first");
-            return;
-        }
-        let manifest = Manifest::new([Wasm::file(mind_path)])
-            .with_memory_options(MemoryOptions::new().with_max_pages(1_024))
-            .with_timeout(Duration::from_secs(1));
         let limits = ReferenceMindLimits::default();
         let input = ReferenceMindInput {
             self_state: ReferenceSelfState {
@@ -972,50 +963,73 @@ mod tests {
                 metabolism_rate_denominator: 1_024,
                 terrain_mass_per_elevation: 10,
                 signal_emission_cost: 1,
+                effort_cost_numerators: [1, 1, 2],
+                effort_cost_denominators: [2, 1, 1],
+                move_effort_base: 1,
+                move_mass_units_per_effort: 100,
+                attack_effort_base: 2,
+                guard_effort_base: 1,
+                consume_effort_base: 1,
+                split_effort_base: 2,
+                regurgitate_effort_base: 1,
+                excavate_effort_base: 2,
+                deposit_terrain_effort_base: 2,
             },
             private_memory: Vec::new(),
             randomness: PrivateRandom::ZERO,
         };
         let input = reference_mind_input_to_capnp(&input, limits).unwrap();
 
-        for (allocator, config) in [
-            (
-                "pooling",
-                crate::plugin_pool::pooling_config(&manifest, 1).unwrap(),
-            ),
-            ("on-demand", Config::new()),
-        ] {
-            let executor = ExtismCompatExecutor::new(&manifest, config).unwrap();
-            let mut output_bytes = 0;
-            for _ in 0..WARMUP_CALLS {
-                output_bytes = executor
-                    .call(input.clone(), limits.max_action_bytes)
-                    .unwrap()
-                    .len();
+        for mind_name in ["simple_mind", "colony_mind"] {
+            let mind_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+                "../target/wasm32-unknown-unknown/release/{mind_name}.wasm"
+            ));
+            if !mind_path.exists() {
+                eprintln!("Skipping: build {mind_name}.wasm first");
+                continue;
             }
-            let mut executor_time = Duration::ZERO;
-            let mut decode_time = Duration::ZERO;
-            let started = Instant::now();
-            for _ in 0..MEASURED_CALLS {
-                let phase = Instant::now();
-                let output = executor
-                    .call(input.clone(), limits.max_action_bytes)
-                    .unwrap();
-                executor_time += phase.elapsed();
-                let phase = Instant::now();
-                black_box(capnp_to_reference_mind_decision(&output, limits).unwrap());
-                decode_time += phase.elapsed();
+            let manifest = Manifest::new([Wasm::file(mind_path)])
+                .with_memory_options(MemoryOptions::new().with_max_pages(1_024))
+                .with_timeout(Duration::from_secs(1));
+            for (allocator, config) in [
+                (
+                    "pooling",
+                    crate::plugin_pool::pooling_config(&manifest, 1).unwrap(),
+                ),
+                ("on-demand", Config::new()),
+            ] {
+                let executor = ExtismCompatExecutor::new(&manifest, config).unwrap();
+                let mut output_bytes = 0;
+                for _ in 0..WARMUP_CALLS {
+                    output_bytes = executor
+                        .call(input.clone(), limits.max_action_bytes)
+                        .unwrap()
+                        .len();
+                }
+                let mut executor_time = Duration::ZERO;
+                let mut decode_time = Duration::ZERO;
+                let started = Instant::now();
+                for _ in 0..MEASURED_CALLS {
+                    let phase = Instant::now();
+                    let output = executor
+                        .call(input.clone(), limits.max_action_bytes)
+                        .unwrap();
+                    executor_time += phase.elapsed();
+                    let phase = Instant::now();
+                    black_box(capnp_to_reference_mind_decision(&output, limits).unwrap());
+                    decode_time += phase.elapsed();
+                }
+                let elapsed = started.elapsed();
+                println!(
+                    "compat {mind_name:<12} {allocator:<9}: {:>8.0} ns/action \
+                     (executor {:>8.0}, decode {:>5.0}; {} input bytes, \
+                     {output_bytes} output bytes)",
+                    elapsed.as_nanos() as f64 / MEASURED_CALLS as f64,
+                    executor_time.as_nanos() as f64 / MEASURED_CALLS as f64,
+                    decode_time.as_nanos() as f64 / MEASURED_CALLS as f64,
+                    input.len(),
+                );
             }
-            let elapsed = started.elapsed();
-            println!(
-                "compat maintained-Mind {allocator:<9}: {:>8.0} ns/action \
-                 (executor {:>8.0}, decode {:>5.0}; {} input bytes, \
-                 {output_bytes} output bytes)",
-                elapsed.as_nanos() as f64 / MEASURED_CALLS as f64,
-                executor_time.as_nanos() as f64 / MEASURED_CALLS as f64,
-                decode_time.as_nanos() as f64 / MEASURED_CALLS as f64,
-                input.len(),
-            );
         }
     }
 }

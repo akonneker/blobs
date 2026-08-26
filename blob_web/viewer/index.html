@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Local viewer for trusted and exploratory Blob colony telemetry."
+    />
+    <title>Blob Field Notes</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #09120f;
+      }
+    </style>
+  </head>
+  <body id="app">
+    <script type="module">
+      import "./telemetry-viewer.js";
+      import "./control-matrix-viewer.js";
+      import "./adjudication-sensitivity-viewer.js";
+
+      const query = new URLSearchParams(window.location.search);
+      const controls = query.get("view") === "controls";
+      const adjudication = query.get("view") === "adjudication";
+      document.title = controls
+        ? "Blob Control Matrix"
+        : adjudication
+          ? "Blob Adjudication Lab"
+          : "Blob Field Notes";
+      const element = document.createElement(controls
+        ? "blob-control-matrix-viewer"
+        : adjudication
+          ? "blob-adjudication-sensitivity-viewer"
+          : "blob-telemetry-viewer");
+      if (controls) {
+        const recorded = "/reports/control-matrix.json";
+        const live = "/reports/control-matrix-live.json";
+        element.setAttribute("recorded-src", recorded);
+        element.setAttribute("live-src", live);
+        element.setAttribute("poll-interval", "1500");
+        element.setAttribute("src", query.get("live") === "1" ? live : recorded);
+      } else if (adjudication) {
+        const studies = {
+          horizon: "/reports/adjudication-sensitivity.json",
+          fragmentation: "/reports/adjudication-fragmentation.json",
+          density: "/reports/adjudication-density.json",
+          crowding: "/reports/adjudication-crowding.json",
+        };
+        const study = Object.hasOwn(studies, query.get("study"))
+          ? query.get("study")
+          : "horizon";
+        element.setAttribute("study", study);
+        element.setAttribute("src", studies[study]);
+      } else {
+        element.setAttribute("src", "./sample-telemetry.json");
+      }
+      document.getElementById("app").append(element);
+    </script>
+  </body>
+</html>

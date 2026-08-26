@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -14,7 +15,8 @@ pub struct TileIndex(pub usize);
 pub struct LocalSlot(pub u8);
 
 /// Bit mask over [`LocalSlot`] values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SlotMask(u32);
 
 impl SlotMask {
@@ -55,7 +57,8 @@ impl SlotMask {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LocalOffset {
     pub dx: i8,
     pub dy: i8,
@@ -77,13 +80,15 @@ impl LocalOffset {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BoundaryRule {
     Bounded,
     Wrap,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DiagonalCornerRule {
     Allow,
     BlockIfEitherOrthogonalOccupied,
@@ -103,7 +108,8 @@ impl TargetingAction {
     const COUNT: usize = 4;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObservationMasks {
     pub occupancy: SlotMask,
     pub marker: SlotMask,
@@ -129,7 +135,8 @@ impl ObservationMasks {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NeighborhoodSpec {
     pub slots: Vec<LocalOffset>,
     pub observations: ObservationMasks,

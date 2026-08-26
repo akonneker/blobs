@@ -6,10 +6,19 @@ edition = "2021"
 [dependencies]
 blob_interface = { path = "../blob_interface" }
 blob_engine = { path = "../blob_engine" }
+simple_mind = { path = "../minds/simple_mind" }
+aggressive_mind = { path = "../minds/aggressive_mind" }
+defensive_mind = { path = "../minds/defensive_mind" }
+explorer_mind = { path = "../minds/explorer_mind" }
+colony_mind = { path = "../minds/colony_mind" }
 burn = { version = "0.20", features = ["autodiff", "train"] }
 rayon = "1.10"
 rand = "0.9"
+rand_chacha = { version = "0.9", features = ["serde"] }
+rmp-serde = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
 toml = "0.8"
 clap = { version = "4", features = ["derive"] }
 
@@ -20,7 +29,64 @@ ndarray = ["burn/ndarray"]
 
 [dev-dependencies]
 burn = { version = "0.20", features = ["ndarray"] }
+tempfile = "3"
 
 [[bin]]
 name = "train"
 path = "src/bin/train.rs"
+
+[[bin]]
+name = "rules-sweep"
+path = "src/bin/rules_sweep.rs"
+
+[[bin]]
+name = "rules-sweep-run"
+path = "src/bin/rules_sweep_run.rs"
+
+[[bin]]
+name = "viability"
+path = "src/bin/viability.rs"
+
+[[bin]]
+name = "viability-matrix"
+path = "src/bin/viability_matrix.rs"
+
+[[bin]]
+name = "viability-gate"
+path = "src/bin/viability_gate.rs"
+
+[[bin]]
+name = "viability-preflight"
+path = "src/bin/viability_preflight.rs"
+
+[[bin]]
+name = "control-matrix"
+path = "src/bin/control_matrix.rs"
+
+[[bin]]
+name = "adjudication-sensitivity"
+path = "src/bin/adjudication_sensitivity.rs"
+
+[[bin]]
+name = "demonstrations"
+path = "src/bin/demonstrations.rs"
+
+[[bin]]
+name = "behavior-clone"
+path = "src/bin/behavior_clone.rs"
+
+[[bin]]
+name = "ecological-characterization"
+path = "src/bin/ecological_characterization.rs"
+
+[[bin]]
+name = "signal-policy-ablation"
+path = "src/bin/signal_policy_ablation.rs"
+
+[[bin]]
+name = "signal-visibility-ablation"
+path = "src/bin/signal_visibility_ablation.rs"
+
+[[bin]]
+name = "learned-signal-attribution"
+path = "src/bin/learned_signal_attribution.rs"

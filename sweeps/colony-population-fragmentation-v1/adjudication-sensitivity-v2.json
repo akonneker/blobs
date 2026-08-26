@@ -1,0 +1,3721 @@
+{
+  "schema_version": 2,
+  "report_kind": "blob_adjudication_sensitivity",
+  "package_version": "0.1.0",
+  "code_revision": null,
+  "source_report_sha256": "5d0f4f0de30b0eff35fa125e283fd5d7664a73f959f98c51a8f6d32a1b34c921",
+  "source_matrix_config_hash": "ca145649909d0b6ed30c3c44347115a2c91bc23b73ca2b509653eb50516c08b2",
+  "policy_spec_sha256": "ae3537829bf651b704e7510d94774d5e80dcb67d865988d1e1d6717e49f4cdae",
+  "expanded_policy_sha256": "9113654158277dc8c2befae09a2ff854407c4e537cb221fed821423619ee15be",
+  "analysis_config_sha256": "1a9050cfae4d5fa25213d1c4287ed01f54c54177dddfcadb530190ba8d6ceea2",
+  "weight_scale": 10000,
+  "verification_scope": "local_counterfactual",
+  "server_verified": false,
+  "replay_committed": false,
+  "source_episodes": 120,
+  "source_deadline_draws": 27,
+  "policies": [
+    {
+      "name": "body-only",
+      "description": "Count core and assimilated energy; exclude gut, carried terrain, and in-flight escrow",
+      "weights": {
+        "core_basis_points": 10000,
+        "assimilated_basis_points": 10000,
+        "gut_basis_points": 0,
+        "carried_material_basis_points": 0,
+        "payload_escrow_basis_points": 0
+      },
+      "minimum_victory_margin_mass_energy": 0,
+      "overall": {
+        "episodes": 120,
+        "extermination_colony_wins": 53,
+        "extermination_colony_losses": 40,
+        "deadline_colony_wins": 2,
+        "deadline_colony_losses": 25,
+        "deadline_draws": 0,
+        "hypothetical_colony_wins": 55,
+        "hypothetical_colony_losses": 65,
+        "hypothetical_draws": 0
+      },
+      "groups": [
+        {
+          "variant": "fragment-1",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 6,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 6,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 4,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 3,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 1,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 1,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        }
+      ],
+      "deadline_episodes": [
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 370000,
+          "control_score_basis_units": 500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 430000,
+          "control_score_basis_units": 1470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 430000,
+          "control_score_basis_units": 1450000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 470000,
+          "control_score_basis_units": 1100000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 580000,
+          "control_score_basis_units": 360000,
+          "outcome": "colony_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 390000,
+          "control_score_basis_units": 980000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 470000,
+          "control_score_basis_units": 960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 2930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 30000,
+          "control_score_basis_units": 980000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 2460000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 320000,
+          "control_score_basis_units": 980000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 400000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 30000,
+          "control_score_basis_units": 770000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 570000,
+          "control_score_basis_units": 690000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 320000,
+          "control_score_basis_units": 550000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 380000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 130000,
+          "control_score_basis_units": 930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 80000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 2240000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 340000,
+          "control_score_basis_units": 470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 380000,
+          "outcome": "colony_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 130000,
+          "control_score_basis_units": 2210000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 880000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 830000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 340000,
+          "control_score_basis_units": 690000,
+          "outcome": "control_win"
+        }
+      ]
+    },
+    {
+      "name": "gut-quarter",
+      "description": "Count gut contents at 25 percent and exclude carried terrain and escrow",
+      "weights": {
+        "core_basis_points": 10000,
+        "assimilated_basis_points": 10000,
+        "gut_basis_points": 2500,
+        "carried_material_basis_points": 0,
+        "payload_escrow_basis_points": 0
+      },
+      "minimum_victory_margin_mass_energy": 0,
+      "overall": {
+        "episodes": 120,
+        "extermination_colony_wins": 53,
+        "extermination_colony_losses": 40,
+        "deadline_colony_wins": 1,
+        "deadline_colony_losses": 26,
+        "deadline_draws": 0,
+        "hypothetical_colony_wins": 54,
+        "hypothetical_colony_losses": 66,
+        "hypothetical_draws": 0
+      },
+      "groups": [
+        {
+          "variant": "fragment-1",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 6,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 6,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 4,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 3,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 1,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        }
+      ],
+      "deadline_episodes": [
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 380000,
+          "control_score_basis_units": 500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 437500,
+          "control_score_basis_units": 1470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 445000,
+          "control_score_basis_units": 1462500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 485000,
+          "control_score_basis_units": 1122500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 585000,
+          "control_score_basis_units": 505000,
+          "outcome": "colony_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 395000,
+          "control_score_basis_units": 995000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 480000,
+          "control_score_basis_units": 977500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 2937500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 35000,
+          "control_score_basis_units": 985000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 27500,
+          "control_score_basis_units": 2495000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 322500,
+          "control_score_basis_units": 985000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 532500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 945000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 35000,
+          "control_score_basis_units": 802500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 575000,
+          "control_score_basis_units": 692500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 322500,
+          "control_score_basis_units": 550000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 392500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 150000,
+          "control_score_basis_units": 940000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 85000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 967500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 467500,
+          "control_score_basis_units": 2262500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 522500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 150000,
+          "control_score_basis_units": 2225000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 940000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 497500,
+          "control_score_basis_units": 837500,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 695000,
+          "outcome": "control_win"
+        }
+      ]
+    },
+    {
+      "name": "gut-half",
+      "description": "Count gut contents at 50 percent and exclude carried terrain and escrow",
+      "weights": {
+        "core_basis_points": 10000,
+        "assimilated_basis_points": 10000,
+        "gut_basis_points": 5000,
+        "carried_material_basis_points": 0,
+        "payload_escrow_basis_points": 0
+      },
+      "minimum_victory_margin_mass_energy": 0,
+      "overall": {
+        "episodes": 120,
+        "extermination_colony_wins": 53,
+        "extermination_colony_losses": 40,
+        "deadline_colony_wins": 0,
+        "deadline_colony_losses": 27,
+        "deadline_draws": 0,
+        "hypothetical_colony_wins": 53,
+        "hypothetical_colony_losses": 67,
+        "hypothetical_draws": 0
+      },
+      "groups": [
+        {
+          "variant": "fragment-1",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 6,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 6,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 4,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 3,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        }
+      ],
+      "deadline_episodes": [
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 390000,
+          "control_score_basis_units": 500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 445000,
+          "control_score_basis_units": 1470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 1475000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 500000,
+          "control_score_basis_units": 1145000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 590000,
+          "control_score_basis_units": 650000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 400000,
+          "control_score_basis_units": 1010000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 995000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 2945000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 990000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 35000,
+          "control_score_basis_units": 2530000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 325000,
+          "control_score_basis_units": 990000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 665000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 835000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 580000,
+          "control_score_basis_units": 695000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 325000,
+          "control_score_basis_units": 550000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 405000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 170000,
+          "control_score_basis_units": 950000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 90000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 975000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 475000,
+          "control_score_basis_units": 2285000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 360000,
+          "control_score_basis_units": 490000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 665000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 170000,
+          "control_score_basis_units": 2240000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 1000000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 505000,
+          "control_score_basis_units": 845000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 360000,
+          "control_score_basis_units": 700000,
+          "outcome": "control_win"
+        }
+      ]
+    },
+    {
+      "name": "gut-full",
+      "description": "Count all cell core, assimilated, and gut energy; exclude carried terrain and escrow",
+      "weights": {
+        "core_basis_points": 10000,
+        "assimilated_basis_points": 10000,
+        "gut_basis_points": 10000,
+        "carried_material_basis_points": 0,
+        "payload_escrow_basis_points": 0
+      },
+      "minimum_victory_margin_mass_energy": 0,
+      "overall": {
+        "episodes": 120,
+        "extermination_colony_wins": 53,
+        "extermination_colony_losses": 40,
+        "deadline_colony_wins": 0,
+        "deadline_colony_losses": 27,
+        "deadline_draws": 0,
+        "hypothetical_colony_wins": 53,
+        "hypothetical_colony_losses": 67,
+        "hypothetical_draws": 0
+      },
+      "groups": [
+        {
+          "variant": "fragment-1",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 6,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 6,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 4,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 3,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        }
+      ],
+      "deadline_episodes": [
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 410000,
+          "control_score_basis_units": 500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 1470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 1500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 530000,
+          "control_score_basis_units": 1190000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 600000,
+          "control_score_basis_units": 940000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 410000,
+          "control_score_basis_units": 1040000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 510000,
+          "control_score_basis_units": 1030000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 2960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 1000000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 2600000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 330000,
+          "control_score_basis_units": 1000000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 990000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 900000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 590000,
+          "control_score_basis_units": 700000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 330000,
+          "control_score_basis_units": 550000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 430000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 210000,
+          "control_score_basis_units": 970000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 100000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 990000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 2330000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 380000,
+          "control_score_basis_units": 510000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 950000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 210000,
+          "control_score_basis_units": 2270000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 1120000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 520000,
+          "control_score_basis_units": 860000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 380000,
+          "control_score_basis_units": 710000,
+          "outcome": "control_win"
+        }
+      ]
+    },
+    {
+      "name": "all-cell-compartments",
+      "description": "Count every cell-owned compartment, including carried terrain and pending payload escrow",
+      "weights": {
+        "core_basis_points": 10000,
+        "assimilated_basis_points": 10000,
+        "gut_basis_points": 10000,
+        "carried_material_basis_points": 10000,
+        "payload_escrow_basis_points": 10000
+      },
+      "minimum_victory_margin_mass_energy": 0,
+      "overall": {
+        "episodes": 120,
+        "extermination_colony_wins": 53,
+        "extermination_colony_losses": 40,
+        "deadline_colony_wins": 0,
+        "deadline_colony_losses": 27,
+        "deadline_draws": 0,
+        "hypothetical_colony_wins": 53,
+        "hypothetical_colony_losses": 67,
+        "hypothetical_draws": 0
+      },
+      "groups": [
+        {
+          "variant": "fragment-1",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 6,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 6,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 4,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 3,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        }
+      ],
+      "deadline_episodes": [
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 410000,
+          "control_score_basis_units": 500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 1470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 1500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 530000,
+          "control_score_basis_units": 1190000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 600000,
+          "control_score_basis_units": 940000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 410000,
+          "control_score_basis_units": 1040000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 510000,
+          "control_score_basis_units": 1030000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 2960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 1000000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 2600000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 330000,
+          "control_score_basis_units": 1000000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 990000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 900000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 590000,
+          "control_score_basis_units": 700000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 330000,
+          "control_score_basis_units": 550000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 430000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 210000,
+          "control_score_basis_units": 970000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 100000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 990000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 2330000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 380000,
+          "control_score_basis_units": 510000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 950000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 210000,
+          "control_score_basis_units": 2270000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 1120000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 520000,
+          "control_score_basis_units": 860000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 380000,
+          "control_score_basis_units": 710000,
+          "outcome": "control_win"
+        }
+      ]
+    },
+    {
+      "name": "body-only-margin-10",
+      "description": "Body-only score must lead by at least ten mass-energy units; smaller leads remain draws",
+      "weights": {
+        "core_basis_points": 10000,
+        "assimilated_basis_points": 10000,
+        "gut_basis_points": 0,
+        "carried_material_basis_points": 0,
+        "payload_escrow_basis_points": 0
+      },
+      "minimum_victory_margin_mass_energy": 10,
+      "overall": {
+        "episodes": 120,
+        "extermination_colony_wins": 53,
+        "extermination_colony_losses": 40,
+        "deadline_colony_wins": 1,
+        "deadline_colony_losses": 25,
+        "deadline_draws": 1,
+        "hypothetical_colony_wins": 54,
+        "hypothetical_colony_losses": 65,
+        "hypothetical_draws": 1
+      },
+      "groups": [
+        {
+          "variant": "fragment-1",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 6,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 6,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-1",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 6,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 5,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-2",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 4,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 3,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 3,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 1,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 0,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 0,
+            "hypothetical_colony_losses": 6,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 4,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 4,
+            "hypothetical_colony_losses": 2,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 3,
+            "extermination_colony_losses": 2,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 1,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 3,
+            "hypothetical_colony_losses": 3,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 1,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 5,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 1,
+            "hypothetical_colony_losses": 5,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 1,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 0,
+            "hypothetical_draws": 1
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 2,
+            "extermination_colony_losses": 0,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 4,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 2,
+            "hypothetical_colony_losses": 4,
+            "hypothetical_draws": 0
+          }
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "explorer",
+          "sim_time_limit_quanta": 1048576,
+          "aggregate": {
+            "episodes": 6,
+            "extermination_colony_wins": 5,
+            "extermination_colony_losses": 1,
+            "deadline_colony_wins": 0,
+            "deadline_colony_losses": 0,
+            "deadline_draws": 0,
+            "hypothetical_colony_wins": 5,
+            "hypothetical_colony_losses": 1,
+            "hypothetical_draws": 0
+          }
+        }
+      ],
+      "deadline_episodes": [
+        {
+          "variant": "fragment-2",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 370000,
+          "control_score_basis_units": 500000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 430000,
+          "control_score_basis_units": 1470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 430000,
+          "control_score_basis_units": 1450000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 470000,
+          "control_score_basis_units": 1100000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 580000,
+          "control_score_basis_units": 360000,
+          "outcome": "colony_win"
+        },
+        {
+          "variant": "fragment-4",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 390000,
+          "control_score_basis_units": 980000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 470000,
+          "control_score_basis_units": 960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 2930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 30000,
+          "control_score_basis_units": 980000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 2460000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 320000,
+          "control_score_basis_units": 980000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "aggressive",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 400000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 20000,
+          "control_score_basis_units": 930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 30000,
+          "control_score_basis_units": 770000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 570000,
+          "control_score_basis_units": 690000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 320000,
+          "control_score_basis_units": 550000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-8",
+          "opponent": "explorer",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 50000,
+          "control_score_basis_units": 380000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 130000,
+          "control_score_basis_units": 930000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 1103,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 80000,
+          "control_score_basis_units": 480000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 350000,
+          "control_score_basis_units": 960000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 2240000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "simple",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 340000,
+          "control_score_basis_units": 470000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "aggressive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 460000,
+          "control_score_basis_units": 380000,
+          "outcome": "draw"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 1103,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 130000,
+          "control_score_basis_units": 2210000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 2207,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 40000,
+          "control_score_basis_units": 880000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_zero",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 490000,
+          "control_score_basis_units": 830000,
+          "outcome": "control_win"
+        },
+        {
+          "variant": "fragment-16",
+          "opponent": "defensive",
+          "seed": 3301,
+          "seat": "colony_team_one",
+          "sim_time_quanta": 1048576,
+          "colony_score_basis_units": 340000,
+          "control_score_basis_units": 690000,
+          "outcome": "control_win"
+        }
+      ]
+    }
+  ]
+}

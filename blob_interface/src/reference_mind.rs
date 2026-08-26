@@ -159,7 +159,23 @@ pub struct ReferenceActionSpace {
     pub metabolism_rate_numerator: u64,
     pub metabolism_rate_denominator: u64,
     pub terrain_mass_per_elevation: u64,
+    /// Conserved energy quantum for signal deposits. Zero disables signaling;
+    /// every nonzero channel amount must be an exact multiple of this value.
     pub signal_emission_cost: u64,
+    /// Local action-cost rules. Together with the observed self mass and slot
+    /// distance these are sufficient to reproduce exact commit affordability
+    /// without exposing identity or global state.
+    pub effort_cost_numerators: [u32; 3],
+    pub effort_cost_denominators: [u32; 3],
+    pub move_effort_base: u64,
+    pub move_mass_units_per_effort: u64,
+    pub attack_effort_base: u64,
+    pub guard_effort_base: u64,
+    pub consume_effort_base: u64,
+    pub split_effort_base: u64,
+    pub regurgitate_effort_base: u64,
+    pub excavate_effort_base: u64,
+    pub deposit_terrain_effort_base: u64,
 }
 
 impl ReferenceActionSpace {
@@ -185,6 +201,14 @@ impl ReferenceEffort {
             Self::Gentle => EFFORT_GENTLE_BIT,
             Self::Standard => EFFORT_STANDARD_BIT,
             Self::Burst => EFFORT_BURST_BIT,
+        }
+    }
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Gentle => 0,
+            Self::Standard => 1,
+            Self::Burst => 2,
         }
     }
 }
@@ -217,6 +241,11 @@ pub enum ReferenceMindAction {
         target_slot: u8,
         amount: u64,
     },
+    /// Spend one complete decision writing independent energy amounts into
+    /// all four anonymous local signal channels.
+    Signal {
+        amounts: [u64; REFERENCE_SIGNAL_CHANNELS],
+    },
     Excavate,
     DepositTerrain,
 }
@@ -224,6 +253,8 @@ pub enum ReferenceMindAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReferenceSignalEmission {
     pub channel: u8,
+    /// Conserved assimilated energy deposited into the selected channel.
+    pub amount: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

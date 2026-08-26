@@ -1,0 +1,15 @@
+{
+  "schema_version": 4,
+  "manifest_sha256": "d24c41a6210c662703fe04b84d36aceb34148b34f92936e67dbb072731a8abcf",
+  "variant": "field-128",
+  "replicate": 1,
+  "training_seed": 4201,
+  "experiment_config_sha256": "63fd55cf9f847e26fca2f03a86e783b655efd9240cbb3b61fa6c7d2c5f63c71a",
+  "state": "succeeded",
+  "attempts": 1,
+  "started_unix_millis": 1787631832625,
+  "finished_unix_millis": 1787631836901,
+  "resume_checkpoint": null,
+  "exit_code": 0,
+  "error": null
+}

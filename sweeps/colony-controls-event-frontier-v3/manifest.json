@@ -1,0 +1,291 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/colony_control_sweep.toml",
+  "spec_sha256": "7cefeb65de59dbbead35f67410b0d8ba10a6974afd2cfc2e80acd22a8099dfd7",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3",
+  "seeds": [
+    1103,
+    2207,
+    3301
+  ],
+  "variants": [
+    {
+      "name": "baseline-16",
+      "description": "16x16 wrapped Moore neighborhood, eight plants, two cells per side",
+      "rules": {},
+      "scenario": {}
+    },
+    {
+      "name": "large-32",
+      "description": "32x32 board with four initial cells and sixteen plants per world",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 4,
+        "num_plants": 16,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    },
+    {
+      "name": "sparse-plants",
+      "description": "16x16 board with only two productive tiles",
+      "rules": {},
+      "scenario": {
+        "num_plants": 2
+      }
+    },
+    {
+      "name": "bounded-world",
+      "description": "16x16 Moore neighborhood with bounded edges",
+      "rules": {
+        "neighborhood": {
+          "boundary_rule": "bounded"
+        }
+      },
+      "scenario": {}
+    },
+    {
+      "name": "blocked-diagonals",
+      "description": "Diagonal motion is blocked when both orthogonal corners are occupied",
+      "rules": {
+        "neighborhood": {
+          "diagonal_corner_rule": "block_if_both_orthogonals_occupied"
+        }
+      },
+      "scenario": {}
+    },
+    {
+      "name": "expensive-actions",
+      "description": "Movement, attack, guard, excavation, and deposit have higher base effort costs",
+      "rules": {
+        "attack_effort_base": 4,
+        "deposit_terrain_effort_base": 4,
+        "excavate_effort_base": 4,
+        "guard_effort_base": 2,
+        "move_effort_base": 3
+      },
+      "scenario": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "baseline-16",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "00b4dc238660a1ff1e91c1f1dfe5040c8b8edbb962af291cda2bcf297d8bf461",
+      "config_file_sha256": "9f3045930b34dd458f25097e29b43ee34d23e10a797f21a5b4a46b34c8fcb3d5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/baseline-16/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/baseline-16/seed-1103/config.toml"
+    },
+    {
+      "variant": "baseline-16",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "c1d7700d140248546f887c3e64d08421d09f5273ea6696567f94bacd593da471",
+      "config_file_sha256": "232e1fc9b2295b03a519a33bf38dff368065e06ee8aea1e65a034017fd26dbf4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/baseline-16/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/baseline-16/seed-2207/config.toml"
+    },
+    {
+      "variant": "baseline-16",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "dba71d49dc3493f1e332763bbc2a0660eaeeb26360a6b85984f8b01b601a1dea",
+      "config_file_sha256": "5f0565dd93866fe5cbda8854fd94b97b94cef017bd80c70c54962c11bb3bd7c0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/baseline-16/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/baseline-16/seed-3301/config.toml"
+    },
+    {
+      "variant": "large-32",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "8fb7c6fdfee05bdc7ee3e45d901ced0ed8461f9641b55c401472e78a84753715",
+      "experiment_config_sha256": "e632331d1685616b6d19ef7d10f4ba7abd3caa56679621caa74aca9b6bf3130e",
+      "config_file_sha256": "2205d027d4af9d6a72a6198d48191f053cc1b60e7590af2b0f3c341dd9603731",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/large-32/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/large-32/seed-1103/config.toml"
+    },
+    {
+      "variant": "large-32",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "8fb7c6fdfee05bdc7ee3e45d901ced0ed8461f9641b55c401472e78a84753715",
+      "experiment_config_sha256": "384e04fe5ea0d8a52d709ecb45ced47d84ca42c952948c43ee63e6f0d1e05326",
+      "config_file_sha256": "f4122d53ac62fdc2de1935e7cb745474e27c27ba7e9d7f25350f8ee8a4015fb1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/large-32/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/large-32/seed-2207/config.toml"
+    },
+    {
+      "variant": "large-32",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "8fb7c6fdfee05bdc7ee3e45d901ced0ed8461f9641b55c401472e78a84753715",
+      "experiment_config_sha256": "b281d532cc4d9684248b9e640947ce42cce9039cb9aca15603f93dae94d0beca",
+      "config_file_sha256": "3518f81488955da3aea68dc9f8d99b6c6ca9587ab35292013882f19e732156a6",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/large-32/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/large-32/seed-3301/config.toml"
+    },
+    {
+      "variant": "sparse-plants",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "4c8e05a2394a2e1dc55b89945b634643cb0e41b093606e8954f9655caf528fd0",
+      "experiment_config_sha256": "577fea8d7d73fcdae217ff8686594b7fdb3f9eb21e8f54b302fa2ef7e83a488d",
+      "config_file_sha256": "85a066725a2409640bcbc9b5aad622a982ec9a21388559d0d46a86f2b740c987",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/sparse-plants/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/sparse-plants/seed-1103/config.toml"
+    },
+    {
+      "variant": "sparse-plants",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "4c8e05a2394a2e1dc55b89945b634643cb0e41b093606e8954f9655caf528fd0",
+      "experiment_config_sha256": "9c6b8ee88f42ed15e264a61eacc0a7adab216ceb96f74434c9218864bca83d26",
+      "config_file_sha256": "0726e6565ba906b7a6af9993e143ca75d13286e3ae0bb5f538d49683fbe642b0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/sparse-plants/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/sparse-plants/seed-2207/config.toml"
+    },
+    {
+      "variant": "sparse-plants",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "4c8e05a2394a2e1dc55b89945b634643cb0e41b093606e8954f9655caf528fd0",
+      "experiment_config_sha256": "3103d611af9f4e8b2672c7cede5fb44f6647b4347e0c3c150f47c33841d5f5c0",
+      "config_file_sha256": "9ab351551ea49462e0253130c2848e0344f53ecb016800ab7f565d954edc71f9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/sparse-plants/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/sparse-plants/seed-3301/config.toml"
+    },
+    {
+      "variant": "bounded-world",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "522bfc530be093514cdfb5a9fdb7c7b1e407bfb52936f18c412e3d8c7c5a93f5",
+      "compiled_ruleset_hash": "a4f98c5d0a393424145c9ef4c3457225ce7a1848757c93be1480cc7529be284e",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "60648bce4333adc047cdba364a5a8e2ad06162678e4b6dd12025d262b5684c87",
+      "config_file_sha256": "a76af4728feda5af7c14eea1968d991620cfa158a2d0bf0fbd5ff95f7b2d10b6",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/bounded-world/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/bounded-world/seed-1103/config.toml"
+    },
+    {
+      "variant": "bounded-world",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "522bfc530be093514cdfb5a9fdb7c7b1e407bfb52936f18c412e3d8c7c5a93f5",
+      "compiled_ruleset_hash": "a4f98c5d0a393424145c9ef4c3457225ce7a1848757c93be1480cc7529be284e",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ceb9de9ff533beb4827a6b5c8626a85ff27f552763b73e1698768d213767f304",
+      "config_file_sha256": "0230472e3475ebc112e0dae5509b7853502692cb12558d3b5d0e48f44bc19317",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/bounded-world/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/bounded-world/seed-2207/config.toml"
+    },
+    {
+      "variant": "bounded-world",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "522bfc530be093514cdfb5a9fdb7c7b1e407bfb52936f18c412e3d8c7c5a93f5",
+      "compiled_ruleset_hash": "a4f98c5d0a393424145c9ef4c3457225ce7a1848757c93be1480cc7529be284e",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ee988eaf9b0928e73cbe88902156232aeeb3708b905eb1764b5a32020b864a82",
+      "config_file_sha256": "32ffe0814504b0a5d6eeebbad13ce285cac0c48fd2b7fc27da2cddc745a0e865",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/bounded-world/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/bounded-world/seed-3301/config.toml"
+    },
+    {
+      "variant": "blocked-diagonals",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "c0bf5180f2d40b9473d20c8b7c498ad28d2bf7759c39ea56fe136ac84827645d",
+      "compiled_ruleset_hash": "daa2bf64b77dc63f276702a7149373d7f33e02b29420e91f7c04c450679fc867",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "b6c52304f4e9dfb4b80d9172df68cc7330b9c0edef4295c4ffd27d0c1d64f14d",
+      "config_file_sha256": "73fd5b1bd237993770b0d69e56a2c9899d76da49ee654740b7c15258d8b27820",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/blocked-diagonals/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/blocked-diagonals/seed-1103/config.toml"
+    },
+    {
+      "variant": "blocked-diagonals",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "c0bf5180f2d40b9473d20c8b7c498ad28d2bf7759c39ea56fe136ac84827645d",
+      "compiled_ruleset_hash": "daa2bf64b77dc63f276702a7149373d7f33e02b29420e91f7c04c450679fc867",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "cfe12c674343429c87222a7906bdadb8121de3671d4a1f2469b86d47d1480cd2",
+      "config_file_sha256": "f1cf1097b424effb57750900c7e2bbc54f3d508d8767e4992276a1f2d346a3e3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/blocked-diagonals/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/blocked-diagonals/seed-2207/config.toml"
+    },
+    {
+      "variant": "blocked-diagonals",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "c0bf5180f2d40b9473d20c8b7c498ad28d2bf7759c39ea56fe136ac84827645d",
+      "compiled_ruleset_hash": "daa2bf64b77dc63f276702a7149373d7f33e02b29420e91f7c04c450679fc867",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "bf58734b15b172aa8947828455fdf56b52617d86a3cdf7e79616ac74a8bc199a",
+      "config_file_sha256": "6716f6f04fc9295533c86da1b4f245bdd5dff826c36e9a7b699f80f07ae02c3b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/blocked-diagonals/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/blocked-diagonals/seed-3301/config.toml"
+    },
+    {
+      "variant": "expensive-actions",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "4371663fa28bccbd436a2dd400a39d1247c1153a54204ae014bc09609152e53c",
+      "compiled_ruleset_hash": "a38485c33173740cea98a567f94aa32b37ad807cb98b26680e2dbbc9165670b8",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "b6884a0f0183fc430d700dbb5c06cfbbbdbd7f37b2e9b5ee41ac625dcaf32b36",
+      "config_file_sha256": "d849b55a00b19c64166886aa7585053179e851540517a0cda4011605beb35f8d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/expensive-actions/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/expensive-actions/seed-1103/config.toml"
+    },
+    {
+      "variant": "expensive-actions",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "4371663fa28bccbd436a2dd400a39d1247c1153a54204ae014bc09609152e53c",
+      "compiled_ruleset_hash": "a38485c33173740cea98a567f94aa32b37ad807cb98b26680e2dbbc9165670b8",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "fd73c106c7e3ea9cb04f91d32c6346af515bf70b9f6d91be1b5f094601349f7b",
+      "config_file_sha256": "0c2775cf2fd5d060c6849ecb06b18f100c18527be50f654268c59c015b24795b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/expensive-actions/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/expensive-actions/seed-2207/config.toml"
+    },
+    {
+      "variant": "expensive-actions",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "4371663fa28bccbd436a2dd400a39d1247c1153a54204ae014bc09609152e53c",
+      "compiled_ruleset_hash": "a38485c33173740cea98a567f94aa32b37ad807cb98b26680e2dbbc9165670b8",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "98e84c9aedcd44bfab074620a41db8812e859eb939195f2b46b441d9c58589f1",
+      "config_file_sha256": "fd9ad5a85d1051ab404b8da0ee684258eaeabf34b6e2f257a7bd0b88030853b4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/expensive-actions/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-controls-event-frontier-v3/expensive-actions/seed-3301/config.toml"
+    }
+  ]
+}

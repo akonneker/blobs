@@ -1,0 +1,79 @@
+# Paired one-factor signal characterization. Run maintained-Mind control
+# matrices before using the same variants for RL so changes in communication
+# are not confused with changes in basic ecological viability.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/signal-rules-v2"
+seeds = [5101, 5209, 5303]
+
+[[variants]]
+name = "baseline"
+description = "Reference one-energy emission quantum and 1/1024 linear decay"
+
+[[variants]]
+name = "signal-disabled"
+description = "Negative control: no signal deposits are legal"
+[variants.rules]
+signal_emission_cost = 0
+
+[[variants]]
+name = "cost-4"
+description = "Four energy per emission quantum"
+[variants.rules]
+signal_emission_cost = 4
+
+[[variants]]
+name = "cost-16"
+description = "Sixteen energy per emission quantum"
+[variants.rules]
+signal_emission_cost = 16
+
+[[variants]]
+name = "persistent"
+description = "No passive signal decay"
+[variants.rules]
+signal_decay_rate_numerator = 0
+
+[[variants]]
+name = "slow-decay"
+description = "One energy decays per 4096 simulation quanta"
+[variants.rules]
+signal_decay_rate_numerator = 1
+signal_decay_rate_denominator = 4096
+
+[[variants]]
+name = "fast-decay"
+description = "One energy decays per 256 simulation quanta"
+[variants.rules]
+signal_decay_rate_numerator = 1
+signal_decay_rate_denominator = 256
+
+[[variants]]
+name = "current-tile-only"
+description = "Signals remain physical, but neighboring signal channels are hidden"
+[variants.rules.neighborhood.observations]
+signal = 0
+
+[[variants]]
+name = "cardinal-visibility"
+description = "Observe signal channels only north, west, east, and south"
+[variants.rules.neighborhood.observations]
+signal = 90
+
+[[variants]]
+name = "expensive-disruption"
+description = "Raise the effort cost of terrain edits that erase local signals"
+[variants.rules]
+excavate_effort_base = 16
+deposit_terrain_effort_base = 16
+
+[[variants]]
+name = "sparse-plants"
+description = "Two plants test signaling when food discovery is scarce"
+[variants.scenario]
+num_plants = 2
+
+[[variants]]
+name = "dense-plants"
+description = "Sixteen plants test whether abundant food removes communication pressure"
+[variants.scenario]
+num_plants = 16

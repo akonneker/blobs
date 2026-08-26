@@ -1,0 +1,253 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/colony_population_density_sweep.toml",
+  "spec_sha256": "883f70ab540438bbd68fa8e26bcbac5f4ef27a7b52dd203fc14b187c5e90abba",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1",
+  "seeds": [
+    1103,
+    2207,
+    3301
+  ],
+  "variants": [
+    {
+      "name": "density-1",
+      "description": "One cell on 8x8 with two plants and eight loose-energy sources",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 1,
+        "num_plants": 2,
+        "num_scattered_energy": 8,
+        "world_size": 8
+      }
+    },
+    {
+      "name": "density-2",
+      "description": "Two cells on 12x12 with four plants and sixteen loose-energy sources",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 2,
+        "num_plants": 4,
+        "num_scattered_energy": 16,
+        "world_size": 12
+      }
+    },
+    {
+      "name": "density-4",
+      "description": "Four cells on 16x16 with eight plants and thirty-two loose-energy sources",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 4,
+        "num_plants": 8,
+        "num_scattered_energy": 32,
+        "world_size": 16
+      }
+    },
+    {
+      "name": "density-8",
+      "description": "Eight cells on 24x24 with sixteen plants and sixty-four loose-energy sources",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 8,
+        "num_plants": 16,
+        "num_scattered_energy": 64,
+        "world_size": 24
+      }
+    },
+    {
+      "name": "density-16",
+      "description": "Sixteen cells on 32x32 with thirty-two plants and 128 loose-energy sources",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 16,
+        "num_plants": 32,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "density-1",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "36b1a37d91ce0baa93e5a2f1794b131a7a814b015c4c7d6f0f46b9ccaa6b1949",
+      "scenario_hash": "a9e63f695cd0bbd7c1c41c244679eeb526e743b6d46a0eac27380ffd21c9573f",
+      "experiment_config_sha256": "056e72a057ec2efea2f11f8b6bd664bee31c137b0f3b5e8a192e96aef2eac3d9",
+      "config_file_sha256": "ae82ab8996429693dfa8bffc414181a4fe019e745918db8b907dc24105ef22a2",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-1/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-1/seed-1103/config.toml"
+    },
+    {
+      "variant": "density-1",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "36b1a37d91ce0baa93e5a2f1794b131a7a814b015c4c7d6f0f46b9ccaa6b1949",
+      "scenario_hash": "a9e63f695cd0bbd7c1c41c244679eeb526e743b6d46a0eac27380ffd21c9573f",
+      "experiment_config_sha256": "f822de471daa914a8d22a343163d50cf87d3e0fd51eea05209c64a0a07704268",
+      "config_file_sha256": "f72280d0f9975b65c0ef62d1063b584ece715968a82a8ecd85edaf2c248ae04b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-1/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-1/seed-2207/config.toml"
+    },
+    {
+      "variant": "density-1",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "36b1a37d91ce0baa93e5a2f1794b131a7a814b015c4c7d6f0f46b9ccaa6b1949",
+      "scenario_hash": "a9e63f695cd0bbd7c1c41c244679eeb526e743b6d46a0eac27380ffd21c9573f",
+      "experiment_config_sha256": "9812c73c823d6efcd19faf5d296f7cf93060a5e3b2022ee694ea7743dade37e2",
+      "config_file_sha256": "12e9781455798bf037d0b01f2eb11fd49559fa6a24175ebeaeb5dc6de577df18",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-1/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-1/seed-3301/config.toml"
+    },
+    {
+      "variant": "density-2",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "5424bc1e090d5a28416647680631835a87047b4a0629c1539a786c8ec047908a",
+      "scenario_hash": "fe490d50cfd0dd923d8629283bbd9e8c9d7a4207a8a92d3917f5243fc7e0b613",
+      "experiment_config_sha256": "16c07961ee94f5f27622161fc9b0c274902cd72285e2d867f90ff07a461ee41e",
+      "config_file_sha256": "95b352f2aa9fa27bfbb65009fbc9bb9b3c5c11b7e9101510df86cb65e9aa3778",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-2/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-2/seed-1103/config.toml"
+    },
+    {
+      "variant": "density-2",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "5424bc1e090d5a28416647680631835a87047b4a0629c1539a786c8ec047908a",
+      "scenario_hash": "fe490d50cfd0dd923d8629283bbd9e8c9d7a4207a8a92d3917f5243fc7e0b613",
+      "experiment_config_sha256": "6bb01446b9c17ca53de60c6f1db5243f9bc8bf560445cd5ed37b8166ed1e0ad8",
+      "config_file_sha256": "0ba6348344080ab04f50d1164f722da2b2041d10654395b56ba17c4efb9652f0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-2/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-2/seed-2207/config.toml"
+    },
+    {
+      "variant": "density-2",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "5424bc1e090d5a28416647680631835a87047b4a0629c1539a786c8ec047908a",
+      "scenario_hash": "fe490d50cfd0dd923d8629283bbd9e8c9d7a4207a8a92d3917f5243fc7e0b613",
+      "experiment_config_sha256": "9b21634343bcf50ba161a247d2680c3867196ee285d93a0c5d0f60118c74ca4d",
+      "config_file_sha256": "cf19cf6cd36bdf32d6181ad55e5d1204aebca2a4a3fdba36443f23ed7a9f780d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-2/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-2/seed-3301/config.toml"
+    },
+    {
+      "variant": "density-4",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "0de2f4b805e6cfa84d54f8eba24b833d35457684924b6ac9b6346e4f5e70a59f",
+      "experiment_config_sha256": "cd514158c2a291f2ff1311eca72f5721b3322f2ee7b0866c0f24a3de978b3ebb",
+      "config_file_sha256": "f5fe17b3d722e44c511a55a1072441d9d29b903a140a8cfff7996d20d5155ba8",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-4/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-4/seed-1103/config.toml"
+    },
+    {
+      "variant": "density-4",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "0de2f4b805e6cfa84d54f8eba24b833d35457684924b6ac9b6346e4f5e70a59f",
+      "experiment_config_sha256": "ca52f76cffec2b0737be47e4a2aae150677e723ab8d7f9ccf718e626842ef54c",
+      "config_file_sha256": "f6ccfe2d3adb17ae2573c7e973ab630fa072a857c4e48647b6ecd23ef58d62df",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-4/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-4/seed-2207/config.toml"
+    },
+    {
+      "variant": "density-4",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "0de2f4b805e6cfa84d54f8eba24b833d35457684924b6ac9b6346e4f5e70a59f",
+      "experiment_config_sha256": "998c47c2a8dc451a31b7edab8c48eaadbf776fb2240dee2cc8723254fb4c1e8d",
+      "config_file_sha256": "26dd6c8494a76f90db245f15f83c3804f4685c9643616dd88c29278c3e44d8f0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-4/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-4/seed-3301/config.toml"
+    },
+    {
+      "variant": "density-8",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "e792732c320da34d62e4fadf30113674f9bb05925c1829a6963a34f6e5681aaa",
+      "scenario_hash": "c80922de2042f8ea2cb8bfe04cd8af56c0364d21f33aa19785856a4d2545258e",
+      "experiment_config_sha256": "3bf8e5b28f72113647d987ae76490b927f6801e4bf1342e51a88f87336af960c",
+      "config_file_sha256": "c9b745875b1596ae4f6712540401534bbe66fecd769516fb7dba762601add3b4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-8/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-8/seed-1103/config.toml"
+    },
+    {
+      "variant": "density-8",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "e792732c320da34d62e4fadf30113674f9bb05925c1829a6963a34f6e5681aaa",
+      "scenario_hash": "c80922de2042f8ea2cb8bfe04cd8af56c0364d21f33aa19785856a4d2545258e",
+      "experiment_config_sha256": "89966a518e4553c267e495a870a746b1308f9bbe581916357caaf2adc4087e4f",
+      "config_file_sha256": "69e50fdb373362089d9bcb209651124108c5420c6d8ced03032d4518542dd440",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-8/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-8/seed-2207/config.toml"
+    },
+    {
+      "variant": "density-8",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "e792732c320da34d62e4fadf30113674f9bb05925c1829a6963a34f6e5681aaa",
+      "scenario_hash": "c80922de2042f8ea2cb8bfe04cd8af56c0364d21f33aa19785856a4d2545258e",
+      "experiment_config_sha256": "eb739c5125f85cdd031a717c91cec6e385c99488a48853045ddf7575260b42f1",
+      "config_file_sha256": "7a9e358731182dc4bcb9d57835728873c683799442c695595edccfd0c5529067",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-8/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-8/seed-3301/config.toml"
+    },
+    {
+      "variant": "density-16",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "96a130245eb98ff0ff2560173b595775c09000616277495b6aa866202aece7ba",
+      "experiment_config_sha256": "3af637e26421f4d7b7daddc3872226a91610f83ad9616fcd9e8b91d2861c4e34",
+      "config_file_sha256": "f7c36cd09404c55a79bc21644d21ce8235f634f96ede36b185fefabcefaadddf",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-16/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-16/seed-1103/config.toml"
+    },
+    {
+      "variant": "density-16",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "96a130245eb98ff0ff2560173b595775c09000616277495b6aa866202aece7ba",
+      "experiment_config_sha256": "170ac0aa04700bb764fb61b5fe00fd428e78a4b3defc8f4649027a88a0212c6a",
+      "config_file_sha256": "f70d98c2aa0b875fa4cd92dfb7512fbe7ee6d9531b037ca89685a3e16299ff75",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-16/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-16/seed-2207/config.toml"
+    },
+    {
+      "variant": "density-16",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "96a130245eb98ff0ff2560173b595775c09000616277495b6aa866202aece7ba",
+      "experiment_config_sha256": "0180aee3bee62f52c33bc7fa5e6c39b2938672b0d93ac3ae5594a2476ea0d957",
+      "config_file_sha256": "df54b7c9ded5de64e42e4438b3a0321773c9a13ce5b0bf991a6211efc45e3b3c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-16/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-density-v1/density-16/seed-3301/config.toml"
+    }
+  ]
+}

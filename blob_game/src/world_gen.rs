@@ -4,7 +4,7 @@ use blob_interface::world::EnergySource;
 use libnoise::prelude::*;
 use probability::prelude::*;
 use rand::prelude::*;
-use std::collections::HashSet;
+use rand::rngs::StdRng;
 
 // Helper function to get a value from a distribution using a seeded RNG
 fn sample_from_distribution(
@@ -90,7 +90,6 @@ pub fn generate_energy(
     config: &EnergyConfig,
 ) -> Vec<Option<EnergySource>> {
     let mut energy = vec![None; width * height];
-    let mut occupied_coords = HashSet::new();
     let total_cells = width * height;
 
     let scattered_energy_values =
@@ -101,71 +100,63 @@ pub fn generate_energy(
     let plant_current_energy_values =
         sample_from_distribution(&config.plant_current_energy, seed, config.num_plants);
 
-    let mut rng = rand::rng();
+    let mut coordinates = (0..total_cells).collect::<Vec<_>>();
+    coordinates.shuffle(&mut StdRng::seed_from_u64(seed.unwrap_or(42)));
+    let mut coordinates = coordinates.into_iter();
 
     // Generate Scattered Energy
-    for i in 0..config.num_scattered {
-        if occupied_coords.len() >= total_cells {
+    for value in scattered_energy_values {
+        let Some(coord_idx) = coordinates.next() else {
             break;
-        }
-        let mut coord_idx: usize;
-        let mut attempts = 0;
-        let max_attempts = total_cells.saturating_mul(2); // Prevent excessive looping
-
-        loop {
-            if attempts >= max_attempts {
-                coord_idx = usize::MAX; // Indicate failure
-                break;
-            }
-            coord_idx = rng.random_range(0..height * width);
-            if !occupied_coords.contains(&coord_idx) {
-                occupied_coords.insert(coord_idx);
-                break;
-            }
-            attempts += 1;
-        }
-
-        if coord_idx != usize::MAX {
-            energy[coord_idx] = Some(EnergySource::Scattered(scattered_energy_values[i]));
-        }
+        };
+        energy[coord_idx] = Some(EnergySource::Scattered(value));
     }
 
     // Generate Plants
     for i in 0..config.num_plants {
-        if occupied_coords.len() >= total_cells {
+        let Some(coord_idx) = coordinates.next() else {
             break;
-        }
-        let mut coord_idx: usize;
-        let mut attempts = 0;
-        let max_attempts = total_cells.saturating_mul(2);
-
-        loop {
-            if attempts >= max_attempts {
-                coord_idx = usize::MAX; // Indicate failure
-                break;
-            }
-            coord_idx = rng.random_range(0..height * width);
-            if !occupied_coords.contains(&coord_idx) {
-                occupied_coords.insert(coord_idx);
-                break;
-            }
-            attempts += 1;
-        }
-
-        if coord_idx != usize::MAX {
-            let rate = plant_rate_values[i];
-            let max_e = plant_max_energy_values[i];
-            let mut current_e = plant_current_energy_values[i];
-
-            if current_e > max_e {
-                current_e = max_e;
-            }
-            energy[coord_idx] = Some(EnergySource::Plant {
-                rate,
-                current_energy: current_e,
-                max_energy: max_e,
-            });
-        }
+        };
+        let rate = plant_rate_values[i];
+        let max_e = plant_max_energy_values[i];
+        let current_e = plant_current_energy_values[i].min(max_e);
+        energy[coord_idx] = Some(EnergySource::Plant {
+            rate,
+            current_energy: current_e,
+            max_energy: max_e,
+        });
     }
     energy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn energy_generation_is_seeded_unique_and_exact_when_it_fits() {
+        let config = EnergyConfig {
+            num_scattered: 7,
+            num_plants: 5,
+            ..EnergyConfig::default()
+        };
+        let first = generate_energy(8, 8, Some(91), &config);
+        let second = generate_energy(8, 8, Some(91), &config);
+        assert!(first == second);
+        assert_eq!(
+            first
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Scattered(_))))
+                .count(),
+            config.num_scattered
+        );
+        assert_eq!(
+            first
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Plant { .. })))
+                .count(),
+            config.num_plants
+        );
+        assert!(first != generate_energy(8, 8, Some(92), &config));
+    }
 }

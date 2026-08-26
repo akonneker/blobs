@@ -46,11 +46,13 @@ fn run_case(
     host_mode: ReferenceHostMode,
 ) {
     let ticks = (200_000 / requested_cells.max(1)).clamp(20, 200);
-    let mut rules = ReferenceRuleset::default();
-    rules.digestion_rate_numerator = 0;
-    rules.metabolism_rate_numerator = 0;
-    rules.signal_decay_rate_numerator = 0;
-    rules.diffusion_rate_numerator = 0;
+    let rules = ReferenceRuleset {
+        digestion_rate_numerator: 0,
+        metabolism_rate_numerator: 0,
+        signal_decay_rate_numerator: 0,
+        diffusion_rate_numerator: 0,
+        ..ReferenceRuleset::default()
+    };
     let config = CellConfig {
         initial_energy: 100,
         starting_cells_per_team: requested_cells,

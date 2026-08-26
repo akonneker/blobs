@@ -1,0 +1,56 @@
+# Hold initial cellular mass-energy exactly at 400 per team while varying how
+# it is fragmented. With min_energy = 1, each cell starts with one unit of core
+# mass plus initial_energy units of assimilated energy.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/colony-population-fragmentation-v1"
+seeds = [1103, 2207, 3301]
+
+[[variants]]
+name = "fragment-1"
+description = "One cell with 400 total initial cellular mass-energy"
+[variants.scenario]
+world_size = 32
+cells_per_team = 1
+initial_energy = 399
+num_scattered_energy = 128
+num_plants = 16
+
+[[variants]]
+name = "fragment-2"
+description = "Two cells sharing 400 total initial cellular mass-energy"
+[variants.scenario]
+world_size = 32
+cells_per_team = 2
+initial_energy = 199
+num_scattered_energy = 128
+num_plants = 16
+
+[[variants]]
+name = "fragment-4"
+description = "Four cells sharing 400 total initial cellular mass-energy"
+[variants.scenario]
+world_size = 32
+cells_per_team = 4
+initial_energy = 99
+num_scattered_energy = 128
+num_plants = 16
+
+[[variants]]
+name = "fragment-8"
+description = "Eight cells sharing 400 total initial cellular mass-energy"
+[variants.scenario]
+world_size = 32
+cells_per_team = 8
+initial_energy = 49
+num_scattered_energy = 128
+num_plants = 16
+
+[[variants]]
+name = "fragment-16"
+description = "Sixteen cells sharing 400 total initial cellular mass-energy"
+[variants.scenario]
+world_size = 32
+cells_per_team = 16
+initial_energy = 24
+num_scattered_energy = 128
+num_plants = 16

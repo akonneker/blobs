@@ -38,12 +38,13 @@ pub use neighborhood::{
     MAX_LOCAL_SLOTS,
 };
 pub use reference::{
-    AccessMode, ActionKind, ActionOutcome, ActionRequest, ActivityCue, BatchIntegrity, BatchReport,
-    CellColdState, CellKey, CellState, CellStore, CommitError, CommitReceipt, DecisionCommitment,
-    DurationRule, EffortProfile, EffortTier, IntegrityMode, NeighborCue, OutcomeStatus,
-    PendingAction, ProgressBucket, ReferenceObservationBatch, ReferenceRuleset,
-    ReferenceSimulation, RejectReason, ResolutionError, ResolutionMetrics, ResolutionPhaseTimings,
-    ResourceClaim, ResourceKey, SimTime, SimulationState, TileState, TimeConfig, SIGNAL_CHANNELS,
+    AccessMode, ActionKind, ActionOutcome, ActionRequest, ActivityCue, AttackDamage,
+    BatchIntegrity, BatchReport, CellColdState, CellKey, CellState, CellStore, CommitError,
+    CommitReceipt, DecisionCommitment, DurationRule, EffortProfile, EffortTier, IntegrityMode,
+    NeighborCue, OutcomeStatus, PendingAction, ProgressBucket, ReferenceObservationBatch,
+    ReferenceRuleset, ReferenceSimulation, RejectReason, ResolutionError, ResolutionMetrics,
+    ResolutionPhaseTimings, ResourceClaim, ResourceKey, SimTime, SimulationState, TerrainChange,
+    TileState, TimeConfig, SIGNAL_CHANNELS,
 };
 pub use replay::{
     genesis_hash, verify_replay, verify_replay_from_cursor, ReplayArchive, ReplayArchiveLimits,

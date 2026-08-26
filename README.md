@@ -8,7 +8,11 @@ This project is a simulation of a 2D world where blobs compete for resources. Ea
 
 The core idea is to provide a platform for developing and testing different AI strategies for the blobs. The game is highly customizable, allowing you to change the world generation, cell properties, and more.
 
-Currently the sample minds are AI-generated garbage. Better ones should be pushed in the next few days. I also n
+The small sample Minds are intentionally limited behavioral controls. The
+stateful `colony_mind` is the first heterogeneous strategy prototype. See the
+[Mind audit and colony roadmap](docs/mind-audit-and-colony-roadmap.md) for what
+each artifact is useful for and which coordination guarantees the isolated
+Mind ABI deliberately does not provide.
 
 ## Project Structure
 
@@ -16,7 +20,8 @@ The project is structured as a Cargo workspace with the following main component
 
 -   `blob_game`: The main game engine and GUI. It's responsible for running the simulation, rendering the world, and loading the minds.
 -   `blob_interface`: This crate defines the interface between the game and the minds. It uses Cap'n Proto for serialization to communicate with the WASM modules.
--   `minds/`: This directory contains several example minds, each with a different strategy (e.g., `aggressive_mind`, `explorer_mind`). These can be used as a starting point for creating your own minds.
+-   `minds/`: This directory contains behavioral proxies, runtime canaries, and
+    the stateful `colony_mind` prototype.
 
 ## How to Build and Run
 
@@ -49,6 +54,14 @@ The project is structured as a Cargo workspace with the following main component
     ```
 
     You can also run the game in headless mode by omitting the `--gui` flag. For more options, run `cargo run -p blob_game -- --help`.
+
+## Remote RL training
+
+Portable CPU and NVIDIA Vulkan/WGPU trainers, plus the rules-sweep planner and
+bounded sweep executor, are available through `Dockerfile.training`. See
+[docs/docker-training.md](docs/docker-training.md) for image construction,
+detached remote jobs, GPU prerequisites, checkpoint resume, Compose, resource
+sizing, and sweep execution.
 
 ## How to Create a Mind
 
@@ -99,11 +112,29 @@ not enter the canonical match contract.
 Extism publishes PDKs for languages including:
 
 -   Rust
+-   JavaScript/TypeScript
 -   Go
 -   Haskell
 -   Zig
 -   AssemblyScript (TypeScript-like)
 -   C/C++
+-   C#/F# through the experimental .NET PDK
+
+Language-PDK conformance backlog:
+
+-   [ ] Rust reference Mind
+-   [ ] C reference Mind, then compile the same implementation as C++
+-   [ ] Zig reference Mind
+-   [ ] [JavaScript/TypeScript](https://github.com/extism/js-pdk) reference Mind
+-   [ ] Haskell reference Mind
+-   [ ] C# and F# reference Minds after the experimental
+    [.NET PDK](https://github.com/extism/dotnet-pdk) is stable
+-   [ ] [Python](https://github.com/extism/python-pdk) experimental canary
+-   [ ] [MoonBit](https://github.com/extism/moonbit-pdk) experimental canary
+
+Each example must build without WASI, pass structural admission, produce the
+same canonical decision through stock Extism and `extism_compat`, and join
+`scripts/conformance.sh` before it is described as maintained.
 
 To create a Mind in another language, use that language's PDK to export
 `reference_mind_function: () -> i32`, decode and encode
@@ -114,17 +145,21 @@ it does not target a project-specific Wasmtime SDK.
 Run `scripts/build_language_minds.sh` to build the maintained AssemblyScript
 and Go canaries. The Go target is TinyGo `wasm-unknown`; ordinary
 `GOOS=wasip1` output is rejected because WASI is outside the deterministic
-profile.
+profile. The build pins TinyGo 0.41.1, which requires Go 1.19 through 1.26;
+set `TINYGO_BIN` and `GO_BIN` when those toolchains are not the system defaults.
 
 ## The `blob_interface` API
 
-The communication boundary is Mind ABI v6 in
+The communication boundary is Mind ABI v8 in
 `blob_interface/interface/reference_mind.capnp`. It contains one cell's own
 state, bounded anonymous local observations, action availability, explicit
 private memory, and private random bytes. Outputs cover Wait, Move, Attack,
 Guard, Consume, Split, Regurgitate, Excavate, and DepositTerrain. Local slot
 visibility uses explicit presence bits plus inline scalar values, preserving
 hidden-versus-visible-zero semantics without pointer-backed option objects.
+The local action space also carries compact effort-cost coefficients, allowing
+native and Wasm policies to reproduce exact commit affordability from only
+their own state and local slot distances.
 
 ## Contributing
 

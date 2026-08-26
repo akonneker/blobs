@@ -1,0 +1,177 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/signal_policy_ablation.toml",
+  "spec_sha256": "9e2c19c310912e57d97fd353cace17039c147cfa14e59dc8d9331d153f7e9f05",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1",
+  "seeds": [
+    5101,
+    5209,
+    5303,
+    5407,
+    5501,
+    5609,
+    5701,
+    5801,
+    5903,
+    6007,
+    6101,
+    6203
+  ],
+  "variants": [
+    {
+      "name": "baseline-rules",
+      "description": "Default signal cost, decay, visibility, ecology, and victory rules",
+      "rules": {},
+      "scenario": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "baseline-rules",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "44ac73b75ae65dab521d40bca6d7a19dc705fa918bc78b717e22f229d188f97c",
+      "config_file_sha256": "1531a9eef1629e2134ee2756aa4fc78daad4d3edbe4f3a60a986972bff679112",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5101/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "f3360183a1db66520fb7eb3fe6bf3f178670a6e475191771215ddc69d89f7a84",
+      "config_file_sha256": "35ee7954212343b562a11a1c4fc9029f31566033f849dab5fb0282013b519ba5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5209/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "cc0d9d980c03070d97b7a5d034f44ee008bef80b3d62f8009670224711fca292",
+      "config_file_sha256": "0abfb590424d8e60c39da69c8a80cdd3bb81d5d306a597f288cb7c0bd17350ed",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5303/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 3,
+      "training_seed": 5407,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "29e768565d43c4315558ee085104a0f762f02c83d76ee0bbdf7e7b0b953cbf2e",
+      "config_file_sha256": "35337499b8ea525460b660e4fe7f62926d2db2a410b91576f8cee848be21820b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5407",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5407/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 4,
+      "training_seed": 5501,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "13c3d0b199b9f6b00973ce81f367e7ceda4b6d71e62ce10e38b2f60a31bc45d8",
+      "config_file_sha256": "d8de90a9319ba25e49ea7271177cac1aaa66bc009c8b7f4f7d230783773b102d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5501",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5501/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 5,
+      "training_seed": 5609,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "66cbaa2cfd8129b168fdbdfd8de0fe99d0e883da2383c73c33e2fa7aeb519887",
+      "config_file_sha256": "05adef25adb7d8b7926c13d6a7189112338e4e4cb951ca377be3596df81e42f9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5609",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5609/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 6,
+      "training_seed": 5701,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "101f2c50095372a56d22547326db33b71687398dc92cf4b2006cac20a75c1eb1",
+      "config_file_sha256": "943b82fdcc91bbe384a7ceb315e55a606a8bfda60160dcb2d5140138436963e2",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5701",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5701/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 7,
+      "training_seed": 5801,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "aa0883e07c8e402c1c4abc1069e69825cba6ba58cb5ee6aa4e8a10cb8b9aa0a7",
+      "config_file_sha256": "ebe91fff96b1f208f4ae7dbe267711ad374ccf69f8d602c848acde7dff8e2fc6",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5801",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5801/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 8,
+      "training_seed": 5903,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "a4edbf16abd0f88afa1512a5bbe2924193d08953e32eb98509a26528520e8e72",
+      "config_file_sha256": "1162cbe8f62521617b674a5bd6425379a8562266815d530b2c2f398629147149",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5903",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-5903/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 9,
+      "training_seed": 6007,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "0161e67c69cc2c99c5114a73dbc8a09984e6ea2c0dfb1dc31303c4e710b783a3",
+      "config_file_sha256": "ce14e3e7b6779ae45f0ee01d191e2ba5ad4c802570be015b2005d03e0e6fa5ae",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-6007",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-6007/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 10,
+      "training_seed": 6101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ca5ade0be355f91a625d0c3da3fc661c939608a305f04b13cd638f0f7d6099fa",
+      "config_file_sha256": "d71099d162344b3869649bf7a10550856670eeb7a23c0de8830f0a54e959e322",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-6101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-6101/config.toml"
+    },
+    {
+      "variant": "baseline-rules",
+      "replicate": 11,
+      "training_seed": 6203,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "23271672bb0a4a48d44dfa341da439ebd1f359c0061b09eb483d1339212d625a",
+      "config_file_sha256": "fa0dc4beed1a641384ee579ebe313ae59e2bda0ae4d34f7e7b7ba801c634fcbb",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-6203",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-policy-ablation-v1/baseline-rules/seed-6203/config.toml"
+    }
+  ]
+}

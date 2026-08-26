@@ -48,7 +48,12 @@ fn pending_simulation() -> ReferenceSimulation {
         )
         .unwrap();
     simulation
-        .commit_action(waiter, ActionRequest::Wait)
+        .commit_action(
+            waiter,
+            ActionRequest::Signal {
+                amounts: [1, 2, 0, 4],
+            },
+        )
         .unwrap();
     simulation
 }
@@ -59,7 +64,7 @@ fn canonical_checkpoint_round_trips_pending_state_and_continuation() {
     let checkpoint = ReferenceCheckpoint::from_simulation(&uninterrupted);
     assert_eq!(
         checkpoint.checkpoint_hash().to_hex(),
-        "291ff1211b9fe64d7d5da5747e3691685f0088a3d78524d13bf90d9438bb097a"
+        "74872c1d932e84ae6f3b19aad72c3dc3487c45dbd942110646c1550af4c3ffce"
     );
     let bytes = checkpoint.to_bytes();
     let decoded = ReferenceCheckpoint::from_bytes(&bytes).unwrap();

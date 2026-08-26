@@ -1,0 +1,705 @@
+{
+  "schema_version": 1,
+  "report_kind": "blob_control_matrix_progress",
+  "control_matrix_schema_version": 3,
+  "status": "complete",
+  "error": null,
+  "mind_abi_version": 7,
+  "mind_abi_hash": "1b8cd1210be6b8f30f7736f44a0dd2560c0cc25a433f5567c7f84334674ac2dc",
+  "manifest_sha256": "aca76542d397e0b035bf78150e11da3b4334508464f113792fcc4ee5db0c785c",
+  "matrix_config_hash": "ca145649909d0b6ed30c3c44347115a2c91bc23b73ca2b509653eb50516c08b2",
+  "execution_mode": "native_maintained_entry_point",
+  "verification_scope": "local_deterministic",
+  "server_verified": false,
+  "replay_committed": false,
+  "seat_policy": "mirrored_team_zero_and_one",
+  "candidate": "colony",
+  "opponents": [
+    "simple",
+    "aggressive",
+    "defensive",
+    "explorer"
+  ],
+  "seeds": [
+    1103,
+    2207,
+    3301
+  ],
+  "variants": [
+    {
+      "name": "fragment-1",
+      "description": "One cell with 400 total initial cellular mass-energy",
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "1fa34fc69a4be616c3b0b40c04e20111e9602a03a5666c6fe521f2d39a489581"
+    },
+    {
+      "name": "fragment-2",
+      "description": "Two cells sharing 400 total initial cellular mass-energy",
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "a4da9460db74c624d848c33159ace537bcbb64b7b4a15b502a160e456f1972d2"
+    },
+    {
+      "name": "fragment-4",
+      "description": "Four cells sharing 400 total initial cellular mass-energy",
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "13d561fec30ca767a38d796f8700e9e142fc339d2f11199a6acb09a342878adc"
+    },
+    {
+      "name": "fragment-8",
+      "description": "Eight cells sharing 400 total initial cellular mass-energy",
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "fa17db861e555fba68a293f2859d9f5e017f06a81e5a40b570e89dd3e3487f5d"
+    },
+    {
+      "name": "fragment-16",
+      "description": "Sixteen cells sharing 400 total initial cellular mass-energy",
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "2fee36413379c1821972ffb07d8bc9565a6aeb8a75461e023ac1b106523e4c4e"
+    }
+  ],
+  "completed_matchups": 20,
+  "total_matchups": 20,
+  "completed_episodes": 120,
+  "total_episodes": 120,
+  "matchups": [
+    {
+      "variant": "fragment-1",
+      "opponent": "simple",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 1,
+        "colony_losses": 5,
+        "timeouts": 0,
+        "colony_win_rate": 0.16666666666666666,
+        "average_environment_steps": 91.16666666666667,
+        "average_final_colony_cells": 0.16666666666666666,
+        "average_final_control_cells": 0.8333333333333334
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 2,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-1",
+      "opponent": "aggressive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 6,
+        "colony_losses": 0,
+        "timeouts": 0,
+        "colony_win_rate": 1.0,
+        "average_environment_steps": 63.166666666666664,
+        "average_final_colony_cells": 1.0,
+        "average_final_control_cells": 0.0
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-1",
+      "opponent": "defensive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 5,
+        "colony_losses": 1,
+        "timeouts": 0,
+        "colony_win_rate": 0.8333333333333334,
+        "average_environment_steps": 101.66666666666667,
+        "average_final_colony_cells": 0.8333333333333334,
+        "average_final_control_cells": 0.3333333333333333
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 1,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-1",
+      "opponent": "explorer",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 0,
+        "colony_losses": 6,
+        "timeouts": 0,
+        "colony_win_rate": 0.0,
+        "average_environment_steps": 74.5,
+        "average_final_colony_cells": 0.0,
+        "average_final_control_cells": 1.1666666666666667
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-2",
+      "opponent": "simple",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 0,
+        "colony_losses": 5,
+        "timeouts": 1,
+        "colony_win_rate": 0.0,
+        "average_environment_steps": 299.6666666666667,
+        "average_final_colony_cells": 0.16666666666666666,
+        "average_final_control_cells": 1.6666666666666667
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 2,
+          "timeouts": 1
+        }
+      ]
+    },
+    {
+      "variant": "fragment-2",
+      "opponent": "aggressive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 3,
+        "colony_losses": 3,
+        "timeouts": 0,
+        "colony_win_rate": 0.5,
+        "average_environment_steps": 73.66666666666667,
+        "average_final_colony_cells": 1.1666666666666667,
+        "average_final_control_cells": 1.0
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-2",
+      "opponent": "defensive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 3,
+        "colony_losses": 3,
+        "timeouts": 0,
+        "colony_win_rate": 0.5,
+        "average_environment_steps": 88.83333333333333,
+        "average_final_colony_cells": 1.0,
+        "average_final_control_cells": 1.0
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-2",
+      "opponent": "explorer",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 2,
+        "colony_losses": 4,
+        "timeouts": 0,
+        "colony_win_rate": 0.3333333333333333,
+        "average_environment_steps": 123.5,
+        "average_final_colony_cells": 1.0,
+        "average_final_control_cells": 1.5
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 1,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-4",
+      "opponent": "simple",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 0,
+        "colony_losses": 3,
+        "timeouts": 3,
+        "colony_win_rate": 0.0,
+        "average_environment_steps": 1519.3333333333333,
+        "average_final_colony_cells": 1.3333333333333333,
+        "average_final_control_cells": 2.8333333333333335
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 3,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 0,
+          "timeouts": 3
+        }
+      ]
+    },
+    {
+      "variant": "fragment-4",
+      "opponent": "aggressive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 4,
+        "colony_losses": 1,
+        "timeouts": 1,
+        "colony_win_rate": 0.6666666666666666,
+        "average_environment_steps": 497.6666666666667,
+        "average_final_colony_cells": 3.0,
+        "average_final_control_cells": 0.3333333333333333
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 1,
+          "timeouts": 1
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-4",
+      "opponent": "defensive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 4,
+        "colony_losses": 1,
+        "timeouts": 1,
+        "colony_win_rate": 0.6666666666666666,
+        "average_environment_steps": 341.0,
+        "average_final_colony_cells": 2.8333333333333335,
+        "average_final_control_cells": 0.3333333333333333
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 1,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 0,
+          "timeouts": 1
+        }
+      ]
+    },
+    {
+      "variant": "fragment-4",
+      "opponent": "explorer",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 4,
+        "colony_losses": 2,
+        "timeouts": 0,
+        "colony_win_rate": 0.6666666666666666,
+        "average_environment_steps": 271.5,
+        "average_final_colony_cells": 3.0,
+        "average_final_control_cells": 0.5
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 2,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-8",
+      "opponent": "simple",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 0,
+        "colony_losses": 1,
+        "timeouts": 5,
+        "colony_win_rate": 0.0,
+        "average_environment_steps": 1645.8333333333333,
+        "average_final_colony_cells": 1.1666666666666667,
+        "average_final_control_cells": 2.3333333333333335
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 1,
+          "timeouts": 2
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 0,
+          "timeouts": 3
+        }
+      ]
+    },
+    {
+      "variant": "fragment-8",
+      "opponent": "aggressive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 4,
+        "colony_losses": 1,
+        "timeouts": 1,
+        "colony_win_rate": 0.6666666666666666,
+        "average_environment_steps": 336.0,
+        "average_final_colony_cells": 2.6666666666666665,
+        "average_final_control_cells": 0.3333333333333333
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 1,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 0,
+          "timeouts": 1
+        }
+      ]
+    },
+    {
+      "variant": "fragment-8",
+      "opponent": "defensive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 1,
+        "colony_losses": 1,
+        "timeouts": 4,
+        "colony_win_rate": 0.16666666666666666,
+        "average_environment_steps": 1043.5,
+        "average_final_colony_cells": 1.1666666666666667,
+        "average_final_control_cells": 1.0
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 1,
+          "timeouts": 2
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 0,
+          "timeouts": 2
+        }
+      ]
+    },
+    {
+      "variant": "fragment-8",
+      "opponent": "explorer",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 3,
+        "colony_losses": 2,
+        "timeouts": 1,
+        "colony_win_rate": 0.5,
+        "average_environment_steps": 554.3333333333334,
+        "average_final_colony_cells": 1.6666666666666667,
+        "average_final_control_cells": 0.5
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 2,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 0,
+          "timeouts": 1
+        }
+      ]
+    },
+    {
+      "variant": "fragment-16",
+      "opponent": "simple",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 1,
+        "colony_losses": 0,
+        "timeouts": 5,
+        "colony_win_rate": 0.16666666666666666,
+        "average_environment_steps": 1534.0,
+        "average_final_colony_cells": 1.8333333333333333,
+        "average_final_control_cells": 1.1666666666666667
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 0,
+          "timeouts": 2
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 0,
+          "colony_losses": 0,
+          "timeouts": 3
+        }
+      ]
+    },
+    {
+      "variant": "fragment-16",
+      "opponent": "aggressive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 5,
+        "colony_losses": 0,
+        "timeouts": 1,
+        "colony_win_rate": 0.8333333333333334,
+        "average_environment_steps": 586.8333333333334,
+        "average_final_colony_cells": 3.6666666666666665,
+        "average_final_control_cells": 0.16666666666666666
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 0,
+          "timeouts": 1
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    },
+    {
+      "variant": "fragment-16",
+      "opponent": "defensive",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 2,
+        "colony_losses": 0,
+        "timeouts": 4,
+        "colony_win_rate": 0.3333333333333333,
+        "average_environment_steps": 1261.3333333333333,
+        "average_final_colony_cells": 2.5,
+        "average_final_control_cells": 1.0
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 0,
+          "timeouts": 2
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 1,
+          "colony_losses": 0,
+          "timeouts": 2
+        }
+      ]
+    },
+    {
+      "variant": "fragment-16",
+      "opponent": "explorer",
+      "aggregate": {
+        "episodes": 6,
+        "colony_wins": 5,
+        "colony_losses": 1,
+        "timeouts": 0,
+        "colony_win_rate": 0.8333333333333334,
+        "average_environment_steps": 509.1666666666667,
+        "average_final_colony_cells": 2.3333333333333335,
+        "average_final_control_cells": 0.5
+      },
+      "seats": [
+        {
+          "seat": "colony_team_zero",
+          "episodes": 3,
+          "colony_wins": 2,
+          "colony_losses": 1,
+          "timeouts": 0
+        },
+        {
+          "seat": "colony_team_one",
+          "episodes": 3,
+          "colony_wins": 3,
+          "colony_losses": 0,
+          "timeouts": 0
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "opponent": "simple",
+      "episodes": 30,
+      "colony_wins": 2,
+      "colony_losses": 14,
+      "timeouts": 14,
+      "colony_win_rate": 0.06666666666666667
+    },
+    {
+      "opponent": "aggressive",
+      "episodes": 30,
+      "colony_wins": 22,
+      "colony_losses": 5,
+      "timeouts": 3,
+      "colony_win_rate": 0.7333333333333333
+    },
+    {
+      "opponent": "defensive",
+      "episodes": 30,
+      "colony_wins": 15,
+      "colony_losses": 6,
+      "timeouts": 9,
+      "colony_win_rate": 0.5
+    },
+    {
+      "opponent": "explorer",
+      "episodes": 30,
+      "colony_wins": 14,
+      "colony_losses": 15,
+      "timeouts": 1,
+      "colony_win_rate": 0.4666666666666667
+    }
+  ]
+}

@@ -36,6 +36,68 @@ The resolver-only 5,000-way collision benchmark completed at approximately
 468,000 actions/s (10.68 ms per batch). The large gap from full-engine
 throughput shows that resolution is no longer the dominant end-to-end cost.
 
+### Random-neighbor combat matrix
+
+The combat diagnostic isolates the resolver path needed for changes such as
+authoritative damage attribution. It uses deterministic seeded topology: cells
+are placed in randomly selected opponent pairs so every cell has at least one
+adjacent competitor, then each cell attacks a randomly selected opposing Moore
+neighbor. This prevents low-density cases from degenerating into a benchmark
+of absent targets. Passive physics is disabled and every attack completes in
+one synchronized batch.
+
+Run the complete matrix in release mode with:
+
+```sh
+cargo test --release -p blob_engine --test combat_resolution \
+  benchmark_random_neighbor_combat_matrix -- --ignored --nocapture
+```
+
+It covers 16x16 through 128x128 boards, 64 through 8,192 cells, and both 12.5%
+and 50% occupancy on the larger boards. Each topology is measured through the
+serial and ordered-parallel resolver in both on-demand and verified integrity
+modes. Output is CSV-compatible and includes median and p95 nanoseconds per
+attack, actions per second, resolver/report/hash phase timings, unique-victim
+coverage, and maximum victim fan-in.
+
+The default is three fixed topology seeds and nine measured batches per seed,
+after an unmeasured warmup. Longer comparisons can be selected without changing
+the code:
+
+```sh
+BLOB_COMBAT_BENCH_SEEDS=10 \
+BLOB_COMBAT_BENCH_SAMPLES=30 \
+BLOB_COMBAT_BENCH_WORKERS=8 \
+cargo test --release -p blob_engine --test combat_resolution \
+  benchmark_random_neighbor_combat_matrix -- --ignored --nocapture
+```
+
+For before/after measurements, retain identical seed, sample, worker, compiler,
+and integrity settings; alternate baseline and candidate runs to reduce thermal
+and frequency drift. Compare the canonical-resolution and report-finalization
+columns separately: damage calculation or attribution should affect those
+phases, while changes in hashing time are likely noise unless the canonical
+state representation also changes.
+
+The guaranteed-pair workload is intentionally controlled rather than a full
+ecological model. Complement it with adversarial single-victim fan-in, guarded
+and unguarded mixes, lethal overkill, sparse unconstrained random placement,
+and multi-tick death/interruption workloads before choosing an attribution
+representation. End-to-end RL and verified-server benchmarks should then
+confirm that resolver-local improvements are visible in their actual hot paths.
+
+The authoritative effect-attribution slice was subsequently measured with ten
+topology seeds and thirty batches per seed. Its ordinary unguarded/non-overkill
+path retains only one raw-damage scalar during resolution and constructs the
+effect ledger during report finalization; proportional allocation storage is
+created only for victims that actually mitigate or overkill damage. Selected
+release medians were 3.71 million trusted actions/s at 32x32/512 cells, 2.64
+million at 64x64/2,048, and 2.14 million at 128x128/8,192. The corresponding
+eight-worker verified results were 0.81, 1.26, and 1.43 million actions/s. These
+results show no detectable ordinary-combat regression against the shorter
+pre-attribution baseline; guarded/overkill attribution is separately covered
+by deterministic conformance tests.
+
 ### First scalability slice
 
 Phase telemetry showed that the two canonical full-state SHA passes consumed
@@ -1000,6 +1062,34 @@ RAYON_NUM_THREADS=8 cargo test --release -p blob_engine \
   -- --exact --ignored --nocapture
 ```
 
+### Indexed metabolic exhaustion scheduling
+
+Metabolic event discovery no longer scans every active cell each time the
+engine asks for its next event. A derived indexed min-heap stores absolute
+exhaustion deadlines. A sparse energy mutation replaces one entry in
+`O(log population)`, the minimum is read in `O(1)`, and dense digestion rebuilds
+the complete heap in `O(population)` rather than performing per-cell tree
+updates. Ordinary metabolic accrual does not update surviving entries because
+their absolute deadlines are invariant.
+
+The index is deliberately non-canonical. Checkpoint restore and resolution
+rollback reconstruct it from materialized cells, and tests compare its complete
+event set and arithmetic-overflow behavior with the former scan oracle. Its
+dense storage is approximately one 16-byte heap entry per metabolically active
+cell plus one 8-byte position slot per allocated cell key.
+
+On 200,000 active cells, 128 repeated next-event queries measured about 0.001 ms
+through the index versus 127.6 ms by scanning, or about 1.0 ms avoided per
+query. A follow-up eight-step dense passive run retained a 1.96x parallel
+speedup (196.3 ms versus 384.4 ms); its linear heap rebuild is included in the
+digestion timings.
+
+```sh
+cargo test --release -p blob_engine \
+  resolution::reference::tests::benchmark_metabolic_exhaustion_index_against_population_scan \
+  -- --exact --ignored --nocapture
+```
+
 ```sh
 cargo test --release -p blob_engine \
   resolution::reference::tests::benchmark_cell_layout_size \
@@ -1008,6 +1098,127 @@ cargo test --release -p blob_engine \
   resolution::reference::tests::benchmark_private_memory_snapshot_churn \
   -- --exact --ignored --nocapture
 ```
+
+### Batched RL snapshot-opponent inference
+
+Snapshot opponents previously executed one Burn forward pass for every ready
+cell through a scalar `ReferenceMind`. The RL host now prepares each cell's
+anonymous canonical input independently—including its private random stream and
+decision-sequence advancement—then performs one row-separable linear/ReLU
+forward pass per opponent frontier. Outputs are decoded row-by-row against only
+their originating action spaces. Submitted Wasm and native untrusted Mind paths
+are unchanged.
+
+The release-mode `benchmark_batched_snapshot_opponent_inference` fixture uses a
+32x32 board, 16 cells per team, 100 training decision frontiers, the NdArray
+backend, and on-demand integrity. On this machine it measured:
+
+| Path | Wall time | Policy rows | Neural forwards |
+|---|---:|---:|---:|
+| Scalar isolated Minds | 0.232 s | 290 | 290 |
+| Batched frontier policy | 0.071 s | 290 | 37 |
+
+That is a 3.26x end-to-end improvement for this fixture and a 7.84x reduction
+in neural forward calls. The result includes physics and observation work, so
+it is more representative of rollout impact than a network-only microbenchmark;
+it should not be treated as a backend-independent constant.
+
+### Factored parameter-aware RL policy
+
+The initial reference-action policy flattened every physical choice and signal
+choice into one 1,315-logit categorical distribution: 263 physical choices
+times no signal or one of four channels. It also hard-coded payloads, so the
+learner could not deliberately choose bite size, attack commitment,
+regurgitation amount, or child allocation.
+
+The policy now has four conditional heads: 264 physical choices, five bounded
+action-amount tiers, 16 four-bit signal patterns, and five quantized signal
+strengths, for 290 logits before the value and memory outputs. Amount, pattern,
+and strength legality are packed per physical action and
+the selected factors' log probabilities and entropies are summed by PPO and
+behavior cloning. This remains 78.0% narrower than the original 1,315-logit
+head while adding parameter control and avoiding a 105,600-choice full
+Cartesian product. Ordinary actions may attach one channel at one, two, four,
+eight, or sixteen emission quanta. Explicit Signal may write the same learned
+strength to any nonempty subset of the four channels; the v8 Mind ABI itself
+continues to support independent amounts on all four explicit channels.
+
+On this machine, the release-mode 5,000-observation diagnostic measured 14.7 ms
+for the batched projection, including construction of commit-legal physical,
+amount, and signal masks (about 2.9 microseconds per cell). Its paired former
+lookup path measured 14.6 ms; that comparison tests projection lookup layout,
+not the cost of the new conditional masks versus an old binary mask build.
+
+The snapshot-opponent fixture after this change completed 100 frontiers with
+184 policy rows and 39 batched neural forwards in 0.076 s, versus 0.251 s for
+isolated scalar Minds, a 3.31x end-to-end speedup. The policy change altered the
+fixture trajectory and therefore the row count, so this is a post-change
+regression measurement rather than an exact before/after throughput claim.
+
+### Containerized WGPU training baseline
+
+The training loop now batches the learning policy's inference rows across all
+environments at each event frontier and returns probabilities, log
+probabilities, and values in one device-to-host transfer. Previously it issued
+one small forward pass and three synchronous readbacks per environment. Exact
+sampling order remains environment-major and the existing update-boundary
+continuation test passes on both backends.
+
+An NVIDIA Vulkan/WGPU Docker target was validated on `fitty` (Ubuntu 24.04,
+RTX 5090, NVIDIA 595.84) with 16 environments, rollout length 128, the default
+128→64 model, and evaluation/checkpoint publication disabled. These are
+single-run integration measurements, not tuned learning recommendations:
+
+| Backend / condition | PPO minibatch | Decisions | Trainer time | Decisions/s |
+|---|---:|---:|---:|---:|
+| WGPU, per-environment inference, fresh process | 64 | 3,829 | 14.5 s | 264 |
+| WGPU, global inference batch, fresh process | 64 | 3,829 | 13.5 s | 285 |
+| WGPU, global inference, cold autotune cache | 1,024 | 3,829 | 27.1 s | 141 |
+| WGPU, global inference, warm autotune cache | 1,024 | 3,829 | 4.8 s | 796 |
+| NdArray CPU, global inference | 1,024 | 3,732 | 1.0 s | 3,558 |
+
+Backend floating-point differences change sampled trajectories, so decision
+counts are close rather than identical. The global-inference WGPU change did
+reproduce the preceding WGPU trajectory and decision counts exactly.
+
+The cache result is operationally important: CubeCL autotuning dominates tiny,
+short-lived jobs. The GPU Compose runner therefore persists device-namespaced,
+checksum-validated choices under `/cache`; the cache is not part of a training
+artifact. Even warm, the current small MLP is CPU-faster because physics and
+rollout orchestration stay on the host and GPU batches remain small. WGPU is an
+available experimental backend, not yet the recommended backend for this
+profile. The next likely crossovers are larger models/more environments, fewer
+PPO scalar readbacks, and pipelined or parallel host environment stepping.
+
+### Commit-affordability wire slice (Mind ABI v7)
+
+ABI v7 adds compact effort-cost ratios and per-family base coefficients to the
+anonymous action space. A Mind can reproduce the resolver's exact inertial and
+payload affordability checks using only its own mass/energy and local slot
+distance. No per-slot cost table, identity, or global state is transmitted.
+
+On this machine, the maintained eight-slot native decode diagnostic measured
+1,272 bytes and 0.623 microseconds per input, versus the prior v6 fixture's
+1,152 bytes and roughly 0.45 microseconds. The 120-byte fixed increase avoids
+commit-rejected policy choices and remains small relative to compatible guest
+execution, but it should be included in future Wasm capacity measurements.
+
+### Signal telemetry accounting
+
+Signal telemetry does not perform pre/post board scans at every resolver
+batch. Accepted replay commitments supply exact explicit and sidecar deposits;
+successful terrain actions reuse the action delta's pre-edit channel values;
+and the passive decay kernel reduces four non-authoritative per-channel totals
+while it already visits active signal tiles. The totals are exposed only
+through host resolution metrics and never enter canonical state, hashes,
+checkpoints, replays, or Mind observations.
+
+The configurable periodic ecology scan now computes channel energy, active
+channel tiles, Herfindahl concentration, and total variation over directed,
+distinct edges in the ruleset's observable-signal neighborhood. Consequently
+the potentially expensive spatial characterization remains governed by
+`telemetry.state_sample_interval_steps`, while exact deposit, decay, and
+terrain-erasure accounting stays proportional to existing resolver work.
 
 ## Interpreting the numbers
 

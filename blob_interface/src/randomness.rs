@@ -48,7 +48,11 @@ impl PrivateRandomDeriver {
         let mut prefix = Context::new(&SHA256);
         #[cfg(target_arch = "wasm32")]
         let mut prefix = Sha256::new();
-        prefix.update(&(DECISION_RANDOM_DOMAIN.len() as u64).to_le_bytes());
+        let domain_length = (DECISION_RANDOM_DOMAIN.len() as u64).to_le_bytes();
+        #[cfg(not(target_arch = "wasm32"))]
+        prefix.update(&domain_length);
+        #[cfg(target_arch = "wasm32")]
+        prefix.update(domain_length);
         prefix.update(DECISION_RANDOM_DOMAIN);
         prefix.update(match_secret);
         Self { prefix }
@@ -56,8 +60,18 @@ impl PrivateRandomDeriver {
 
     pub fn derive(&self, cell_lineage: u64, decision_sequence: u64) -> PrivateRandom {
         let mut hasher = self.prefix.clone();
-        hasher.update(&cell_lineage.to_le_bytes());
-        hasher.update(&decision_sequence.to_le_bytes());
+        let lineage = cell_lineage.to_le_bytes();
+        let sequence = decision_sequence.to_le_bytes();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            hasher.update(&lineage);
+            hasher.update(&sequence);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            hasher.update(lineage);
+            hasher.update(sequence);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         let bytes = hasher.finish().as_ref().try_into().unwrap();
         #[cfg(target_arch = "wasm32")]

@@ -1,29 +1,54 @@
 # blob_rl training configuration
 
 # Training settings
+seed = 42
 num_envs = 16
 rollout_length = 128
 total_timesteps = 1_000_000
+# For comparable exposure across population/field sizes, set a positive value.
+# When present, total_timesteps is only the hard cell-action safety ceiling.
+# total_simulation_quanta_per_env = 1_048_576
 eval_interval = 50
+eval_episodes = 8
+evaluation_opponents = ["wait", "random", "aggressive"]
+evaluation_snapshots = []
+evaluation_seed = 1_000_000_000
 checkpoint_interval = 100
 checkpoint_dir = "./checkpoints"
+# A scientific warm start binds the exact behavior-cloning metadata bytes:
+# [initial_policy]
+# directory = "./pretrained/colony-curriculum-v1"
+# artifact_sha256 = "<64 lowercase hex characters>"
+
+# Host-only bounded experiment telemetry. Action outcomes are counted exactly;
+# canonical cells/tiles are scanned only at the configured episode-step cadence.
+[telemetry]
+enabled = true
+state_sample_interval_steps = 32
+max_state_samples_per_episode = 64
+episode_log_stride = 16
 
 # PPO hyperparameters
 [ppo]
 clip_epsilon = 0.2
+value_clip_epsilon = 0.2
 gamma = 0.99
 gae_lambda = 0.95
 epochs_per_update = 4
 minibatch_size = 64
+recurrent_unroll_steps = 16
 learning_rate = 3e-4
 entropy_coeff = 0.01
 value_loss_coeff = 0.5
 max_grad_norm = 0.5
+target_kl = 0.03
 
 # Neural network architecture
 [model]
 hidden1 = 128
 hidden2 = 64
+# Canonical cell-private learned state (8-byte header + 2 bytes/value).
+recurrent_size = 64
 
 # Environment settings
 [env]
@@ -31,6 +56,35 @@ world_size = 64
 cells_per_team = 12
 max_episode_len = 1000
 num_teams = 2
+opponent = "aggressive"
+
+# Public objective. The host-only max_episode_len guard above should not be
+# reached during a valid scientific match.
+[env.victory]
+immediate = "extermination"
+deadline = "draw"
+sim_time_limit_quanta = 1048576
+
+# Canonical physics. Any subset may be overridden; omitted values come from
+# the hosted reference profile and are expanded into checkpoint metadata.
+[env.rules]
+bite_capacity = 16
+gut_capacity = 64
+digestion_rate_numerator = 1
+digestion_rate_denominator = 256
+metabolism_rate_numerator = 1
+metabolism_rate_denominator = 1024
+diffusion_interval_quanta = 1024
+diffusion_rate_numerator = 1
+diffusion_rate_denominator = 4
+minimum_survival_energy = 1
+child_core_mass = 10
+guard_damage_numerator = 1
+guard_damage_denominator = 2
+attack_payload_damage_numerator = 1
+attack_payload_damage_denominator = 1
+attack_mass_damage_numerator = 0
+attack_mass_damage_denominator = 1
 
 # Reward shaping
 [reward]
@@ -42,8 +96,20 @@ split_success = 2.0
 team_wins = 10.0
 team_loses = -10.0
 
+# Rollout-only handling of canonical deadline draws. Alternative weights can
+# shape training without changing public match outcomes or replay semantics.
+[reward.deadline]
+mode = "none"
+
 # Self-play settings
 [self_play]
 start_after_timesteps = 500_000
 opponent_update_interval = 50
 max_opponent_pool = 10
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

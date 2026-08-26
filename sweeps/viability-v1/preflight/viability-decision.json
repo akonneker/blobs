@@ -1,0 +1,2201 @@
+{
+  "schema_version": 1,
+  "package_version": "0.1.0",
+  "code_revision": null,
+  "matrix_file_sha256": "9af84767fa978f0d812b444926afa73caec28a709093302b6ca9508c5f6b90c4",
+  "matrix_package_version": "0.1.0",
+  "matrix_code_revision": null,
+  "matrix_config_hash": "5abcc5da119f64c9ba3a3aa463754c06a30f338a41ed352f7bff84fd90fe2c4b",
+  "manifest_sha256": "754432a0d7a7c5574242cf72ac60efcd3ee726f82e8f4ef6cc131587747eb15d",
+  "gate_spec_sha256": "57b503eb87845a33244a77af3ba0282d96c47135fb3c17de4a8944a123be616e",
+  "gate_config_hash": "574e485ac1fc9f990bcc2db65ba061e2f781b0dc8341803b1eb1808419531b86",
+  "decision": "failed",
+  "total_checks": 168,
+  "failed_checks": 51,
+  "checks": [
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 82.66666666666667,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 43.666666666666664,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.07569141193595343,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.16375545851528384,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 81.33333333333333,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 43.333333333333336,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.21895861148197596,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.15803814713896458,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 153.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 400.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.08300079808459697,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.1891233766233766,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "extinction_without_combat_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 1.0,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.059890815671162494,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.006602254428341385,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "extinction_without_combat_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.6666666666666666,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.13497123308972167,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.01105230386052304,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.3333333333333333,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 116.66666666666667,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 442.3333333333333,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.08111050626020685,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "baseline",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.010348583877995643,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 93.66666666666667,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 46.666666666666664,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.11775362318840579,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.1503623188405797,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 92.33333333333333,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 46.333333333333336,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.3449443638122883,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.13011335633316906,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 180.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 456.6666666666667,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.12931034482758622,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.17283120376597175,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "extinction_without_combat_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 1.0,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.10165423845032999,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0037748798901853123,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.6666666666666666,
+      "threshold": 0.34,
+      "passed": false
+    },
+    {
+      "metric": "extinction_without_combat_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.3333333333333333,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.6666666666666666,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.2578757875787579,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.01002026570592209,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.6666666666666666,
+      "threshold": 0.34,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.6666666666666666,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 139.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 535.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.16493127863390253,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.007646322813846795,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 82.66666666666667,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 43.666666666666664,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.07569141193595343,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.16375545851528384,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 81.33333333333333,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 43.333333333333336,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.24543738200125864,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.14874436574372182,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": 0.66,
+      "passed": false
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 168.66666666666666,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 506.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.081377151799687,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.18268467037331215,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "extinction_without_combat_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 1.0,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0813843236409608,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.006329113924050633,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "extinction_without_combat_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 1.0,
+      "threshold": 0.0,
+      "passed": false
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.6666666666666666,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.18633198973983145,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.014306676449009537,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "mass_energy_drift_episode_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "candidate_survival_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.6666666666666666,
+      "threshold": 0.66,
+      "passed": true
+    },
+    {
+      "metric": "attack_commits_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 190.33333333333334,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "applied_damage_per_episode_for_combat_profiles",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 810.3333333333334,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "commit_rejection_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.10955337472461446,
+      "threshold": 0.05,
+      "passed": false
+    },
+    {
+      "metric": "frustrated_resolution_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.009222133119486768,
+      "threshold": 0.5,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": -2.3333333333333335,
+      "threshold": -1.0,
+      "passed": false
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.6666666666666666,
+      "threshold": 0.34,
+      "passed": false
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": -0.6666666666666666,
+      "threshold": -0.34,
+      "passed": false
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.6666666666666666,
+      "threshold": 0.34,
+      "passed": false
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.3333333333333333,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": -0.3333333333333333,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 1.6666666666666667,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "lower-metabolism",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.6666666666666666,
+      "threshold": 0.34,
+      "passed": false
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "random",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": -2.6666666666666665,
+      "threshold": -1.0,
+      "passed": false
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.0,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": -0.3333333333333333,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "regressed_outcome_rate",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    },
+    {
+      "metric": "candidate_win_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.3333333333333333,
+      "threshold": -0.34,
+      "passed": true
+    },
+    {
+      "metric": "final_candidate_cell_mean_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 1.0,
+      "threshold": -1.0,
+      "passed": true
+    },
+    {
+      "metric": "timeout_rate_difference",
+      "subject": {
+        "variant": "faster-digestion",
+        "baseline_variant": "baseline",
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.34,
+      "passed": true
+    }
+  ]
+}

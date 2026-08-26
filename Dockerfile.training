@@ -1,0 +1,182 @@
+# syntax=docker/dockerfile:1
+
+ARG RUST_VERSION=1.95
+ARG GPU_RUNTIME_VERSION=24.04
+FROM rust:${RUST_VERSION}-bookworm AS source
+
+ARG BLOB_CODE_REVISION=unversioned-container
+ENV BLOB_CODE_REVISION=${BLOB_CODE_REVISION}
+
+WORKDIR /build
+COPY . .
+
+FROM source AS cpu-builder
+
+ENV BLOB_TRAINING_BACKEND=ndarray-cpu
+
+# The portable remote-runner target deliberately uses Burn's CPU ndarray
+# backend. It therefore needs no Vulkan device, driver, or host GPU runtime.
+RUN --mount=type=cache,id=blobs-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=blobs-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=blobs-cpu-target,target=/build/target,sharing=locked \
+    cargo build --locked --release \
+        -p blob_rl \
+        --no-default-features \
+        --features ndarray \
+        --bin train \
+        --bin viability \
+        --bin viability-gate \
+        --bin viability-matrix \
+        --bin viability-preflight \
+        --bin rules-sweep \
+        --bin rules-sweep-run \
+        --bin demonstrations \
+        --bin behavior-clone \
+    && install -Dm0555 target/release/train /artifacts/train \
+    && install -Dm0555 target/release/viability /artifacts/viability \
+    && install -Dm0555 target/release/viability-gate /artifacts/viability-gate \
+    && install -Dm0555 target/release/viability-matrix /artifacts/viability-matrix \
+    && install -Dm0555 target/release/viability-preflight /artifacts/viability-preflight \
+    && install -Dm0555 target/release/rules-sweep /artifacts/rules-sweep \
+    && install -Dm0555 target/release/rules-sweep-run /artifacts/rules-sweep-run \
+    && install -Dm0555 target/release/demonstrations /artifacts/demonstrations \
+    && install -Dm0555 target/release/behavior-clone /artifacts/behavior-clone \
+    && strip /artifacts/train /artifacts/viability /artifacts/viability-gate /artifacts/viability-matrix /artifacts/viability-preflight /artifacts/rules-sweep /artifacts/rules-sweep-run /artifacts/demonstrations /artifacts/behavior-clone
+
+FROM source AS gpu-builder
+
+ENV BLOB_TRAINING_BACKEND=wgpu-vulkan
+
+# The GPU target uses blob_rl's default Burn WGPU backend. Runtime device
+# discovery is deliberately Vulkan-only so a missing GPU contract fails fast
+# instead of silently selecting a different graphics API.
+RUN --mount=type=cache,id=blobs-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=blobs-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=blobs-gpu-target,target=/build/target,sharing=locked \
+    cargo build --locked --release \
+        -p blob_rl \
+        --bin train \
+        --bin viability \
+        --bin viability-gate \
+        --bin viability-matrix \
+        --bin viability-preflight \
+        --bin rules-sweep \
+        --bin rules-sweep-run \
+        --bin demonstrations \
+        --bin behavior-clone \
+    && install -Dm0555 target/release/train /artifacts/train \
+    && install -Dm0555 target/release/viability /artifacts/viability \
+    && install -Dm0555 target/release/viability-gate /artifacts/viability-gate \
+    && install -Dm0555 target/release/viability-matrix /artifacts/viability-matrix \
+    && install -Dm0555 target/release/viability-preflight /artifacts/viability-preflight \
+    && install -Dm0555 target/release/rules-sweep /artifacts/rules-sweep \
+    && install -Dm0555 target/release/rules-sweep-run /artifacts/rules-sweep-run \
+    && install -Dm0555 target/release/demonstrations /artifacts/demonstrations \
+    && install -Dm0555 target/release/behavior-clone /artifacts/behavior-clone \
+    && strip /artifacts/train /artifacts/viability /artifacts/viability-gate /artifacts/viability-matrix /artifacts/viability-preflight /artifacts/rules-sweep /artifacts/rules-sweep-run /artifacts/demonstrations /artifacts/behavior-clone
+
+FROM debian:bookworm-slim AS runtime-base
+
+ARG BLOB_CODE_REVISION=unversioned-container
+ARG TRAINING_UID=10001
+ARG TRAINING_GID=10001
+
+LABEL org.opencontainers.image.title="Blobs RL training runner" \
+      org.opencontainers.image.description="Trainer and bounded rules-sweep executor" \
+      org.opencontainers.image.revision="${BLOB_CODE_REVISION}"
+
+RUN groupadd --gid "${TRAINING_GID}" trainer \
+    && useradd --uid "${TRAINING_UID}" --gid "${TRAINING_GID}" \
+        --create-home --home-dir /home/trainer trainer \
+    && mkdir -p /config /output /work \
+    && chown trainer:trainer /output /work
+
+COPY --chmod=0555 docker/training/entrypoint.sh /usr/local/bin/blob-training-entrypoint
+COPY blob_rl/config /opt/blobs/config
+
+ENV RUST_BACKTRACE=1 \
+    HOME=/tmp \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1
+
+USER trainer:trainer
+WORKDIR /work
+VOLUME ["/output"]
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["/usr/local/bin/blob-training-entrypoint"]
+CMD ["train", "--config", "/opt/blobs/config/default.toml", "--checkpoint-dir", "/output/checkpoints", "--save-model", "/output/final-model"]
+
+FROM ubuntu:${GPU_RUNTIME_VERSION} AS gpu
+
+ARG BLOB_CODE_REVISION=unversioned-container
+ARG TRAINING_UID=10001
+ARG TRAINING_GID=10001
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        libegl1 \
+        libvulkan1 \
+        libxext6 \
+        passwd \
+        vulkan-tools \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid "${TRAINING_GID}" trainer \
+    && useradd --uid "${TRAINING_UID}" --gid "${TRAINING_GID}" \
+        --create-home --home-dir /home/trainer trainer \
+    && mkdir -p /cache /config /output /work \
+    && chmod 1777 /cache \
+    && chown trainer:trainer /output /work
+
+COPY --from=gpu-builder /artifacts/train /usr/local/bin/train
+COPY --from=gpu-builder /artifacts/viability /usr/local/bin/viability
+COPY --from=gpu-builder /artifacts/viability-gate /usr/local/bin/viability-gate
+COPY --from=gpu-builder /artifacts/viability-matrix /usr/local/bin/viability-matrix
+COPY --from=gpu-builder /artifacts/viability-preflight /usr/local/bin/viability-preflight
+COPY --from=gpu-builder /artifacts/rules-sweep /usr/local/bin/rules-sweep
+COPY --from=gpu-builder /artifacts/rules-sweep-run /usr/local/bin/rules-sweep-run
+COPY --from=gpu-builder /artifacts/demonstrations /usr/local/bin/demonstrations
+COPY --from=gpu-builder /artifacts/behavior-clone /usr/local/bin/behavior-clone
+COPY --chmod=0555 docker/training/entrypoint.sh /usr/local/bin/blob-training-entrypoint
+COPY docker/training/cubecl.toml /opt/blobs/cubecl.toml
+COPY blob_rl/config /opt/blobs/config
+
+ENV RUST_BACKTRACE=1 \
+    HOME=/tmp \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
+    WGPU_BACKEND=vulkan \
+    WGPU_POWER_PREF=high \
+    XDG_CONFIG_HOME=/cache \
+    XDG_RUNTIME_DIR=/tmp/xdg-runtime
+
+LABEL org.opencontainers.image.title="Blobs RL training runner" \
+      org.opencontainers.image.description="NVIDIA Vulkan/WGPU trainer and bounded rules-sweep executor" \
+      org.opencontainers.image.revision="${BLOB_CODE_REVISION}"
+
+USER trainer:trainer
+WORKDIR /opt/blobs
+VOLUME ["/cache", "/output"]
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["/usr/local/bin/blob-training-entrypoint"]
+CMD ["train", "--config", "/opt/blobs/config/default.toml", "--checkpoint-dir", "/output/checkpoints", "--save-model", "/output/final-model"]
+
+# Keep CPU as the default final target for backward-compatible `docker build`.
+FROM runtime-base AS cpu
+
+COPY --from=cpu-builder /artifacts/train /usr/local/bin/train
+COPY --from=cpu-builder /artifacts/viability /usr/local/bin/viability
+COPY --from=cpu-builder /artifacts/viability-gate /usr/local/bin/viability-gate
+COPY --from=cpu-builder /artifacts/viability-matrix /usr/local/bin/viability-matrix
+COPY --from=cpu-builder /artifacts/viability-preflight /usr/local/bin/viability-preflight
+COPY --from=cpu-builder /artifacts/rules-sweep /usr/local/bin/rules-sweep
+COPY --from=cpu-builder /artifacts/rules-sweep-run /usr/local/bin/rules-sweep-run
+COPY --from=cpu-builder /artifacts/demonstrations /usr/local/bin/demonstrations
+COPY --from=cpu-builder /artifacts/behavior-clone /usr/local/bin/behavior-clone
+
+LABEL org.opencontainers.image.description="Portable CPU trainer and bounded rules-sweep executor"

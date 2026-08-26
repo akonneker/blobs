@@ -259,6 +259,7 @@ impl PluginPool {
     }
 
     /// Number of workers in the pool
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.workers.len()
     }

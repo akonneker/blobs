@@ -1,0 +1,47 @@
+# Non-learning maintained-Mind comparison profile. Rewards and PPO settings
+# are inert here; the control-matrix runner evaluates exact policy outcomes and
+# authoritative host telemetry only.
+seed = 1
+num_envs = 1
+rollout_length = 1
+total_timesteps = 1
+eval_interval = 0
+checkpoint_interval = 0
+checkpoint_dir = "unused-control-evaluation"
+
+[telemetry]
+enabled = true
+state_sample_interval_steps = 16
+max_state_samples_per_episode = 32
+episode_log_stride = 0
+
+[env]
+world_size = 16
+cells_per_team = 2
+# Non-scientific guard only; a valid control match should reach extermination
+# or the public simulated-time deadline first.
+max_episode_len = 16384
+num_teams = 2
+opponent = "aggressive"
+min_energy = 1
+initial_energy = 100
+num_scattered_energy = 32
+scattered_energy_amount = 20
+num_plants = 8
+plant_rate = 2
+plant_max_energy = 100
+
+[env.victory]
+immediate = "extermination"
+deadline = "draw"
+sim_time_limit_quanta = 1048576
+
+[env.rules]
+bite_capacity = 16
+gut_capacity = 64
+digestion_rate_numerator = 1
+digestion_rate_denominator = 256
+metabolism_rate_numerator = 1
+metabolism_rate_denominator = 1024
+minimum_survival_energy = 1
+child_core_mass = 10

@@ -666,6 +666,7 @@ fn action_kind_name(kind: ActionKind) -> &'static str {
         ActionKind::Consume => "consume",
         ActionKind::Split => "split",
         ActionKind::Regurgitate => "regurgitate",
+        ActionKind::Signal => "signal",
         ActionKind::Excavate => "excavate",
         ActionKind::DepositTerrain => "depositTerrain",
     }

@@ -161,11 +161,13 @@ fn state_hash_is_independent_of_commit_iteration_order() {
 
 #[test]
 fn incremental_pages_match_oracle_across_tile_and_cell_boundaries() {
-    let mut rules = ReferenceRuleset::default();
-    rules.digestion_rate_numerator = 0;
-    rules.metabolism_rate_numerator = 0;
-    rules.signal_decay_rate_numerator = 0;
-    rules.diffusion_rate_numerator = 0;
+    let rules = ReferenceRuleset {
+        digestion_rate_numerator: 0,
+        metabolism_rate_numerator: 0,
+        signal_decay_rate_numerator: 0,
+        diffusion_rate_numerator: 0,
+        ..ReferenceRuleset::default()
+    };
     let mut simulation = ReferenceSimulation::new(32, 32, rules).unwrap();
     let mut actors = Vec::new();
     for index in 0..300 {
@@ -239,10 +241,10 @@ fn canonical_hash_golden_vectors() {
             report.state_hash().expect("verified report").to_hex(),
         ),
         (
-            "522bfc530be093514cdfb5a9fdb7c7b1e407bfb52936f18c412e3d8c7c5a93f5".into(),
-            "772461abfba0ad723408c94e0d1536cd3409ae5cfb27ab7398ec38d1a347d040".into(),
-            "b2d05f11ac0994032718ab226bd72f7884e2d07278e264e76426f34661f6ea82".into(),
-            "4abbd39654d8b17581402857968c46a58060366e33f9df041327a7b8e88cada6".into(),
+            "63bb834b45315558ece15250608de71b9df007e18c45952751b424a4f96e389f".into(),
+            "abb178db1afdf1e162d8d2c48fac0569d275747ef0dd6a17c9092e6d7cae5012".into(),
+            "ce3864c933e36461b0248522e903ca0c6fa445093f510c55b16ded5a35e3eb9b".into(),
+            "cd886383cdba6e8ff4aaa2df2c2a77fe59eb12c86e1a2aac17a1d07697fb0058".into(),
         )
     );
 }

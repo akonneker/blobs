@@ -1,0 +1,202 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/colony_horizon_sweep.toml",
+  "spec_sha256": "3c4d9c657a59a7c649995f2bee28412e94fc6535a6acfd1710eacb030b7744e4",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1",
+  "seeds": [
+    1103,
+    2207,
+    3301
+  ],
+  "variants": [
+    {
+      "name": "horizon-262k",
+      "description": "Draw at the first canonical event frontier at or after 262144 quanta",
+      "rules": {},
+      "scenario": {
+        "victory": {
+          "sim_time_limit_quanta": 262144
+        }
+      }
+    },
+    {
+      "name": "horizon-524k",
+      "description": "Draw at the first canonical event frontier at or after 524288 quanta",
+      "rules": {},
+      "scenario": {
+        "victory": {
+          "sim_time_limit_quanta": 524288
+        }
+      }
+    },
+    {
+      "name": "horizon-1m",
+      "description": "Draw at the first canonical event frontier at or after 1048576 quanta",
+      "rules": {},
+      "scenario": {
+        "victory": {
+          "sim_time_limit_quanta": 1048576
+        }
+      }
+    },
+    {
+      "name": "horizon-2m",
+      "description": "Draw at the first canonical event frontier at or after 2097152 quanta",
+      "rules": {},
+      "scenario": {
+        "victory": {
+          "sim_time_limit_quanta": 2097152
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "horizon-262k",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6623afc1a73a7e7045fd8176e8dc72a30cc562c9df75ebed948fbb6fb5d20d7a",
+      "experiment_config_sha256": "86c6d849c65c704e1d68cd9bdb216c36b9b9d6a84798e8e7d8384bb6175a5f43",
+      "config_file_sha256": "2a36f067fe0ec3150b76d60a1d720106327ee6f863c5e505deee7080bfee340b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-262k/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-262k/seed-1103/config.toml"
+    },
+    {
+      "variant": "horizon-262k",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6623afc1a73a7e7045fd8176e8dc72a30cc562c9df75ebed948fbb6fb5d20d7a",
+      "experiment_config_sha256": "f516874266639de51f1476d215be27acee7df90b192f2b12abf7158a7a5fb38e",
+      "config_file_sha256": "fc2e8adddf8b70f4481c18bf891fddd14a532811123fae1e83099e98491c2668",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-262k/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-262k/seed-2207/config.toml"
+    },
+    {
+      "variant": "horizon-262k",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6623afc1a73a7e7045fd8176e8dc72a30cc562c9df75ebed948fbb6fb5d20d7a",
+      "experiment_config_sha256": "eea3bb84ad81b925382cb2f6d63e1698778fbb3e292529a81ad8294b899ff058",
+      "config_file_sha256": "db5c56047c3a47c9df629788993ca63b30aa12795ef3e1e98f1da44877aa2fa2",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-262k/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-262k/seed-3301/config.toml"
+    },
+    {
+      "variant": "horizon-524k",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "476da43504c9e3b5d6ef8e3dac94f06c44d2a056ae96ba6da78edac7216ac604",
+      "experiment_config_sha256": "02a1779149268b98fe22ec87762e4921c342f50c673d0d6c670049ec7ce091c9",
+      "config_file_sha256": "3fa520ebf009b94d15445644b47d3e147781b173949fe50f6f9f90e19d88e92a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-524k/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-524k/seed-1103/config.toml"
+    },
+    {
+      "variant": "horizon-524k",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "476da43504c9e3b5d6ef8e3dac94f06c44d2a056ae96ba6da78edac7216ac604",
+      "experiment_config_sha256": "b65ac832db41d7d4300bb5f170563b6e77d1d2bbcb82f8fd12ce57c61d8178f6",
+      "config_file_sha256": "30704c1c0db50ec43d289f36818eec057c4df670d469ed9ebc2210a6035e16d0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-524k/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-524k/seed-2207/config.toml"
+    },
+    {
+      "variant": "horizon-524k",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "476da43504c9e3b5d6ef8e3dac94f06c44d2a056ae96ba6da78edac7216ac604",
+      "experiment_config_sha256": "c54ba9d2f1ae9867ccddeb5e2e9ce06b077e5699af321c70ea7e7904cd2e44c7",
+      "config_file_sha256": "43f66f0f8fb35bf3f33bb906d86f6150fa61277cfc3c7c1afc1657c97db30895",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-524k/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-524k/seed-3301/config.toml"
+    },
+    {
+      "variant": "horizon-1m",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "00b4dc238660a1ff1e91c1f1dfe5040c8b8edbb962af291cda2bcf297d8bf461",
+      "config_file_sha256": "50a9b6f14dc645f99c2b9690a1969c9e162aa6333d8e0f88f7c76a8970a10379",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-1m/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-1m/seed-1103/config.toml"
+    },
+    {
+      "variant": "horizon-1m",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "c1d7700d140248546f887c3e64d08421d09f5273ea6696567f94bacd593da471",
+      "config_file_sha256": "2b215cff3277fd7778401a37acd7b7da04aa2b5ea575d0a2ebf5599a8ba6134e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-1m/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-1m/seed-2207/config.toml"
+    },
+    {
+      "variant": "horizon-1m",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "dba71d49dc3493f1e332763bbc2a0660eaeeb26360a6b85984f8b01b601a1dea",
+      "config_file_sha256": "268ce77c920e08eb8b149e60d61aa812f355bb0214448e8af091b8a9aaac183a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-1m/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-1m/seed-3301/config.toml"
+    },
+    {
+      "variant": "horizon-2m",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "d792ea21cd2827feb5263e8a8637a746b75ab67f5ff598880be5c174f9ca6d31",
+      "experiment_config_sha256": "9756acfdf3b8f8206d7c53e30412537c3687c7493e038e4556c8df6204b41ddf",
+      "config_file_sha256": "3a17315259d84c49f9aabe7736e548aedd0f8988aad2b251115f53b92ca3bcef",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-2m/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-2m/seed-1103/config.toml"
+    },
+    {
+      "variant": "horizon-2m",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "d792ea21cd2827feb5263e8a8637a746b75ab67f5ff598880be5c174f9ca6d31",
+      "experiment_config_sha256": "1a349678d7e46fef703476ceed14512c02b7b561ecc5b9b7abdea1c9fbb5b7b4",
+      "config_file_sha256": "2c60573e35d6c520bfc513f9ce62a2085c3ff3e4cc2d3ccaa0c18654557418e4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-2m/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-2m/seed-2207/config.toml"
+    },
+    {
+      "variant": "horizon-2m",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "d792ea21cd2827feb5263e8a8637a746b75ab67f5ff598880be5c174f9ca6d31",
+      "experiment_config_sha256": "3492408377abcb8f2dee0a6d77c6d2a2b30f830985bdf7e99b7b4398333a7274",
+      "config_file_sha256": "35ef1ddedc74ea42d0d71575b4b820026eac42ee995427bbe949bdd53033dce6",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-2m/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-horizon-v1/horizon-2m/seed-3301/config.toml"
+    }
+  ]
+}

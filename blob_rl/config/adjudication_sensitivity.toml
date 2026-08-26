@@ -1,0 +1,63 @@
+# Counterfactual deadline scoring only. These policies never alter canonical
+# extermination/draw outcomes or the physics rules.
+
+[[policies]]
+name = "body-only"
+description = "Count core and assimilated energy; exclude gut, carried terrain, and in-flight escrow"
+[policies.weights]
+core_basis_points = 10000
+assimilated_basis_points = 10000
+gut_basis_points = 0
+carried_material_basis_points = 0
+payload_escrow_basis_points = 0
+
+[[policies]]
+name = "gut-quarter"
+description = "Count gut contents at 25 percent and exclude carried terrain and escrow"
+[policies.weights]
+core_basis_points = 10000
+assimilated_basis_points = 10000
+gut_basis_points = 2500
+carried_material_basis_points = 0
+payload_escrow_basis_points = 0
+
+[[policies]]
+name = "gut-half"
+description = "Count gut contents at 50 percent and exclude carried terrain and escrow"
+[policies.weights]
+core_basis_points = 10000
+assimilated_basis_points = 10000
+gut_basis_points = 5000
+carried_material_basis_points = 0
+payload_escrow_basis_points = 0
+
+[[policies]]
+name = "gut-full"
+description = "Count all cell core, assimilated, and gut energy; exclude carried terrain and escrow"
+[policies.weights]
+core_basis_points = 10000
+assimilated_basis_points = 10000
+gut_basis_points = 10000
+carried_material_basis_points = 0
+payload_escrow_basis_points = 0
+
+[[policies]]
+name = "all-cell-compartments"
+description = "Count every cell-owned compartment, including carried terrain and pending payload escrow"
+[policies.weights]
+core_basis_points = 10000
+assimilated_basis_points = 10000
+gut_basis_points = 10000
+carried_material_basis_points = 10000
+payload_escrow_basis_points = 10000
+
+[[policies]]
+name = "body-only-margin-10"
+description = "Body-only score must lead by at least ten mass-energy units; smaller leads remain draws"
+minimum_victory_margin_mass_energy = 10
+[policies.weights]
+core_basis_points = 10000
+assimilated_basis_points = 10000
+gut_basis_points = 0
+carried_material_basis_points = 0
+payload_escrow_basis_points = 0

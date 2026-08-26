@@ -134,6 +134,17 @@ fn fixture() -> ReferenceMindInput {
             metabolism_rate_denominator: 1024,
             terrain_mass_per_elevation: 10,
             signal_emission_cost: 1,
+            effort_cost_numerators: [1, 1, 2],
+            effort_cost_denominators: [2, 1, 1],
+            move_effort_base: 1,
+            move_mass_units_per_effort: 100,
+            attack_effort_base: 2,
+            guard_effort_base: 1,
+            consume_effort_base: 1,
+            split_effort_base: 2,
+            regurgitate_effort_base: 1,
+            excavate_effort_base: 2,
+            deposit_terrain_effort_base: 2,
         },
         private_memory: vec![1, 2, 3, 4],
         randomness: PrivateRandom::from_bytes([0xa5; 32]),
@@ -178,6 +189,9 @@ fn every_action_round_trips_exactly() {
             target_slot: 5,
             amount: 6,
         },
+        ReferenceMindAction::Signal {
+            amounts: [1, 2, 3, 4],
+        },
         ReferenceMindAction::Excavate,
         ReferenceMindAction::DepositTerrain,
     ];
@@ -197,7 +211,10 @@ fn every_action_round_trips_exactly() {
 
     let signaled = ReferenceMindDecision {
         action: ReferenceMindAction::Wait,
-        signal: Some(ReferenceSignalEmission { channel: 3 }),
+        signal: Some(ReferenceSignalEmission {
+            channel: 3,
+            amount: 7,
+        }),
         memory_update: ReferenceMemoryUpdate::Replace(vec![4, 3, 2, 1]),
     };
     let encoded = reference_mind_decision_to_capnp(&signaled, limits).unwrap();
@@ -257,6 +274,34 @@ fn malformed_and_noncanonical_inputs_are_rejected() {
     let mut remainder_without_energy = fixture();
     remainder_without_energy.self_state.assimilated_energy = 0;
     assert!(reference_mind_input_to_capnp(&remainder_without_energy, limits).is_err());
+
+    for decision in [
+        ReferenceMindDecision {
+            action: ReferenceMindAction::Wait,
+            signal: Some(ReferenceSignalEmission {
+                channel: 0,
+                amount: 0,
+            }),
+            memory_update: ReferenceMemoryUpdate::Retain,
+        },
+        ReferenceMindDecision {
+            action: ReferenceMindAction::Signal { amounts: [0; 4] },
+            signal: None,
+            memory_update: ReferenceMemoryUpdate::Retain,
+        },
+        ReferenceMindDecision {
+            action: ReferenceMindAction::Signal {
+                amounts: [1, 0, 0, 0],
+            },
+            signal: Some(ReferenceSignalEmission {
+                channel: 1,
+                amount: 1,
+            }),
+            memory_update: ReferenceMemoryUpdate::Retain,
+        },
+    ] {
+        assert!(reference_mind_decision_to_capnp(&decision, limits).is_err());
+    }
 }
 
 #[test]

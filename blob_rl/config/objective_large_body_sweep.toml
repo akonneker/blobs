@@ -1,0 +1,34 @@
+base_config = "objective_large_body_smoke.toml"
+output_dir = "../../sweeps/objective-large-body-smoke-v1"
+seeds = [4101, 4201, 4301]
+
+[[variants]]
+name = "field-32"
+description = "32x32, 16 cells per team, constant source and population density"
+
+[[variants]]
+name = "field-64"
+description = "64x64, 64 cells per team, constant source and population density"
+[variants.scenario]
+world_size = 64
+cells_per_team = 64
+num_scattered_energy = 512
+num_plants = 64
+
+[[variants]]
+name = "field-128"
+description = "128x128, 256 cells per team, constant source and population density"
+[variants.scenario]
+world_size = 128
+cells_per_team = 256
+num_scattered_energy = 2048
+num_plants = 256
+
+[[variants]]
+name = "field-256"
+description = "256x256, 1024 cells per team, constant source and population density"
+[variants.scenario]
+world_size = 256
+cells_per_team = 1024
+num_scattered_energy = 8192
+num_plants = 1024

@@ -1,0 +1,4536 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "code_revision": "7ded31a692297ddcd7fff73b5e55f20f6ceafff3+dirty",
+  "mind_abi_version": 8,
+  "mind_abi_hash": "07611c6b14a04980f6512a117ea7fa80693b253d377ae5144fb6dfeb51da1b62",
+  "manifest_sha256": "55b3f92b3809f532728ccb91e41f42baf605fd182ad22e0378db6f3fa267d9ff",
+  "matrix_config_hash": "8338f69d820d77f4214e97e323c781cef1873615f4f003362f9b575074560a75",
+  "execution_mode": "native_maintained_entry_point",
+  "verification_scope": "local_deterministic",
+  "server_verified": false,
+  "replay_committed": false,
+  "seat_policy": "mirrored_team_zero_and_one",
+  "candidate": "colony_signal_disabled",
+  "opponents": [
+    "simple",
+    "aggressive",
+    "defensive",
+    "explorer"
+  ],
+  "seeds": [
+    5101,
+    5209,
+    5303,
+    5407,
+    5501,
+    5609,
+    5701,
+    5801,
+    5903,
+    6007,
+    6101,
+    6203
+  ],
+  "variants": [
+    {
+      "name": "baseline-rules",
+      "description": "Default signal cost, decay, visibility, ecology, and victory rules",
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec"
+    }
+  ],
+  "matchups": [
+    {
+      "variant": "baseline-rules",
+      "report": {
+        "matchup_config_hash": "ee0af795210afc71334f9b721f5d36b67f70d453f46fcaa405532e50c81436f6",
+        "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+        "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+        "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+        "scenario": {
+          "world_size": 16,
+          "cells_per_team": 2,
+          "victory": {
+            "immediate": "extermination",
+            "deadline": "draw",
+            "sim_time_limit_quanta": 1048576
+          },
+          "num_teams": 2,
+          "min_energy": 1,
+          "initial_energy": 100,
+          "num_scattered_energy": 32,
+          "scattered_energy_amount": 20,
+          "num_plants": 8,
+          "plant_rate": 2,
+          "plant_max_energy": 100
+        },
+        "candidate": "colony_signal_disabled",
+        "opponent": "simple",
+        "seat_policy": "mirrored_team_zero_and_one",
+        "seeds": [
+          5101,
+          5209,
+          5303,
+          5407,
+          5501,
+          5609,
+          5701,
+          5801,
+          5903,
+          6007,
+          6101,
+          6203
+        ],
+        "telemetry_config": {
+          "enabled": true,
+          "state_sample_interval_steps": 16,
+          "max_state_samples_per_episode": 32,
+          "episode_log_stride": 0
+        },
+        "episodes": [
+          {
+            "seed": 5101,
+            "seat": "colony_team_zero",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1137,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 32,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 95,
+              "gut_energy": 5,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 537,
+            "final_sim_time_quanta": 322624,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 167,
+              "gut_energy": 7,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_zero",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1298,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 25,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 96,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 58,
+            "final_sim_time_quanta": 39936,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 191,
+              "gut_energy": 47,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 545,
+            "final_sim_time_quanta": 271680,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 135,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 170,
+            "final_sim_time_quanta": 184256,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 154,
+              "gut_energy": 6,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 182,
+            "final_sim_time_quanta": 134784,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 184,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 143,
+            "final_sim_time_quanta": 143616,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 214,
+              "gut_energy": 26,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 375,
+            "final_sim_time_quanta": 227776,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 126,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 294,
+            "final_sim_time_quanta": 201984,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 247,
+              "gut_energy": 10,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 188,
+            "final_sim_time_quanta": 172032,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 377,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 336,
+            "final_sim_time_quanta": 247488,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 190,
+              "gut_energy": 6,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 531,
+            "final_sim_time_quanta": 236544,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 153,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 268,
+            "final_sim_time_quanta": 187072,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 144,
+              "gut_energy": 7,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 143,
+            "final_sim_time_quanta": 124928,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 14,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_one",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1975,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 2,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 20,
+              "assimilated_energy": 54,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 94,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_zero",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1380,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 33,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 49,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_one",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1861,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 34,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 87,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 462,
+            "final_sim_time_quanta": 291328,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 293,
+              "gut_energy": 12,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_one",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1948,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 17,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 96,
+              "gut_energy": 5,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_zero",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1287,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 33,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 227,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_one",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1958,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 2,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 80,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 94,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 505,
+            "final_sim_time_quanta": 237568,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 216,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 538,
+            "final_sim_time_quanta": 329984,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 92,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          }
+        ],
+        "aggregate": {
+          "episodes": 24,
+          "colony_wins": 1,
+          "colony_losses": 15,
+          "timeouts": 8,
+          "colony_win_rate": 0.041666666666666664,
+          "average_environment_steps": 754.9583333333334,
+          "average_final_colony_cells": 0.4583333333333333,
+          "average_final_control_cells": 1.7083333333333333
+        },
+        "telemetry": {
+          "schema_version": 5,
+          "completed_episodes": 24,
+          "censored_active_episodes": 0,
+          "wins": 1,
+          "losses": 15,
+          "timeouts": 8,
+          "average_completed_episode_steps": 754.9583333333334,
+          "training": {
+            "actions": {
+              "wait": {
+                "committed": 207,
+                "accepted": 207,
+                "rejected_at_commit": 0,
+                "completed": 207,
+                "succeeded": 66,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 141,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 8645,
+                "accepted": 8645,
+                "rejected_at_commit": 0,
+                "completed": 8640,
+                "succeeded": 8229,
+                "rejected": 0,
+                "frustrated": 271,
+                "contested": 13,
+                "interrupted": 127,
+                "effort_spent": 9218,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 170,
+                "accepted": 170,
+                "rejected_at_commit": 0,
+                "completed": 170,
+                "succeeded": 147,
+                "rejected": 0,
+                "frustrated": 21,
+                "contested": 0,
+                "interrupted": 2,
+                "effort_spent": 400,
+                "payload": 345
+              },
+              "guard": {
+                "committed": 141,
+                "accepted": 141,
+                "rejected_at_commit": 0,
+                "completed": 141,
+                "succeeded": 140,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 1,
+                "effort_spent": 141,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 8418,
+                "accepted": 8418,
+                "rejected_at_commit": 0,
+                "completed": 8413,
+                "succeeded": 8363,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 50,
+                "effort_spent": 8413,
+                "payload": 0
+              },
+              "split": {
+                "committed": 373,
+                "accepted": 373,
+                "rejected_at_commit": 0,
+                "completed": 373,
+                "succeeded": 359,
+                "rejected": 0,
+                "frustrated": 12,
+                "contested": 2,
+                "interrupted": 0,
+                "effort_spent": 746,
+                "payload": 6796
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 38,
+                "accepted": 38,
+                "rejected_at_commit": 0,
+                "completed": 38,
+                "succeeded": 31,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 7,
+                "effort_spent": 76,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 19,
+                "accepted": 19,
+                "rejected_at_commit": 0,
+                "completed": 19,
+                "succeeded": 18,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 1,
+                "effort_spent": 38,
+                "payload": 190
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 359,
+            "deaths": 396,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 288,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 288,
+              "overkill_dealt": 0,
+              "raw_received": 166,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 166,
+              "overkill_received": 0
+            },
+            "terrain": {
+              "elevation_units_lifted": 31,
+              "elevation_units_dumped": 18,
+              "material_mass_lifted": 310,
+              "material_mass_dumped": 180,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "opponents": {
+            "actions": {
+              "wait": {
+                "committed": 7,
+                "accepted": 7,
+                "rejected_at_commit": 0,
+                "completed": 7,
+                "succeeded": 2,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 5,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 3799,
+                "accepted": 3799,
+                "rejected_at_commit": 0,
+                "completed": 3788,
+                "succeeded": 3668,
+                "rejected": 0,
+                "frustrated": 111,
+                "contested": 9,
+                "interrupted": 0,
+                "effort_spent": 11845,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "guard": {
+                "committed": 6493,
+                "accepted": 6493,
+                "rejected_at_commit": 0,
+                "completed": 6482,
+                "succeeded": 6482,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 6482,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 9282,
+                "accepted": 9282,
+                "rejected_at_commit": 0,
+                "completed": 9266,
+                "succeeded": 9266,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 9266,
+                "payload": 0
+              },
+              "split": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 0,
+            "deaths": 7,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 0,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 0,
+              "overkill_dealt": 0,
+              "raw_received": 122,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 122,
+              "overkill_received": 0
+            },
+            "terrain": {
+              "elevation_units_lifted": 0,
+              "elevation_units_dumped": 0,
+              "material_mass_lifted": 0,
+              "material_mass_dumped": 0,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "signal_field": {
+            "decayed_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erased_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erasure_events": 0
+          },
+          "state_samples": 1168,
+          "sample_means": {
+            "training_cells": 2.1327054794520546,
+            "opponent_cells": 1.9315068493150684,
+            "training_assimilated_energy": 69.41866438356165,
+            "opponent_assimilated_energy": 161.0248287671233,
+            "environment_plant_energy": 96.7097602739726,
+            "environment_loose_energy": 192.90924657534248,
+            "environment_diffuse_energy": 886.7243150684932,
+            "environment_signal_energy": 0.0,
+            "signal_active_channel_tiles": 0.0,
+            "signal_observation_total_variation": 0.0,
+            "encounter_edges": 0.11558219178082192,
+            "training_spatial_entropy": 0.5519424636420724,
+            "opponent_spatial_entropy": 0.6462647942035638,
+            "resource_concentration": 0.012286866433082097
+          }
+        }
+      }
+    },
+    {
+      "variant": "baseline-rules",
+      "report": {
+        "matchup_config_hash": "76847aca2de1c4b06d6d50f713b8db11f6240db95a9552065f5a005935ca67a6",
+        "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+        "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+        "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+        "scenario": {
+          "world_size": 16,
+          "cells_per_team": 2,
+          "victory": {
+            "immediate": "extermination",
+            "deadline": "draw",
+            "sim_time_limit_quanta": 1048576
+          },
+          "num_teams": 2,
+          "min_energy": 1,
+          "initial_energy": 100,
+          "num_scattered_energy": 32,
+          "scattered_energy_amount": 20,
+          "num_plants": 8,
+          "plant_rate": 2,
+          "plant_max_energy": 100
+        },
+        "candidate": "colony_signal_disabled",
+        "opponent": "aggressive",
+        "seat_policy": "mirrored_team_zero_and_one",
+        "seeds": [
+          5101,
+          5209,
+          5303,
+          5407,
+          5501,
+          5609,
+          5701,
+          5801,
+          5903,
+          6007,
+          6101,
+          6203
+        ],
+        "telemetry_config": {
+          "enabled": true,
+          "state_sample_interval_steps": 16,
+          "max_state_samples_per_episode": 32,
+          "episode_log_stride": 0
+        },
+        "episodes": [
+          {
+            "seed": 5101,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 139,
+            "final_sim_time_quanta": 116736,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 70,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 104,
+            "final_sim_time_quanta": 74752,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 123,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 667,
+            "final_sim_time_quanta": 222464,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 23,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 70,
+            "final_sim_time_quanta": 55296,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 39,
+              "gut_energy": 45,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 56,
+            "final_sim_time_quanta": 39936,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 286,
+              "gut_energy": 49,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 162,
+            "final_sim_time_quanta": 153600,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 37,
+              "gut_energy": 15,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 64,
+            "final_sim_time_quanta": 64512,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 114,
+              "gut_energy": 9,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 42,
+            "final_sim_time_quanta": 27648,
+            "colony_cells": 5,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 32,
+              "assimilated_energy": 219,
+              "gut_energy": 91,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 106,
+            "final_sim_time_quanta": 53248,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 21,
+              "assimilated_energy": 85,
+              "gut_energy": 33,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 261,
+            "final_sim_time_quanta": 145664,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 48,
+              "gut_energy": 86,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 139,
+            "final_sim_time_quanta": 109568,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 40,
+              "gut_energy": 33,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 238,
+            "final_sim_time_quanta": 157696,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 73,
+              "gut_energy": 15,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 225,
+            "final_sim_time_quanta": 98304,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 22,
+              "assimilated_energy": 130,
+              "gut_energy": 39,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 175,
+            "final_sim_time_quanta": 139264,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 40,
+              "assimilated_energy": 78,
+              "gut_energy": 45,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 159,
+            "final_sim_time_quanta": 154688,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 7,
+              "gut_energy": 5,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 84,
+            "final_sim_time_quanta": 47104,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 21,
+              "assimilated_energy": 130,
+              "gut_energy": 46,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 380,
+            "final_sim_time_quanta": 106496,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 20,
+              "assimilated_energy": 49,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 128,
+            "final_sim_time_quanta": 107520,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 30,
+              "assimilated_energy": 101,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 198,
+            "final_sim_time_quanta": 120832,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 62,
+              "gut_energy": 4,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 213,
+            "final_sim_time_quanta": 196608,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 28,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 49,
+            "final_sim_time_quanta": 38912,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 12,
+              "assimilated_energy": 128,
+              "gut_energy": 30,
+              "carried_material_mass": 0,
+              "payload_escrow": 34
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 357,
+            "final_sim_time_quanta": 334848,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 36,
+              "gut_energy": 5,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 82,
+            "final_sim_time_quanta": 30720,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 22,
+              "assimilated_energy": 230,
+              "gut_energy": 68,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 287,
+            "final_sim_time_quanta": 156672,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 27,
+              "gut_energy": 57,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          }
+        ],
+        "aggregate": {
+          "episodes": 24,
+          "colony_wins": 16,
+          "colony_losses": 8,
+          "timeouts": 0,
+          "colony_win_rate": 0.6666666666666666,
+          "average_environment_steps": 182.70833333333334,
+          "average_final_colony_cells": 1.75,
+          "average_final_control_cells": 0.4166666666666667
+        },
+        "telemetry": {
+          "schema_version": 5,
+          "completed_episodes": 24,
+          "censored_active_episodes": 0,
+          "wins": 16,
+          "losses": 8,
+          "timeouts": 0,
+          "average_completed_episode_steps": 182.70833333333334,
+          "training": {
+            "actions": {
+              "wait": {
+                "committed": 122,
+                "accepted": 122,
+                "rejected_at_commit": 0,
+                "completed": 122,
+                "succeeded": 38,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 84,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 2999,
+                "accepted": 2999,
+                "rejected_at_commit": 0,
+                "completed": 2966,
+                "succeeded": 2684,
+                "rejected": 0,
+                "frustrated": 222,
+                "contested": 0,
+                "interrupted": 60,
+                "effort_spent": 3451,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 137,
+                "accepted": 137,
+                "rejected_at_commit": 0,
+                "completed": 137,
+                "succeeded": 119,
+                "rejected": 0,
+                "frustrated": 17,
+                "contested": 0,
+                "interrupted": 1,
+                "effort_spent": 312,
+                "payload": 310
+              },
+              "guard": {
+                "committed": 126,
+                "accepted": 126,
+                "rejected_at_commit": 0,
+                "completed": 126,
+                "succeeded": 124,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 2,
+                "effort_spent": 126,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 2261,
+                "accepted": 2261,
+                "rejected_at_commit": 0,
+                "completed": 2253,
+                "succeeded": 2228,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 25,
+                "effort_spent": 2253,
+                "payload": 0
+              },
+              "split": {
+                "committed": 220,
+                "accepted": 220,
+                "rejected_at_commit": 0,
+                "completed": 219,
+                "succeeded": 210,
+                "rejected": 0,
+                "frustrated": 9,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 438,
+                "payload": 4120
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 28,
+                "accepted": 28,
+                "rejected_at_commit": 0,
+                "completed": 28,
+                "succeeded": 24,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 4,
+                "effort_spent": 56,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 19,
+                "accepted": 19,
+                "rejected_at_commit": 0,
+                "completed": 19,
+                "succeeded": 19,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 38,
+                "payload": 190
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 210,
+            "deaths": 216,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 268,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 268,
+              "overkill_dealt": 0,
+              "raw_received": 778,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 774,
+              "overkill_received": 4
+            },
+            "terrain": {
+              "elevation_units_lifted": 24,
+              "elevation_units_dumped": 19,
+              "material_mass_lifted": 240,
+              "material_mass_dumped": 190,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "opponents": {
+            "actions": {
+              "wait": {
+                "committed": 86,
+                "accepted": 86,
+                "rejected_at_commit": 0,
+                "completed": 86,
+                "succeeded": 61,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 25,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 1876,
+                "accepted": 1876,
+                "rejected_at_commit": 0,
+                "completed": 1871,
+                "succeeded": 1761,
+                "rejected": 0,
+                "frustrated": 53,
+                "contested": 50,
+                "interrupted": 7,
+                "effort_spent": 7173,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 464,
+                "accepted": 464,
+                "rejected_at_commit": 0,
+                "completed": 464,
+                "succeeded": 395,
+                "rejected": 0,
+                "frustrated": 69,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 1856,
+                "payload": 1573
+              },
+              "guard": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 1418,
+                "accepted": 1418,
+                "rejected_at_commit": 0,
+                "completed": 1413,
+                "succeeded": 1409,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 4,
+                "effort_spent": 1413,
+                "payload": 0
+              },
+              "split": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 0,
+            "deaths": 38,
+            "kills": 4,
+            "damage": {
+              "raw_dealt": 1358,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 1353,
+              "overkill_dealt": 5,
+              "raw_received": 848,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 847,
+              "overkill_received": 1
+            },
+            "terrain": {
+              "elevation_units_lifted": 0,
+              "elevation_units_dumped": 0,
+              "material_mass_lifted": 0,
+              "material_mass_dumped": 0,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "signal_field": {
+            "decayed_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erased_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erasure_events": 0
+          },
+          "state_samples": 309,
+          "sample_means": {
+            "training_cells": 3.1877022653721685,
+            "opponent_cells": 1.4919093851132685,
+            "training_assimilated_energy": 123.07443365695792,
+            "opponent_assimilated_energy": 58.14563106796116,
+            "environment_plant_energy": 262.31067961165047,
+            "environment_loose_energy": 379.0906148867314,
+            "environment_diffuse_energy": 535.546925566343,
+            "environment_signal_energy": 0.0,
+            "signal_active_channel_tiles": 0.0,
+            "signal_observation_total_variation": 0.0,
+            "encounter_edges": 0.30097087378640774,
+            "training_spatial_entropy": 0.8766891243397257,
+            "opponent_spatial_entropy": 0.3342360191049579,
+            "resource_concentration": 0.019482567503294586
+          }
+        }
+      }
+    },
+    {
+      "variant": "baseline-rules",
+      "report": {
+        "matchup_config_hash": "926d79083617e5b9a3d715d124f8f065f4d80bf0d53ef79f6a1f250df70a68d7",
+        "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+        "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+        "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+        "scenario": {
+          "world_size": 16,
+          "cells_per_team": 2,
+          "victory": {
+            "immediate": "extermination",
+            "deadline": "draw",
+            "sim_time_limit_quanta": 1048576
+          },
+          "num_teams": 2,
+          "min_energy": 1,
+          "initial_energy": 100,
+          "num_scattered_energy": 32,
+          "scattered_energy_amount": 20,
+          "num_plants": 8,
+          "plant_rate": 2,
+          "plant_max_energy": 100
+        },
+        "candidate": "colony_signal_disabled",
+        "opponent": "defensive",
+        "seat_policy": "mirrored_team_zero_and_one",
+        "seeds": [
+          5101,
+          5209,
+          5303,
+          5407,
+          5501,
+          5609,
+          5701,
+          5801,
+          5903,
+          6007,
+          6101,
+          6203
+        ],
+        "telemetry_config": {
+          "enabled": true,
+          "state_sample_interval_steps": 16,
+          "max_state_samples_per_episode": 32,
+          "episode_log_stride": 0
+        },
+        "episodes": [
+          {
+            "seed": 5101,
+            "seat": "colony_team_zero",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1287,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 4,
+              "gut_energy": 4,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 80,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 117,
+            "final_sim_time_quanta": 71680,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 57,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_zero",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1352,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 17,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 88,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 50,
+            "final_sim_time_quanta": 51200,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 7,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 652,
+            "final_sim_time_quanta": 312320,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 86,
+              "gut_energy": 28,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 117,
+            "final_sim_time_quanta": 92160,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 10,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 77,
+            "final_sim_time_quanta": 97280,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 116,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 50,
+            "final_sim_time_quanta": 51200,
+            "colony_cells": 5,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 32,
+              "assimilated_energy": 251,
+              "gut_energy": 120,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 198,
+            "final_sim_time_quanta": 95232,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 31,
+              "assimilated_energy": 85,
+              "gut_energy": 29,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 243,
+            "final_sim_time_quanta": 218816,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 77,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 139,
+            "final_sim_time_quanta": 109568,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 98,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 424,
+            "final_sim_time_quanta": 385024,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 84,
+              "gut_energy": 32,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 308,
+            "final_sim_time_quanta": 165504,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 59,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 289,
+            "final_sim_time_quanta": 199936,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 93,
+              "gut_energy": 13,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 84,
+            "final_sim_time_quanta": 100352,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 113,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 140,
+            "final_sim_time_quanta": 88064,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 65,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 197,
+            "final_sim_time_quanta": 51200,
+            "colony_cells": 7,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 52,
+              "assimilated_energy": 173,
+              "gut_energy": 90,
+              "carried_material_mass": 0,
+              "payload_escrow": 14
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_one",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1077,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 36,
+              "gut_energy": 1,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 78,
+              "gut_energy": 26,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 470,
+            "final_sim_time_quanta": 299520,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 96,
+              "gut_energy": 8,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_one",
+            "outcome": "timeout",
+            "end_reason": "sim_time_deadline",
+            "environment_steps": 1058,
+            "final_sim_time_quanta": 1048576,
+            "colony_cells": 1,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 2,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 83,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 108,
+            "final_sim_time_quanta": 61440,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 58,
+              "gut_energy": 50,
+              "carried_material_mass": 0,
+              "payload_escrow": 16
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 98,
+            "final_sim_time_quanta": 61440,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 22,
+              "assimilated_energy": 216,
+              "gut_energy": 41,
+              "carried_material_mass": 0,
+              "payload_escrow": 14
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 159,
+            "final_sim_time_quanta": 61440,
+            "colony_cells": 5,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 32,
+              "assimilated_energy": 241,
+              "gut_energy": 4,
+              "carried_material_mass": 0,
+              "payload_escrow": 20
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 107,
+            "final_sim_time_quanta": 71680,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 21,
+              "assimilated_energy": 153,
+              "gut_energy": 14,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          }
+        ],
+        "aggregate": {
+          "episodes": 24,
+          "colony_wins": 13,
+          "colony_losses": 7,
+          "timeouts": 4,
+          "colony_win_rate": 0.5416666666666666,
+          "average_environment_steps": 366.7083333333333,
+          "average_final_colony_cells": 1.75,
+          "average_final_control_cells": 0.4583333333333333
+        },
+        "telemetry": {
+          "schema_version": 5,
+          "completed_episodes": 24,
+          "censored_active_episodes": 0,
+          "wins": 13,
+          "losses": 7,
+          "timeouts": 4,
+          "average_completed_episode_steps": 366.7083333333333,
+          "training": {
+            "actions": {
+              "wait": {
+                "committed": 603,
+                "accepted": 603,
+                "rejected_at_commit": 0,
+                "completed": 603,
+                "succeeded": 500,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 103,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 5369,
+                "accepted": 5369,
+                "rejected_at_commit": 0,
+                "completed": 5350,
+                "succeeded": 5072,
+                "rejected": 0,
+                "frustrated": 183,
+                "contested": 5,
+                "interrupted": 90,
+                "effort_spent": 5975,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 138,
+                "accepted": 138,
+                "rejected_at_commit": 0,
+                "completed": 137,
+                "succeeded": 131,
+                "rejected": 0,
+                "frustrated": 6,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 310,
+                "payload": 295
+              },
+              "guard": {
+                "committed": 164,
+                "accepted": 164,
+                "rejected_at_commit": 0,
+                "completed": 164,
+                "succeeded": 161,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 3,
+                "effort_spent": 164,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 4923,
+                "accepted": 4923,
+                "rejected_at_commit": 0,
+                "completed": 4907,
+                "succeeded": 4865,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 42,
+                "effort_spent": 4907,
+                "payload": 0
+              },
+              "split": {
+                "committed": 327,
+                "accepted": 327,
+                "rejected_at_commit": 0,
+                "completed": 323,
+                "succeeded": 312,
+                "rejected": 0,
+                "frustrated": 10,
+                "contested": 1,
+                "interrupted": 0,
+                "effort_spent": 646,
+                "payload": 5919
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 29,
+                "accepted": 29,
+                "rejected_at_commit": 0,
+                "completed": 29,
+                "succeeded": 24,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 5,
+                "effort_spent": 58,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 17,
+                "accepted": 17,
+                "rejected_at_commit": 0,
+                "completed": 17,
+                "succeeded": 17,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 34,
+                "payload": 170
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 312,
+            "deaths": 318,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 273,
+              "mitigated_by_target_guard": 23,
+              "applied_dealt": 250,
+              "overkill_dealt": 0,
+              "raw_received": 161,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 161,
+              "overkill_received": 0
+            },
+            "terrain": {
+              "elevation_units_lifted": 24,
+              "elevation_units_dumped": 17,
+              "material_mass_lifted": 240,
+              "material_mass_dumped": 170,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "opponents": {
+            "actions": {
+              "wait": {
+                "committed": 11,
+                "accepted": 11,
+                "rejected_at_commit": 0,
+                "completed": 11,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 11,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 109,
+                "accepted": 109,
+                "rejected_at_commit": 0,
+                "completed": 109,
+                "succeeded": 68,
+                "rejected": 0,
+                "frustrated": 41,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 152,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "guard": {
+                "committed": 7048,
+                "accepted": 7048,
+                "rejected_at_commit": 0,
+                "completed": 7043,
+                "succeeded": 7031,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 12,
+                "effort_spent": 7043,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 934,
+                "accepted": 934,
+                "rejected_at_commit": 0,
+                "completed": 931,
+                "succeeded": 931,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 931,
+                "payload": 0
+              },
+              "split": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 0,
+            "deaths": 37,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 0,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 0,
+              "overkill_dealt": 0,
+              "raw_received": 112,
+              "mitigated_by_own_guard": 23,
+              "applied_received": 89,
+              "overkill_received": 0
+            },
+            "terrain": {
+              "elevation_units_lifted": 0,
+              "elevation_units_dumped": 0,
+              "material_mass_lifted": 0,
+              "material_mass_dumped": 0,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "signal_field": {
+            "decayed_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erased_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erasure_events": 0
+          },
+          "state_samples": 588,
+          "sample_means": {
+            "training_cells": 2.6615646258503403,
+            "opponent_cells": 1.284013605442177,
+            "training_assimilated_energy": 89.45408163265306,
+            "opponent_assimilated_energy": 96.56972789115646,
+            "environment_plant_energy": 213.15816326530611,
+            "environment_loose_energy": 312.2108843537415,
+            "environment_diffuse_energy": 687.8061224489796,
+            "environment_signal_energy": 0.0,
+            "signal_active_channel_tiles": 0.0,
+            "signal_observation_total_variation": 0.0,
+            "encounter_edges": 0.1445578231292517,
+            "training_spatial_entropy": 0.694049373895295,
+            "opponent_spatial_entropy": 0.20039969505984845,
+            "resource_concentration": 0.01646829794553613
+          }
+        }
+      }
+    },
+    {
+      "variant": "baseline-rules",
+      "report": {
+        "matchup_config_hash": "a73fb019e2750f3cbbf03c843d17a2ea40df59e6c9bbc6b690bd192e0c657df7",
+        "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+        "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+        "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+        "scenario": {
+          "world_size": 16,
+          "cells_per_team": 2,
+          "victory": {
+            "immediate": "extermination",
+            "deadline": "draw",
+            "sim_time_limit_quanta": 1048576
+          },
+          "num_teams": 2,
+          "min_energy": 1,
+          "initial_energy": 100,
+          "num_scattered_energy": 32,
+          "scattered_energy_amount": 20,
+          "num_plants": 8,
+          "plant_rate": 2,
+          "plant_max_energy": 100
+        },
+        "candidate": "colony_signal_disabled",
+        "opponent": "explorer",
+        "seat_policy": "mirrored_team_zero_and_one",
+        "seeds": [
+          5101,
+          5209,
+          5303,
+          5407,
+          5501,
+          5609,
+          5701,
+          5801,
+          5903,
+          6007,
+          6101,
+          6203
+        ],
+        "telemetry_config": {
+          "enabled": true,
+          "state_sample_interval_steps": 16,
+          "max_state_samples_per_episode": 32,
+          "episode_log_stride": 0
+        },
+        "episodes": [
+          {
+            "seed": 5101,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 244,
+            "final_sim_time_quanta": 185792,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 131,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 170,
+            "final_sim_time_quanta": 136192,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 31,
+              "assimilated_energy": 73,
+              "gut_energy": 36,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 581,
+            "final_sim_time_quanta": 196864,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 49,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5209,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 52,
+            "final_sim_time_quanta": 45056,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 88,
+              "gut_energy": 25,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 383,
+            "final_sim_time_quanta": 164864,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 22,
+              "assimilated_energy": 185,
+              "gut_energy": 44,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5303,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 250,
+            "final_sim_time_quanta": 185344,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 20,
+              "assimilated_energy": 36,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 196,
+            "final_sim_time_quanta": 162816,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 31,
+              "assimilated_energy": 65,
+              "gut_energy": 36,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5407,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 152,
+            "final_sim_time_quanta": 145408,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 31,
+              "assimilated_energy": 52,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 361,
+            "final_sim_time_quanta": 196608,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 65,
+              "gut_energy": 21,
+              "carried_material_mass": 0,
+              "payload_escrow": 14
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5501,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 175,
+            "final_sim_time_quanta": 161792,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 30,
+              "assimilated_energy": 71,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 129,
+            "final_sim_time_quanta": 109568,
+            "colony_cells": 0,
+            "control_cells": 2,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 2,
+              "assimilated_energy": 84,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5609,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 315,
+            "final_sim_time_quanta": 266240,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 14,
+              "gut_energy": 4,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 403,
+            "final_sim_time_quanta": 157696,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 33,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5701,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 185,
+            "final_sim_time_quanta": 198656,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 4,
+              "gut_energy": 4,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 206,
+            "final_sim_time_quanta": 169792,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 46,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5801,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 269,
+            "final_sim_time_quanta": 304128,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 41,
+              "gut_energy": 3,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 761,
+            "final_sim_time_quanta": 231424,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 20,
+              "assimilated_energy": 42,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 5903,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 286,
+            "final_sim_time_quanta": 302080,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 35,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 442,
+            "final_sim_time_quanta": 260096,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 17,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6007,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 280,
+            "final_sim_time_quanta": 249856,
+            "colony_cells": 1,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 10,
+              "assimilated_energy": 8,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 413,
+            "final_sim_time_quanta": 175104,
+            "colony_cells": 3,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 21,
+              "assimilated_energy": 72,
+              "gut_energy": 11,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6101,
+            "seat": "colony_team_one",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 177,
+            "final_sim_time_quanta": 169984,
+            "colony_cells": 2,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 11,
+              "assimilated_energy": 96,
+              "gut_energy": 2,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_zero",
+            "outcome": "candidate_win",
+            "end_reason": "extermination",
+            "environment_steps": 633,
+            "final_sim_time_quanta": 196608,
+            "colony_cells": 4,
+            "control_cells": 0,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 31,
+              "assimilated_energy": 52,
+              "gut_energy": 8,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          },
+          {
+            "seed": 6203,
+            "seat": "colony_team_one",
+            "outcome": "candidate_loss",
+            "end_reason": "extermination",
+            "environment_steps": 217,
+            "final_sim_time_quanta": 185600,
+            "colony_cells": 0,
+            "control_cells": 1,
+            "initial_tracked_mass_energy": 83887524,
+            "final_tracked_mass_energy": 83887524,
+            "terminal_colony_energy": {
+              "core_mass": 0,
+              "assimilated_energy": 0,
+              "gut_energy": 0,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            },
+            "terminal_control_energy": {
+              "core_mass": 1,
+              "assimilated_energy": 87,
+              "gut_energy": 35,
+              "carried_material_mass": 0,
+              "payload_escrow": 0
+            }
+          }
+        ],
+        "aggregate": {
+          "episodes": 24,
+          "colony_wins": 17,
+          "colony_losses": 7,
+          "timeouts": 0,
+          "colony_win_rate": 0.7083333333333334,
+          "average_environment_steps": 303.3333333333333,
+          "average_final_colony_cells": 1.75,
+          "average_final_control_cells": 0.4583333333333333
+        },
+        "telemetry": {
+          "schema_version": 5,
+          "completed_episodes": 24,
+          "censored_active_episodes": 0,
+          "wins": 17,
+          "losses": 7,
+          "timeouts": 0,
+          "average_completed_episode_steps": 303.3333333333333,
+          "training": {
+            "actions": {
+              "wait": {
+                "committed": 234,
+                "accepted": 234,
+                "rejected_at_commit": 0,
+                "completed": 233,
+                "succeeded": 90,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 143,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 5547,
+                "accepted": 5547,
+                "rejected_at_commit": 0,
+                "completed": 5522,
+                "succeeded": 5205,
+                "rejected": 0,
+                "frustrated": 205,
+                "contested": 5,
+                "interrupted": 107,
+                "effort_spent": 6242,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 159,
+                "accepted": 159,
+                "rejected_at_commit": 0,
+                "completed": 159,
+                "succeeded": 132,
+                "rejected": 0,
+                "frustrated": 25,
+                "contested": 0,
+                "interrupted": 2,
+                "effort_spent": 368,
+                "payload": 317
+              },
+              "guard": {
+                "committed": 178,
+                "accepted": 178,
+                "rejected_at_commit": 0,
+                "completed": 178,
+                "succeeded": 176,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 2,
+                "effort_spent": 178,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 4485,
+                "accepted": 4485,
+                "rejected_at_commit": 0,
+                "completed": 4473,
+                "succeeded": 4422,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 51,
+                "effort_spent": 4473,
+                "payload": 0
+              },
+              "split": {
+                "committed": 420,
+                "accepted": 420,
+                "rejected_at_commit": 0,
+                "completed": 419,
+                "succeeded": 402,
+                "rejected": 0,
+                "frustrated": 16,
+                "contested": 1,
+                "interrupted": 0,
+                "effort_spent": 838,
+                "payload": 7493
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 37,
+                "accepted": 37,
+                "rejected_at_commit": 0,
+                "completed": 37,
+                "succeeded": 32,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 5,
+                "effort_spent": 74,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 17,
+                "accepted": 17,
+                "rejected_at_commit": 0,
+                "completed": 17,
+                "succeeded": 17,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 34,
+                "payload": 170
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 402,
+            "deaths": 408,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 227,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 227,
+              "overkill_dealt": 0,
+              "raw_received": 169,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 169,
+              "overkill_received": 0
+            },
+            "terrain": {
+              "elevation_units_lifted": 32,
+              "elevation_units_dumped": 17,
+              "material_mass_lifted": 320,
+              "material_mass_dumped": 170,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "opponents": {
+            "actions": {
+              "wait": {
+                "committed": 20,
+                "accepted": 20,
+                "rejected_at_commit": 0,
+                "completed": 20,
+                "succeeded": 8,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 12,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "movement": {
+                "committed": 4077,
+                "accepted": 4077,
+                "rejected_at_commit": 0,
+                "completed": 4067,
+                "succeeded": 4013,
+                "rejected": 0,
+                "frustrated": 39,
+                "contested": 0,
+                "interrupted": 15,
+                "effort_spent": 4841,
+                "payload": 0
+              },
+              "attack": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "guard": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "consume": {
+                "committed": 1096,
+                "accepted": 1096,
+                "rejected_at_commit": 0,
+                "completed": 1095,
+                "succeeded": 1088,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 7,
+                "effort_spent": 1095,
+                "payload": 0
+              },
+              "split": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "regurgitate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "signal": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "excavate": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              },
+              "deposit_terrain": {
+                "committed": 0,
+                "accepted": 0,
+                "rejected_at_commit": 0,
+                "completed": 0,
+                "succeeded": 0,
+                "rejected": 0,
+                "frustrated": 0,
+                "contested": 0,
+                "interrupted": 0,
+                "effort_spent": 0,
+                "payload": 0
+              }
+            },
+            "signals": {
+              "emitted_decisions": 0,
+              "explicit_signal_actions": 0,
+              "sidecar_emissions": 0,
+              "channel_deposits": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "channel_energy": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "pattern_counts": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "births": 0,
+            "deaths": 37,
+            "kills": 0,
+            "damage": {
+              "raw_dealt": 0,
+              "mitigated_by_target_guard": 0,
+              "applied_dealt": 0,
+              "overkill_dealt": 0,
+              "raw_received": 58,
+              "mitigated_by_own_guard": 0,
+              "applied_received": 58,
+              "overkill_received": 0
+            },
+            "terrain": {
+              "elevation_units_lifted": 0,
+              "elevation_units_dumped": 0,
+              "material_mass_lifted": 0,
+              "material_mass_dumped": 0,
+              "signal_energy_erased": [
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          },
+          "signal_field": {
+            "decayed_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erased_energy": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "terrain_erasure_events": 0
+          },
+          "state_samples": 490,
+          "sample_means": {
+            "training_cells": 3.451020408163265,
+            "opponent_cells": 1.6040816326530611,
+            "training_assimilated_energy": 121.08163265306122,
+            "opponent_assimilated_energy": 88.14693877551021,
+            "environment_plant_energy": 199.3938775510204,
+            "environment_loose_energy": 320.59591836734694,
+            "environment_diffuse_energy": 658.5387755102041,
+            "environment_signal_energy": 0.0,
+            "signal_active_channel_tiles": 0.0,
+            "signal_observation_total_variation": 0.0,
+            "encounter_edges": 0.12244897959183673,
+            "training_spatial_entropy": 1.0348737038455025,
+            "opponent_spatial_entropy": 0.43569251349482363,
+            "resource_concentration": 0.01661705027490331
+          }
+        }
+      }
+    }
+  ],
+  "summaries": [
+    {
+      "opponent": "simple",
+      "episodes": 24,
+      "colony_wins": 1,
+      "colony_losses": 15,
+      "timeouts": 8,
+      "colony_win_rate": 0.041666666666666664
+    },
+    {
+      "opponent": "aggressive",
+      "episodes": 24,
+      "colony_wins": 16,
+      "colony_losses": 8,
+      "timeouts": 0,
+      "colony_win_rate": 0.6666666666666666
+    },
+    {
+      "opponent": "defensive",
+      "episodes": 24,
+      "colony_wins": 13,
+      "colony_losses": 7,
+      "timeouts": 4,
+      "colony_win_rate": 0.5416666666666666
+    },
+    {
+      "opponent": "explorer",
+      "episodes": 24,
+      "colony_wins": 17,
+      "colony_losses": 7,
+      "timeouts": 0,
+      "colony_win_rate": 0.7083333333333334
+    }
+  ]
+}

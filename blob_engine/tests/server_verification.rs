@@ -1,8 +1,9 @@
 use blob_engine::engine::{CellConfig, Engine, ReplayStreamConfig, TickEvents};
 use blob_engine::resolution::{
-    mind_artifact_hash, CanonicalHash, MatchVerificationError, MatchVerificationLimits,
-    MatchVerificationManifest, MindArtifactBinding, MindRuntimeProfile, ReferenceRuleset,
-    ReplayLimits, ReplayManifest, ReplaySegment, ReplaySegmentLimits,
+    mind_artifact_hash, BoundaryRule, CanonicalHash, MatchVerificationError,
+    MatchVerificationLimits, MatchVerificationManifest, MindArtifactBinding, MindRuntimeProfile,
+    NeighborhoodSpec, ReferenceRuleset, ReplayLimits, ReplayManifest, ReplaySegment,
+    ReplaySegmentLimits,
 };
 use blob_engine::server_verification::{
     AttestedMatchManifest, ServerMatchVerifier, ServerSigningKey, ServerVerificationError,
@@ -63,15 +64,14 @@ fn cell_config() -> CellConfig {
 }
 
 fn engine(mind: impl ReferenceMind + 'static, match_secret: [u8; 32]) -> Engine {
-    let mut engine = Engine::new_with_match_secret(
-        12,
-        12,
-        20,
-        cell_config(),
-        Some(73),
-        match_secret,
-        ReferenceRuleset::default(),
-    );
+    let config = cell_config();
+    let rules = ReferenceRuleset {
+        neighborhood: NeighborhoodSpec::moore_8(BoundaryRule::Wrap),
+        child_core_mass: u64::from(config.min_energy),
+        ..ReferenceRuleset::default()
+    };
+    let mut engine =
+        Engine::new_with_match_secret(12, 12, 20, config, Some(73), match_secret, rules);
     engine.add_team_with_minds(TeamId(0), vec![mind]).unwrap();
     engine.initialize_reference_state().unwrap();
     engine
@@ -283,7 +283,7 @@ fn manifests_are_bounded_canonical_and_integrity_checked() {
     let bytes = fixture.verification_manifest.to_bytes();
     assert_eq!(
         fixture.verification_manifest.manifest_hash().to_hex(),
-        "7d8cc2e901d599bed2afb6d7fd8b81fec14245c97f40caa6f37680d9fa954210"
+        "c7f51ca0fcb4d54cf9c33a8c2e0459c04bf7aa6d9bf0a26fbe59b629f1185389"
     );
     assert_eq!(bytes.len(), 365);
     let decoded = MatchVerificationManifest::from_bytes(bytes).unwrap();

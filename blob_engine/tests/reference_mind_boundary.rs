@@ -184,6 +184,14 @@ fn every_reference_action_maps_without_defaults_or_loss() {
                 amount: 12,
             },
         ),
+        (
+            ReferenceMindAction::Signal {
+                amounts: [2, 4, 0, 8],
+            },
+            ActionRequest::Signal {
+                amounts: [2, 4, 0, 8],
+            },
+        ),
         (ReferenceMindAction::Excavate, ActionRequest::Excavate),
         (
             ReferenceMindAction::DepositTerrain,

@@ -1,0 +1,4 @@
+# Persist autotune selections outside the immutable container root. CubeCL
+# namespaces entries by device and validates cached-operation checksums.
+[autotune]
+cache = "global"

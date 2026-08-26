@@ -155,7 +155,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_energy_for_attack_scaling: file_config.cell.max_energy_for_attack_scaling, // New
         },
         memory_config: file_config.memory.clone(), // Add memory configuration
-        state_config: file_config.state.clone(),   // Add state configuration
     };
 
     if let Some(seed_val) = game_config.seed {

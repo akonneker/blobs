@@ -40,7 +40,7 @@ cargo test -p blob_engine --test language_pdk_conformance -- --ignored --nocaptu
 # Build every maintained reference Mind and both ABI canaries. This prevents
 # optional artifact lookup in unit tests from silently skipping WASM execution.
 cargo build --release --target wasm32-unknown-unknown \
-  -p simple_mind -p aggressive_mind -p defensive_mind -p explorer_mind \
+  -p simple_mind -p aggressive_mind -p defensive_mind -p explorer_mind -p colony_mind \
   -p isolation_canary -p invalid_mind_canary
 cargo test -p blob_game \
   game::tests::test_sequential_vs_parallel_consistency -- --exact

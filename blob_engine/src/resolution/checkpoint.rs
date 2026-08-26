@@ -20,8 +20,8 @@ use super::replay::{
 };
 use super::CellKey;
 
-pub const CHECKPOINT_FORMAT_VERSION: u16 = 5;
-const CHECKPOINT_MAGIC: &[u8; 8] = b"BLBCHK05";
+pub const CHECKPOINT_FORMAT_VERSION: u16 = 6;
+const CHECKPOINT_MAGIC: &[u8; 8] = b"BLBCHK06";
 const CHECKPOINT_DOMAIN: &[u8] = b"blob.simulation.checkpoint";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

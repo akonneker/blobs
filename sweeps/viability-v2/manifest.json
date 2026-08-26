@@ -1,0 +1,150 @@
+{
+  "schema_version": 2,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/viability_sweep.toml",
+  "spec_sha256": "70bcbea91a15bcf5db07597b8c9970d9377c5d9fcd528a62d6fd3a64bb85452d",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/default.toml",
+  "base_config_sha256": "897cb693700e941c225ecdda67f55406272aacd1a7380e7846327608ffb1011d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/viability-v2",
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "variants": [
+    {
+      "name": "baseline",
+      "description": "Documented hosted reference profile",
+      "rules": {},
+      "scenario": {}
+    },
+    {
+      "name": "lower-metabolism",
+      "description": "Half the baseline assimilated-energy upkeep",
+      "rules": {
+        "metabolism_rate_denominator": 2048,
+        "metabolism_rate_numerator": 1
+      },
+      "scenario": {}
+    },
+    {
+      "name": "faster-digestion",
+      "description": "Double the baseline gut-to-assimilated transfer rate",
+      "rules": {
+        "digestion_rate_denominator": 128,
+        "digestion_rate_numerator": 1
+      },
+      "scenario": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "baseline",
+      "replicate": 0,
+      "training_seed": 101,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "7eec868e6352d977e34b30517dea8bbfa4bbf2b288960c406f2f986dac77eada",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "d9ddd40d1aad6d4b3f6ab037b7eb15ad3d3f1f77fada410ecd86dbf24bbf1681",
+      "config_file_sha256": "87dc7a6d42c6c41aab5cecb88e61721af56bd42a06cf5393f45933da9cfdf655",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/baseline/seed-101",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/baseline/seed-101/config.toml"
+    },
+    {
+      "variant": "baseline",
+      "replicate": 1,
+      "training_seed": 202,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "7eec868e6352d977e34b30517dea8bbfa4bbf2b288960c406f2f986dac77eada",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "7844b8599b2ac0bdf9f24c6239af50cd3fcd79c826b4ae944ab7944f0a4253b0",
+      "config_file_sha256": "ff80494800fc94655f302bec5b0e85d707fc266af67b126bd085e7ba2ee66619",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/baseline/seed-202",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/baseline/seed-202/config.toml"
+    },
+    {
+      "variant": "baseline",
+      "replicate": 2,
+      "training_seed": 303,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "7eec868e6352d977e34b30517dea8bbfa4bbf2b288960c406f2f986dac77eada",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "87b7419f7ac2acbd3d91681b4b101136f9256b2d59fe44d750dd655ad7ab14ae",
+      "config_file_sha256": "5b079d13a93f07881607f476252528876e3ceb9a32ca1984f97c453d9c213bdc",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/baseline/seed-303",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/baseline/seed-303/config.toml"
+    },
+    {
+      "variant": "lower-metabolism",
+      "replicate": 0,
+      "training_seed": 101,
+      "semantic_ruleset_hash": "7cd9cf57b16ceb890da9b1614382ca4712c99d29d1143e5ced3f8505f9ee4150",
+      "compiled_ruleset_hash": "1d1b5e4bce5853a0e84bdaf8ed3082699929e7fe1200e1a39053a3b2e3455fad",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "0d5b22549c3f38a11c2264031c75e6f0499fbc82851e77f9347cb8e6b46988ca",
+      "config_file_sha256": "a63590d9258611da06bb8d801de209503cac6cde4c36a09d06097ebf0faf7fc1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/lower-metabolism/seed-101",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/lower-metabolism/seed-101/config.toml"
+    },
+    {
+      "variant": "lower-metabolism",
+      "replicate": 1,
+      "training_seed": 202,
+      "semantic_ruleset_hash": "7cd9cf57b16ceb890da9b1614382ca4712c99d29d1143e5ced3f8505f9ee4150",
+      "compiled_ruleset_hash": "1d1b5e4bce5853a0e84bdaf8ed3082699929e7fe1200e1a39053a3b2e3455fad",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "353b377b1570139edc450b1f006a5a79649737664aff1fe6f45c8bde3141e8a9",
+      "config_file_sha256": "fd7da7b4b9abda9cc69c13046f41b521b5be19b7ef7e69511f216781e3bc8afa",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/lower-metabolism/seed-202",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/lower-metabolism/seed-202/config.toml"
+    },
+    {
+      "variant": "lower-metabolism",
+      "replicate": 2,
+      "training_seed": 303,
+      "semantic_ruleset_hash": "7cd9cf57b16ceb890da9b1614382ca4712c99d29d1143e5ced3f8505f9ee4150",
+      "compiled_ruleset_hash": "1d1b5e4bce5853a0e84bdaf8ed3082699929e7fe1200e1a39053a3b2e3455fad",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "8b9abe53dda0b876138fd4516d012d91f4dd4a5d51bc799ed43d67c7b1f2e1d1",
+      "config_file_sha256": "962246133f503a5f7a5f6d48a529e2029b79aa2c6b136330fa8720f6ad2cef9b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/lower-metabolism/seed-303",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/lower-metabolism/seed-303/config.toml"
+    },
+    {
+      "variant": "faster-digestion",
+      "replicate": 0,
+      "training_seed": 101,
+      "semantic_ruleset_hash": "5e2a662a65f1703c80b7d5ee10b3559c610ee81f107a1f0987273c963c2c8b2f",
+      "compiled_ruleset_hash": "f5a4e8d0d1fb49fef5a8d0696eccca8afb9d966653d9ee5d500e52c82a141bf9",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "447a4ca33227ca42ce86317e07ec078e686876ce66c57f5b2b432db6cf483fb9",
+      "config_file_sha256": "781f0be9d1bac3df49fd6bd5a9debaa56bfeeaa8fad48a8a2d7654dc740617e2",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/faster-digestion/seed-101",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/faster-digestion/seed-101/config.toml"
+    },
+    {
+      "variant": "faster-digestion",
+      "replicate": 1,
+      "training_seed": 202,
+      "semantic_ruleset_hash": "5e2a662a65f1703c80b7d5ee10b3559c610ee81f107a1f0987273c963c2c8b2f",
+      "compiled_ruleset_hash": "f5a4e8d0d1fb49fef5a8d0696eccca8afb9d966653d9ee5d500e52c82a141bf9",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "de5c2b13baa5148066c639a88fb893315db2d07494ea41bee08aab6b33d499f4",
+      "config_file_sha256": "86b03985554330f85a5151c732b0735d1049e3aed140d6bfa2130f0e3f1b0b3d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/faster-digestion/seed-202",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/faster-digestion/seed-202/config.toml"
+    },
+    {
+      "variant": "faster-digestion",
+      "replicate": 2,
+      "training_seed": 303,
+      "semantic_ruleset_hash": "5e2a662a65f1703c80b7d5ee10b3559c610ee81f107a1f0987273c963c2c8b2f",
+      "compiled_ruleset_hash": "f5a4e8d0d1fb49fef5a8d0696eccca8afb9d966653d9ee5d500e52c82a141bf9",
+      "scenario_hash": "b205c6f3a7b1ba312e2a84dba850d906c7d0da9e7facc75dd967037f156ac0ef",
+      "experiment_config_sha256": "a80dfff58aae0c2ca05f94a32db61d3002f2a850c4825b708014924346422be3",
+      "config_file_sha256": "e76307786c4d14b3706ecfccfabf95e113d20abbd1d1da8427a09f21f7afaa87",
+      "run_directory": "/Users/adam/code/blobs/sweeps/viability-v2/faster-digestion/seed-303",
+      "config_file": "/Users/adam/code/blobs/sweeps/viability-v2/faster-digestion/seed-303/config.toml"
+    }
+  ]
+}

@@ -1,0 +1,489 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/signal_visibility_ablation.toml",
+  "spec_sha256": "44ab3e4dc9bc959da0287dcf1275c1c567940219d6785310521ad7fc078c7c6f",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1",
+  "seeds": [
+    5101,
+    5209,
+    5303,
+    5407,
+    5501,
+    5609,
+    5701,
+    5801,
+    5903,
+    6007,
+    6101,
+    6203
+  ],
+  "variants": [
+    {
+      "name": "full-visibility",
+      "description": "All eight Moore-neighborhood signal slots are visible",
+      "rules": {},
+      "scenario": {}
+    },
+    {
+      "name": "cardinal-visibility",
+      "description": "Only north, west, east, and south signal slots are visible",
+      "rules": {
+        "neighborhood": {
+          "observations": {
+            "signal": 90
+          }
+        }
+      },
+      "scenario": {}
+    },
+    {
+      "name": "no-neighbor-visibility",
+      "description": "Deposits remain physical, but no neighboring signal slots are visible",
+      "rules": {
+        "neighborhood": {
+          "observations": {
+            "signal": 0
+          }
+        }
+      },
+      "scenario": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "full-visibility",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "44ac73b75ae65dab521d40bca6d7a19dc705fa918bc78b717e22f229d188f97c",
+      "config_file_sha256": "1f7ce65b4f4314f42b13e24c7bcc64704218c681f8de06f086cf3c0c6c306788",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5101/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "f3360183a1db66520fb7eb3fe6bf3f178670a6e475191771215ddc69d89f7a84",
+      "config_file_sha256": "16fccc367c5946b4d1885e7e8d7ee21adc2b45c951528606a7472c6fe1ce2b3c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5209/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "cc0d9d980c03070d97b7a5d034f44ee008bef80b3d62f8009670224711fca292",
+      "config_file_sha256": "12444b42dd2de0883898c136962d9a96033a43522c31b43ae3c82b0fd9b9d4d3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5303/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 3,
+      "training_seed": 5407,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "29e768565d43c4315558ee085104a0f762f02c83d76ee0bbdf7e7b0b953cbf2e",
+      "config_file_sha256": "d085a45518ab5f3aecc67e49274685def716f5d344cbd0335ec754baddf76038",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5407",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5407/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 4,
+      "training_seed": 5501,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "13c3d0b199b9f6b00973ce81f367e7ceda4b6d71e62ce10e38b2f60a31bc45d8",
+      "config_file_sha256": "63e3b8d95190d345089fc28d6677401b6ac36f1e752db7415f64503bbea3e72b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5501",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5501/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 5,
+      "training_seed": 5609,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "66cbaa2cfd8129b168fdbdfd8de0fe99d0e883da2383c73c33e2fa7aeb519887",
+      "config_file_sha256": "8205df0f168e5a6b8f6f7f10f2c12e13cc0bb748a722b67ef9190f9a38118bdb",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5609",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5609/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 6,
+      "training_seed": 5701,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "101f2c50095372a56d22547326db33b71687398dc92cf4b2006cac20a75c1eb1",
+      "config_file_sha256": "684e15c6857fe083656d6a424685657cdc463ddb7bcc9ab33e0534400cf388a1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5701",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5701/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 7,
+      "training_seed": 5801,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "aa0883e07c8e402c1c4abc1069e69825cba6ba58cb5ee6aa4e8a10cb8b9aa0a7",
+      "config_file_sha256": "6ebca8dc8457b905ee678a855089727798d70e24e9e70fdf00e24c5d13cd88b4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5801",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5801/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 8,
+      "training_seed": 5903,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "a4edbf16abd0f88afa1512a5bbe2924193d08953e32eb98509a26528520e8e72",
+      "config_file_sha256": "0f76ad96e09952cc95b28b5c9dff1fafe34ecb7e37a67898947333524fc482d1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5903",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-5903/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 9,
+      "training_seed": 6007,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "0161e67c69cc2c99c5114a73dbc8a09984e6ea2c0dfb1dc31303c4e710b783a3",
+      "config_file_sha256": "70b95edd65ac34c150e2bff2f5705736721f5af602f55d4a3d763c1abb2e9ec3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-6007",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-6007/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 10,
+      "training_seed": 6101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ca5ade0be355f91a625d0c3da3fc661c939608a305f04b13cd638f0f7d6099fa",
+      "config_file_sha256": "2678bb8bf1629c30b255835d461c55f3ed70fd611a04ffb0c328ae3753b848eb",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-6101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-6101/config.toml"
+    },
+    {
+      "variant": "full-visibility",
+      "replicate": 11,
+      "training_seed": 6203,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "23271672bb0a4a48d44dfa341da439ebd1f359c0061b09eb483d1339212d625a",
+      "config_file_sha256": "d9d58a7dfa0f1fcf2da103aa99121dd9d8761c3d38fbcf00e75b24f1ac29ca62",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-6203",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/full-visibility/seed-6203/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "cf050dbbcc4fe3062ea6ffa191f8a6fa9b865388b57f4aa947a329dac08d75ca",
+      "config_file_sha256": "347b298b24db68888ce6643e02f886143726ee9c56a874742e06effdd75d3e4f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5101/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "bd11e146eb8faa061d0f61022a5732246cfe56371473c54e4eb65954d4128edf",
+      "config_file_sha256": "fc63a1a4fb148df776847fe7c5376b25a2d6a1c23f631fb26871326a41aefeaf",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5209/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ab6b953d3b8d195436dad3967bac2e9fdd49b6f00dfce85a6606cdb059405634",
+      "config_file_sha256": "4688a47fde915f07511e9f0abdc9a11ac2f106908ef8d5b2cabf1c59986a788f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5303/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 3,
+      "training_seed": 5407,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "91884889a8283ef88bd800069567bc9a33a9c8a276e9266f319b2127a634806b",
+      "config_file_sha256": "ec260134081a567307f3ce32ecefd2ab655b0ab0ce714accf5b2dc2ad84744b1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5407",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5407/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 4,
+      "training_seed": 5501,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "15773c0e82c6259743b63b4062adb000483411b7c76b49715ec2a9386b1635e7",
+      "config_file_sha256": "62ce69f4987bb76ecdc0d8288415d02501d3fb0711660f304d537a33bdb1c775",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5501",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5501/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 5,
+      "training_seed": 5609,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "15f8102c9b80ecb0bc7fbf68b9213e21db287724d77fbca3c0eb0fbbed3222a4",
+      "config_file_sha256": "fca13124b4d7d9a0ad212b47898590353e8f91eda89c7e4c04e30866d39272b5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5609",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5609/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 6,
+      "training_seed": 5701,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "c04989cd945e8e276610b85ce6af2e4211b1821b44535a1202c80330107ef87e",
+      "config_file_sha256": "d9bd984dd516120f995fa70c0013cd1bdbf26520ef7e41430c0b368ddf0cb3aa",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5701",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5701/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 7,
+      "training_seed": 5801,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "4f9a03874e60c1029c56edc802b310c10eeaaad3c9932ddf6919e18f7b2c6fd3",
+      "config_file_sha256": "ddc2a173953e932e09b2e3f57ad6097e1ecc0db4eaee79e4350598842fc5dce6",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5801",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5801/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 8,
+      "training_seed": 5903,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "c007527c37e8d5ce32ebb821707221d58ffba8cf739341e901113093de5b9be5",
+      "config_file_sha256": "cf7312092a6d5ec9b7b03cde8f2c81ffe09a0323800d1384b6836ad17926c616",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5903",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-5903/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 9,
+      "training_seed": 6007,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "dbe67ff5011c9e943926934c5d91f0693afdce6b8a542daf80132befc253f830",
+      "config_file_sha256": "d27d3e4e31b7b5e2c197645f651f2dbf4b74e834f8e90d500c84ee83400330d5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-6007",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-6007/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 10,
+      "training_seed": 6101,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "da36bbf88da58337c48399ce6f819579f7a69278cfbb95d949a1e0c9a325417c",
+      "config_file_sha256": "4fb371338ad4198fedf3442541775e6884e5e77bf6a3d4672593d886ffd9db7c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-6101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-6101/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 11,
+      "training_seed": 6203,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "5a4ddb5fe9b6d0e5073f402eb69ab0cef80a1b4a2751502edf845680d811c3a4",
+      "config_file_sha256": "20f8d8bbcee55cca53f6398d8296679287cb063df6b198600444e2d36eca2849",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-6203",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/cardinal-visibility/seed-6203/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "125fb734499964b6e46aa20265259218a09b00ee0d2042a7119cf3b7c421916d",
+      "config_file_sha256": "0844dd5039e99987bd1ca7800401fd64e9ebd4e9864a953fd5552a62a5882b72",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5101/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "a8bc4b6810314c06faabbcd9a6f99b7ebd34a1098a1aeadadacafbffa634551f",
+      "config_file_sha256": "8a80940b3fa829a76b362a237930df4f29884c5ea29c9459b603bce4b7003fed",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5209/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "664bfbc732f1d8d38f4f68d27ce5d62ec737932e6e8cbd74491ca7e394427ae0",
+      "config_file_sha256": "440c6515083e967fb4d39cd2d9d0687efdd000954027f235ee5db39fbdb87712",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5303/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 3,
+      "training_seed": 5407,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ad60e14b1fd875d7ee9367ede14272c62dc33cb1be704a8730f73a5262d229f6",
+      "config_file_sha256": "38366670bc7aef1f86c78ab9641b496d1fdfdca82ef3d9855fec3d7c899115df",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5407",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5407/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 4,
+      "training_seed": 5501,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "8a029bff320d05f713167caf154de5c90832768a06fafb20bab039e3f98d6072",
+      "config_file_sha256": "20f096dc6041812378c5c7810c3a5c3ad2f9d936a633fbd06fb643dad587a497",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5501",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5501/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 5,
+      "training_seed": 5609,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "da7076239e3ba8b5440ff99a471eb9caed5616d0c02262b85a8bccfe755c250f",
+      "config_file_sha256": "6d00adf7f68a773b411e7ef3d5ecae1c59e31847ad3442ee2794546910c2d1cf",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5609",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5609/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 6,
+      "training_seed": 5701,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "d19e0fe015d183dadc8f1513e8d6f743ca4d24d6ef29174f4501fc7e27958738",
+      "config_file_sha256": "1863eeb6cc94a0f3dff06d1d0d34ed4a38b4c90eb404ccf83872515bd4658a44",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5701",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5701/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 7,
+      "training_seed": 5801,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "3c195cbc128466f775e660bfbe0416a839177afc331b52ba937c2d3dda749654",
+      "config_file_sha256": "47c76e2c385623bd3ade093c2d2c97c5764d72e7533acb89541da09d424be69c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5801",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5801/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 8,
+      "training_seed": 5903,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "2e7f608ddf593952b773157af587c579a88b1601ba5b089c00a4904e3d012fee",
+      "config_file_sha256": "3b1ef1e8f78824d31f3ca765cdc0a396b6fc77cbe817d585f953353f6388daca",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5903",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-5903/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 9,
+      "training_seed": 6007,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "a43707194f0cfe665fbd8889f316119079e2130e57bda86bc2a99a9ee915f613",
+      "config_file_sha256": "ede2ae48c9f8d6e3da5f34a9df62025dca98d13b90a296e545cb99061a567f6c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-6007",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-6007/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 10,
+      "training_seed": 6101,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "6794b7b77279111457fca1173724fd0b3ebdcf0c4278cb4a00184ab5040c8633",
+      "config_file_sha256": "1cf2b80bab2f6ea601808ff8b11b8546686662463b9e46daf453e70867e077a9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-6101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-6101/config.toml"
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "replicate": 11,
+      "training_seed": 6203,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "7a3f426b21d40ca021a4b1e0072d7adb27a02b1f9a9998a83243af1ef55e0d22",
+      "config_file_sha256": "c8de4f967cc894e50a2f3a26fa347d359353ab3c5b72f706b01e011f05d23554",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-6203",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-visibility-ablation-v1/no-neighbor-visibility/seed-6203/config.toml"
+    }
+  ]
+}

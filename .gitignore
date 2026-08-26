@@ -1,4 +1,7 @@
 /target
 .DS_Store
-Cargo.lock
 *.png
+/training-output
+/sweeps/**/artifacts/
+/sweeps/**/*.log
+/sweeps/**/*.lock

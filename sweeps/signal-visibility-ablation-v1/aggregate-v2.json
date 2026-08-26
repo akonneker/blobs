@@ -1,0 +1,106 @@
+{
+  "schema_version": 2,
+  "package_version": "0.1.0",
+  "code_revision": "7ded31a692297ddcd7fff73b5e55f20f6ceafff3+dirty",
+  "source_report_sha256": "147f9585c27861942a94350d186b283116a66430ecfd9711deecc9e7ea9f0296",
+  "disabled_source_report_sha256": "7641f643c3b9864f85927030c94b0adc2c0269d59d64b427242d4c5d1219edd5",
+  "manifest_sha256": "edbf7eb918444644ebf27f854ad726d1f00f8a85c9e21bc44f24fde0b045b597",
+  "mind_abi_version": 8,
+  "mind_abi_hash": "07611c6b14a04980f6512a117ea7fa80693b253d377ae5144fb6dfeb51da1b62",
+  "candidate": "colony_signal_one_quantum",
+  "verification_scope": "local_deterministic",
+  "server_verified": false,
+  "replay_committed": false,
+  "opponents": [
+    "simple",
+    "aggressive",
+    "defensive",
+    "explorer"
+  ],
+  "seeds": [
+    5101,
+    5209,
+    5303,
+    5407,
+    5501,
+    5609,
+    5701,
+    5801,
+    5903,
+    6007,
+    6101,
+    6203
+  ],
+  "rows": [
+    {
+      "variant": "full-visibility",
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "episodes": 96,
+      "wins": 51,
+      "losses": 23,
+      "timeouts": 22,
+      "sidecar_emissions": 32347,
+      "signal_energy": 32347,
+      "completed_actions": 54951,
+      "mean_environment_signal_energy": 0.7490118577075099,
+      "mean_observable_signal_variation": 11.919631093544137,
+      "paired_vs_full_visibility": {
+        "improved": 0,
+        "worsened": 0,
+        "unchanged": 96
+      },
+      "paired_vs_disabled": {
+        "improved": 16,
+        "worsened": 3,
+        "unchanged": 77
+      }
+    },
+    {
+      "variant": "cardinal-visibility",
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "episodes": 96,
+      "wins": 51,
+      "losses": 24,
+      "timeouts": 21,
+      "sidecar_emissions": 31784,
+      "signal_energy": 31784,
+      "completed_actions": 53896,
+      "mean_environment_signal_energy": 0.7807133421400264,
+      "mean_observable_signal_variation": 6.203434610303831,
+      "paired_vs_full_visibility": {
+        "improved": 0,
+        "worsened": 1,
+        "unchanged": 95
+      },
+      "paired_vs_disabled": {
+        "improved": 16,
+        "worsened": 4,
+        "unchanged": 76
+      }
+    },
+    {
+      "variant": "no-neighbor-visibility",
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "episodes": 96,
+      "wins": 50,
+      "losses": 25,
+      "timeouts": 21,
+      "sidecar_emissions": 33533,
+      "signal_energy": 33533,
+      "completed_actions": 56577,
+      "mean_environment_signal_energy": 0.777552400270453,
+      "mean_observable_signal_variation": 0.0,
+      "paired_vs_full_visibility": {
+        "improved": 0,
+        "worsened": 3,
+        "unchanged": 93
+      },
+      "paired_vs_disabled": {
+        "improved": 15,
+        "worsened": 5,
+        "unchanged": 76
+      }
+    }
+  ],
+  "results_sha256": "10d686e6d9966776cf9cd381deac8df4b393cf0fd8c8b18327bbab13678172e9"
+}

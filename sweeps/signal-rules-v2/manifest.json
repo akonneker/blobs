@@ -1,0 +1,555 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/signal_rule_sweep.toml",
+  "spec_sha256": "1f0f45dcbb92755ffe9d914a4797153e8be27c8a9262cfee4dc05c94b62c7f96",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2",
+  "seeds": [
+    5101,
+    5209,
+    5303
+  ],
+  "variants": [
+    {
+      "name": "baseline",
+      "description": "Reference one-energy emission quantum and 1/1024 linear decay",
+      "rules": {},
+      "scenario": {}
+    },
+    {
+      "name": "signal-disabled",
+      "description": "Negative control: no signal deposits are legal",
+      "rules": {
+        "signal_emission_cost": 0
+      },
+      "scenario": {}
+    },
+    {
+      "name": "cost-4",
+      "description": "Four energy per emission quantum",
+      "rules": {
+        "signal_emission_cost": 4
+      },
+      "scenario": {}
+    },
+    {
+      "name": "cost-16",
+      "description": "Sixteen energy per emission quantum",
+      "rules": {
+        "signal_emission_cost": 16
+      },
+      "scenario": {}
+    },
+    {
+      "name": "persistent",
+      "description": "No passive signal decay",
+      "rules": {
+        "signal_decay_rate_numerator": 0
+      },
+      "scenario": {}
+    },
+    {
+      "name": "slow-decay",
+      "description": "One energy decays per 4096 simulation quanta",
+      "rules": {
+        "signal_decay_rate_denominator": 4096,
+        "signal_decay_rate_numerator": 1
+      },
+      "scenario": {}
+    },
+    {
+      "name": "fast-decay",
+      "description": "One energy decays per 256 simulation quanta",
+      "rules": {
+        "signal_decay_rate_denominator": 256,
+        "signal_decay_rate_numerator": 1
+      },
+      "scenario": {}
+    },
+    {
+      "name": "current-tile-only",
+      "description": "Signals remain physical, but neighboring signal channels are hidden",
+      "rules": {
+        "neighborhood": {
+          "observations": {
+            "signal": 0
+          }
+        }
+      },
+      "scenario": {}
+    },
+    {
+      "name": "cardinal-visibility",
+      "description": "Observe signal channels only north, west, east, and south",
+      "rules": {
+        "neighborhood": {
+          "observations": {
+            "signal": 90
+          }
+        }
+      },
+      "scenario": {}
+    },
+    {
+      "name": "expensive-disruption",
+      "description": "Raise the effort cost of terrain edits that erase local signals",
+      "rules": {
+        "deposit_terrain_effort_base": 16,
+        "excavate_effort_base": 16
+      },
+      "scenario": {}
+    },
+    {
+      "name": "sparse-plants",
+      "description": "Two plants test signaling when food discovery is scarce",
+      "rules": {},
+      "scenario": {
+        "num_plants": 2
+      }
+    },
+    {
+      "name": "dense-plants",
+      "description": "Sixteen plants test whether abundant food removes communication pressure",
+      "rules": {},
+      "scenario": {
+        "num_plants": 16
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "baseline",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "44ac73b75ae65dab521d40bca6d7a19dc705fa918bc78b717e22f229d188f97c",
+      "config_file_sha256": "6e4840b42af1b381082b74d2be4123272ed7baf23d2315bf4f1e4a539dbca04d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/baseline/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/baseline/seed-5101/config.toml"
+    },
+    {
+      "variant": "baseline",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "f3360183a1db66520fb7eb3fe6bf3f178670a6e475191771215ddc69d89f7a84",
+      "config_file_sha256": "dfe30a17f53cf57d197e0d990c1f0b33d8755f63cbd8884293c784dcaee76807",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/baseline/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/baseline/seed-5209/config.toml"
+    },
+    {
+      "variant": "baseline",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "cc0d9d980c03070d97b7a5d034f44ee008bef80b3d62f8009670224711fca292",
+      "config_file_sha256": "20932396de540aa61b26caa2a79d7d1231d03023bbdd15d6330fd36f34aea536",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/baseline/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/baseline/seed-5303/config.toml"
+    },
+    {
+      "variant": "signal-disabled",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "c997ff5320c3d4e1934396dad01737449e0a626a13788788d9c6e6a388f24b2e",
+      "compiled_ruleset_hash": "c53035087261128884dc02e5a311b1c07398f770a7d727b150302db31d215a48",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "66958b243c5e57df806a3b3f875972ddaa5064a804089640346a2c70166f938b",
+      "config_file_sha256": "af5dcc6049ae8fd07be826ca704582e26ef7c5b066188e42ef12d72090e5e69f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/signal-disabled/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/signal-disabled/seed-5101/config.toml"
+    },
+    {
+      "variant": "signal-disabled",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "c997ff5320c3d4e1934396dad01737449e0a626a13788788d9c6e6a388f24b2e",
+      "compiled_ruleset_hash": "c53035087261128884dc02e5a311b1c07398f770a7d727b150302db31d215a48",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "4cd908a6bc3434e0678f49782b3fd8038ab468b9ad80f91527d053ae295bfc32",
+      "config_file_sha256": "87b05cb6d45479a4ae54536fd693d13c342771ec90008397512934b355429166",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/signal-disabled/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/signal-disabled/seed-5209/config.toml"
+    },
+    {
+      "variant": "signal-disabled",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "c997ff5320c3d4e1934396dad01737449e0a626a13788788d9c6e6a388f24b2e",
+      "compiled_ruleset_hash": "c53035087261128884dc02e5a311b1c07398f770a7d727b150302db31d215a48",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "df40246774b26c1f2794ede57ee2a27d07aac7f7f32d7692639b6bc9d051c5a1",
+      "config_file_sha256": "940111b1f6cfa48c73d61ea84d425c3b900f8a8d9828ddb05a1d0fef237a6004",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/signal-disabled/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/signal-disabled/seed-5303/config.toml"
+    },
+    {
+      "variant": "cost-4",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "990bc6a561b44a183aebcfa386c04df74479a647611a6f6fc201859b7eb95044",
+      "compiled_ruleset_hash": "dd43973751d2b59360f4facfac029892899cce29bd6e57c546740d5efc9b6a0f",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "2e187ad57470bb8d88b6e3dd2f7268c79b236a1c6bdbedd5859c10c7a931feaa",
+      "config_file_sha256": "b6cba5d92f41fd9cf761039733d0a9370ad8b03c50a9e22d9f4fde1d3302c59c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-4/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-4/seed-5101/config.toml"
+    },
+    {
+      "variant": "cost-4",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "990bc6a561b44a183aebcfa386c04df74479a647611a6f6fc201859b7eb95044",
+      "compiled_ruleset_hash": "dd43973751d2b59360f4facfac029892899cce29bd6e57c546740d5efc9b6a0f",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "dd4bd2bd5c27d3548359e6ceab43d2db06d0f1f9ded7f305ef8354b14a2ea3e5",
+      "config_file_sha256": "7c14ad6131880db7b91f7afeea9246dd1035a4ada69623960bd6efe1e1ab0700",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-4/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-4/seed-5209/config.toml"
+    },
+    {
+      "variant": "cost-4",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "990bc6a561b44a183aebcfa386c04df74479a647611a6f6fc201859b7eb95044",
+      "compiled_ruleset_hash": "dd43973751d2b59360f4facfac029892899cce29bd6e57c546740d5efc9b6a0f",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ac524414d4b956367dd70c107244c23bd64201ff85dc917eb0a182a101bd2a4c",
+      "config_file_sha256": "886b44f7000c90fd0b3848e116e26c13e29dcb7e74b050fc41155eedd9890a9a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-4/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-4/seed-5303/config.toml"
+    },
+    {
+      "variant": "cost-16",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "bac0618c46d4efdfb6100f8772dfaca97206f13cdf6cdc7b5facc55e2b35867f",
+      "compiled_ruleset_hash": "6144610379a74f483402eeb36342d3d91fab3c18631e33fbf064f64d48582570",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "bd0a15e799caf415a7b788f2758f5d807718d10eed5fe52b889d77f11cf8e240",
+      "config_file_sha256": "91c4dfa152cb07ea419747a0734a71ca143da68116397669ac9dd370d3519037",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-16/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-16/seed-5101/config.toml"
+    },
+    {
+      "variant": "cost-16",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "bac0618c46d4efdfb6100f8772dfaca97206f13cdf6cdc7b5facc55e2b35867f",
+      "compiled_ruleset_hash": "6144610379a74f483402eeb36342d3d91fab3c18631e33fbf064f64d48582570",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "f0141fff0618559ba237350c3b27cbe3f4ee45db12e78bf168ae078f309fe9e2",
+      "config_file_sha256": "9f6fe4b863c735b23cb949a2eed1d0f8a90920012ece61a9eaaf64a9dbea7c24",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-16/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-16/seed-5209/config.toml"
+    },
+    {
+      "variant": "cost-16",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "bac0618c46d4efdfb6100f8772dfaca97206f13cdf6cdc7b5facc55e2b35867f",
+      "compiled_ruleset_hash": "6144610379a74f483402eeb36342d3d91fab3c18631e33fbf064f64d48582570",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "996ca23b80179bbc98181950239c75ac4d94f31c2aad3e4a2456fb78bfc740be",
+      "config_file_sha256": "0b03c51a0c147d7f86d79796dd71b0114b54f7290bfa94d5629cd7792c0d361b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-16/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cost-16/seed-5303/config.toml"
+    },
+    {
+      "variant": "persistent",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "2747f02ae9d13c93fb753ceb529d6fdb32c049308fa1fe678fe4a8c3ab7c12a3",
+      "compiled_ruleset_hash": "9c4cb48662b47280b8286980b093fa02bd4d69265caf862e32dcd8008370b394",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "076294350057f0ce191483a6f3b310fed2ea42953a3a84c628c474741b5ac7e1",
+      "config_file_sha256": "ef7e3444368a84eaad79e4aac12f12754bc50745255de37e171883f9617b6b2d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/persistent/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/persistent/seed-5101/config.toml"
+    },
+    {
+      "variant": "persistent",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "2747f02ae9d13c93fb753ceb529d6fdb32c049308fa1fe678fe4a8c3ab7c12a3",
+      "compiled_ruleset_hash": "9c4cb48662b47280b8286980b093fa02bd4d69265caf862e32dcd8008370b394",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "0983b312e1758ef912aa6de907b59514e663cd66d2cba84c319add2ad6efcff8",
+      "config_file_sha256": "7863864c2871d836d583fa7692acedd91f2d9685bfe8bef1494605e95ace82fe",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/persistent/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/persistent/seed-5209/config.toml"
+    },
+    {
+      "variant": "persistent",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "2747f02ae9d13c93fb753ceb529d6fdb32c049308fa1fe678fe4a8c3ab7c12a3",
+      "compiled_ruleset_hash": "9c4cb48662b47280b8286980b093fa02bd4d69265caf862e32dcd8008370b394",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "53d1b34bcce554ca0bc5c786f57abff51ba81899cfd6f422e835745cedb804a6",
+      "config_file_sha256": "16ce107597b8fa0c9d29568a10d2d0ba5d46257e82c033cd5b595e9ca961b13e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/persistent/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/persistent/seed-5303/config.toml"
+    },
+    {
+      "variant": "slow-decay",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "842eba07ac80f9063508af44f2a5aaf6f0550f64a753907e1fb60f129bd64c6e",
+      "compiled_ruleset_hash": "9ebdda04c835c30d9b4009442f5526a8cc7781ca8e24f6cca89c4b8c3aef3e52",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "044540df1b47f39a0b5cf7de6efce69ba4d1cb3fc1fcb7db585966346e5a92e5",
+      "config_file_sha256": "81c307a4ebdae162d47f7c25b8ea668a4d76c24cb67abeaf46a93114bb51c860",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/slow-decay/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/slow-decay/seed-5101/config.toml"
+    },
+    {
+      "variant": "slow-decay",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "842eba07ac80f9063508af44f2a5aaf6f0550f64a753907e1fb60f129bd64c6e",
+      "compiled_ruleset_hash": "9ebdda04c835c30d9b4009442f5526a8cc7781ca8e24f6cca89c4b8c3aef3e52",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "254666da7e0dd2e14bc9a342c8911250527165f8fde582dda4951f9a8e23187b",
+      "config_file_sha256": "9219e12e1c44a0e6cd2e45ac9db6e5334d25d4d328ca2a3e956d88d2c4e51c05",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/slow-decay/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/slow-decay/seed-5209/config.toml"
+    },
+    {
+      "variant": "slow-decay",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "842eba07ac80f9063508af44f2a5aaf6f0550f64a753907e1fb60f129bd64c6e",
+      "compiled_ruleset_hash": "9ebdda04c835c30d9b4009442f5526a8cc7781ca8e24f6cca89c4b8c3aef3e52",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "7778eaac8a7653eda8cccc269a75bc00706cf90c20cfc3ed43886eadbaaa75d3",
+      "config_file_sha256": "b6d532b4357a9c39ad3090a0ce7dbe0fa8043ecfdecb60126cc6eedca5ea8976",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/slow-decay/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/slow-decay/seed-5303/config.toml"
+    },
+    {
+      "variant": "fast-decay",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "e46759cc0955087979c4c4ad9057a5058bf6a2d4218a64719f14fd75e3172c0f",
+      "compiled_ruleset_hash": "e2a0703f995d38cbe3e9fd787e9d6fee63d55ba28c53f9027a597349c8d3a598",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "b43d040d959ddd7946f805e7c48b39ba576c49951ce71e95fe12d311333b978c",
+      "config_file_sha256": "f083a57e4f4c6188d5c233c62af8f59faafb326f164aa915e00d8eec494d0cbb",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/fast-decay/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/fast-decay/seed-5101/config.toml"
+    },
+    {
+      "variant": "fast-decay",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "e46759cc0955087979c4c4ad9057a5058bf6a2d4218a64719f14fd75e3172c0f",
+      "compiled_ruleset_hash": "e2a0703f995d38cbe3e9fd787e9d6fee63d55ba28c53f9027a597349c8d3a598",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "a24cfd8d495dfa3251aa6b644597e64fe1f5c4dee8bf1fdc24dd73da48036565",
+      "config_file_sha256": "a9627d2a759a1252cd6c22a1e6c4142b95e26c10e20d76358e83f8bde50929df",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/fast-decay/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/fast-decay/seed-5209/config.toml"
+    },
+    {
+      "variant": "fast-decay",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "e46759cc0955087979c4c4ad9057a5058bf6a2d4218a64719f14fd75e3172c0f",
+      "compiled_ruleset_hash": "e2a0703f995d38cbe3e9fd787e9d6fee63d55ba28c53f9027a597349c8d3a598",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "8d75b767b2be01fbdd4d9fd50528fc381be800a681b0f01fb3716f6376b0f472",
+      "config_file_sha256": "0dfb16d55c825b9dbe4953bc4a017e87f78236c9787d055d8c53c9f18ee839e4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/fast-decay/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/fast-decay/seed-5303/config.toml"
+    },
+    {
+      "variant": "current-tile-only",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "125fb734499964b6e46aa20265259218a09b00ee0d2042a7119cf3b7c421916d",
+      "config_file_sha256": "fbbeae2748a4c2b9122b7ddf9914069ce29787de6a2868bd24222c99c80ddda2",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/current-tile-only/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/current-tile-only/seed-5101/config.toml"
+    },
+    {
+      "variant": "current-tile-only",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "a8bc4b6810314c06faabbcd9a6f99b7ebd34a1098a1aeadadacafbffa634551f",
+      "config_file_sha256": "6c48409d1651e75d8aa039fbe1954d8911812b27a1ad80ba34c5bb080c62ce17",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/current-tile-only/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/current-tile-only/seed-5209/config.toml"
+    },
+    {
+      "variant": "current-tile-only",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "10e44338af181d4fe843861f3b20d058b5a76c9184605ab6ad88c33a44665f0c",
+      "compiled_ruleset_hash": "10f16707641441170dd7004a25d69a700f8b474381d974c9fbb772c7ad94e2ce",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "664bfbc732f1d8d38f4f68d27ce5d62ec737932e6e8cbd74491ca7e394427ae0",
+      "config_file_sha256": "ac9b38de5df55f40b515feefb26ee479140d7ece0ba7f9a80a137304f797aaaf",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/current-tile-only/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/current-tile-only/seed-5303/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "cf050dbbcc4fe3062ea6ffa191f8a6fa9b865388b57f4aa947a329dac08d75ca",
+      "config_file_sha256": "7f264d42cb859aa676c72a25b83dd025cb396e5f26c989cc750cc0a97903b4a8",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cardinal-visibility/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cardinal-visibility/seed-5101/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "bd11e146eb8faa061d0f61022a5732246cfe56371473c54e4eb65954d4128edf",
+      "config_file_sha256": "bb635f52b174a1c5cb4f9de6b2117a5653fdcf3650040577df2db823b923413d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cardinal-visibility/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cardinal-visibility/seed-5209/config.toml"
+    },
+    {
+      "variant": "cardinal-visibility",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "6e830a165c30665d9f209f344c8f04d50d8d0e21319be59b052b6a81cbb28913",
+      "compiled_ruleset_hash": "3bd258c8c8986662d6b3d171610541fac08d3071c64fa2862c33a9c8fd226d1c",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "ab6b953d3b8d195436dad3967bac2e9fdd49b6f00dfce85a6606cdb059405634",
+      "config_file_sha256": "f3ee872018ddacb5c3b95230de43a3346129cfcce9944fa7ddb6ee0149a8603b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cardinal-visibility/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/cardinal-visibility/seed-5303/config.toml"
+    },
+    {
+      "variant": "expensive-disruption",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "a93ecbc30e9699cea2c9770c1a14217b09f26fde7d73cc1787aeb5fa709d2614",
+      "compiled_ruleset_hash": "d4d6da06950cf7c053932635f36d0a9bd41c88c0510fe21aecf088902958ebaf",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "76557ba10b91e780585d236b0b19405517874b4125b47372391a2b3f76aebfbd",
+      "config_file_sha256": "fb2c33ae5f35c1937710d715579b5db88c1edf4b0fbd64757ba432aa7d91014c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/expensive-disruption/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/expensive-disruption/seed-5101/config.toml"
+    },
+    {
+      "variant": "expensive-disruption",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "a93ecbc30e9699cea2c9770c1a14217b09f26fde7d73cc1787aeb5fa709d2614",
+      "compiled_ruleset_hash": "d4d6da06950cf7c053932635f36d0a9bd41c88c0510fe21aecf088902958ebaf",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "be0e746f36c103dd59aeb8b563b5eb330a02ee4f8ad26bd047c344fc787a55c8",
+      "config_file_sha256": "af30b40eb0cb5b11a0daeef541acb966c3bc4fe76b2120ede7955c874583a498",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/expensive-disruption/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/expensive-disruption/seed-5209/config.toml"
+    },
+    {
+      "variant": "expensive-disruption",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "a93ecbc30e9699cea2c9770c1a14217b09f26fde7d73cc1787aeb5fa709d2614",
+      "compiled_ruleset_hash": "d4d6da06950cf7c053932635f36d0a9bd41c88c0510fe21aecf088902958ebaf",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "9fc366d62f41cf3b674936d49e4fa24b78926a77d4ec8b0419694a464563222a",
+      "config_file_sha256": "f53d9ba6d8648b8a81c18a4af74373cff8c162d1cb7c7cf492b71055ef4d621a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/expensive-disruption/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/expensive-disruption/seed-5303/config.toml"
+    },
+    {
+      "variant": "sparse-plants",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "4c8e05a2394a2e1dc55b89945b634643cb0e41b093606e8954f9655caf528fd0",
+      "experiment_config_sha256": "fbcbdd493523f08cfbf5f8a7fc7a3e3c924b46c00fadc1a93ffda25d9b2d3a39",
+      "config_file_sha256": "a7c422b468de88b3c18e3301a9231d346df4627b2e8312b6f76c0039c1bbb4d9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/sparse-plants/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/sparse-plants/seed-5101/config.toml"
+    },
+    {
+      "variant": "sparse-plants",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "4c8e05a2394a2e1dc55b89945b634643cb0e41b093606e8954f9655caf528fd0",
+      "experiment_config_sha256": "291d98d39b8cd8cda9212962b69b15c78e0fe625b024cade33354f6910427791",
+      "config_file_sha256": "4425dca95af89504317329ec36248cc3b0dba06a11418fd935a5db4874a03bcb",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/sparse-plants/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/sparse-plants/seed-5209/config.toml"
+    },
+    {
+      "variant": "sparse-plants",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "4c8e05a2394a2e1dc55b89945b634643cb0e41b093606e8954f9655caf528fd0",
+      "experiment_config_sha256": "c3abee183c532f41910317a9e707aee063a0328c4f4e188cbc2f5dd4a2d33c7c",
+      "config_file_sha256": "6792d7961f6ddbb641bcc65384199d8c6e19cd617873b6db0f73d584e32bde89",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/sparse-plants/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/sparse-plants/seed-5303/config.toml"
+    },
+    {
+      "variant": "dense-plants",
+      "replicate": 0,
+      "training_seed": 5101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6da538bce97feabbc3a3e40a5d696cc3d87759aa44c16b2b04605ca89fe6a162",
+      "experiment_config_sha256": "b246e57cf440d918842a42ba8a8289d7bde21c4b091b35547c245b2d5f341a4c",
+      "config_file_sha256": "8924b03341d318e1d939b2aab6b09effa0dfec544bcbe68dc9af2023c3cf7f38",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/dense-plants/seed-5101",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/dense-plants/seed-5101/config.toml"
+    },
+    {
+      "variant": "dense-plants",
+      "replicate": 1,
+      "training_seed": 5209,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6da538bce97feabbc3a3e40a5d696cc3d87759aa44c16b2b04605ca89fe6a162",
+      "experiment_config_sha256": "2fc5f939450acca32f4d941a16b462fd66176d7a8d3d7b54606b85616ed42f51",
+      "config_file_sha256": "ef5f8064dca5845d7e6761a3de3c51e5d7e52da94f5321147a2c7f79d6923ab1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/dense-plants/seed-5209",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/dense-plants/seed-5209/config.toml"
+    },
+    {
+      "variant": "dense-plants",
+      "replicate": 2,
+      "training_seed": 5303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "673bbb6fc33bb5e994ae5fcfe3a2f15539a710651c959d28457bef5b9911d60d",
+      "scenario_hash": "6da538bce97feabbc3a3e40a5d696cc3d87759aa44c16b2b04605ca89fe6a162",
+      "experiment_config_sha256": "e81cd39b2f8f693eec6108b69e5777523e491ef47f890ef1d51a5a9a31ffba7f",
+      "config_file_sha256": "baf1f781134bc74faeea7f658944505527700a4e465ead9641046bc95422536f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/signal-rules-v2/dense-plants/seed-5303",
+      "config_file": "/Users/adam/code/blobs/sweeps/signal-rules-v2/dense-plants/seed-5303/config.toml"
+    }
+  ]
+}

@@ -23,8 +23,8 @@ use super::reference::{
     OutcomeStatus, PendingAction, ReferenceRuleset, RejectReason, SimTime, TileState, TimeConfig,
 };
 
-pub const CANONICAL_HASH_FORMAT_VERSION: u16 = 6;
-pub const REFERENCE_SEMANTIC_KERNEL_VERSION: u16 = 4;
+pub const CANONICAL_HASH_FORMAT_VERSION: u16 = 7;
+pub const REFERENCE_SEMANTIC_KERNEL_VERSION: u16 = 5;
 pub const CANONICAL_HASH_ALGORITHM: &str = "sha256";
 
 const SEMANTIC_RULESET_DOMAIN: &[u8] = b"blob.ruleset.semantic";
@@ -287,6 +287,19 @@ impl IncrementalStateHash {
                 None => {
                     set_cell_slot(&mut self.cell_memory_hashes, key, None);
                 }
+            }
+        }
+        // `mark_all_cells` deliberately subsumes later per-cell dirty marks.
+        // A birth can therefore occur while the full refresh is pending and
+        // have no pre-existing private-memory slot. The full leaf pass already
+        // visits every live cell, so fill only those missing commitments first.
+        for (key, cell) in cells {
+            if cell_slot(&self.cell_memory_hashes, *key).is_none() {
+                set_cell_slot(
+                    &mut self.cell_memory_hashes,
+                    *key,
+                    Some(cell_memory_hash(cell)),
+                );
             }
         }
         refresh_cell_pages(
@@ -1100,6 +1113,12 @@ fn encode_action_request(encoder: &mut CanonicalEncoder, request: &ActionRequest
             encoder.u8(target.0);
             encoder.u64(*amount);
         }
+        ActionRequest::Signal { amounts } => {
+            encoder.u8(9);
+            for amount in amounts {
+                encoder.u64(*amount);
+            }
+        }
         ActionRequest::Excavate => encoder.u8(7),
         ActionRequest::DepositTerrain => encoder.u8(8),
     }
@@ -1261,6 +1280,12 @@ mod tests {
             cell.guarded = true;
         }
         cache.mark_all_cells();
+        let mut born_during_full_refresh = cells[&CellKey(255)].clone();
+        born_during_full_refresh.marker = 301;
+        born_during_full_refresh.private_memory = Arc::from([3, 0, 1]);
+        cells.insert(CellKey(301), born_during_full_refresh);
+        // This is intentionally subsumed by the pending full refresh.
+        cache.mark_cell(CellKey(301));
         assert_eq!(
             cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
             full_hash(&cells, next_cell_key)

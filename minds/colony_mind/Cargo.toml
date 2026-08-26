@@ -1,0 +1,16 @@
+[package]
+name = "colony_mind"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+blob_interface = { path = "../../blob_interface" }
+blob_mind_utils = { path = "../blob_mind_utils" }
+extism-pdk = { version = "1.4.1", default-features = false }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+blob_engine = { path = "../../blob_engine" }
+serde = { version = "1", features = ["derive"] }

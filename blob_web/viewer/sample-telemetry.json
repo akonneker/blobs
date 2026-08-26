@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "run": {
+    "id": "gate-relief-0027",
+    "mind": "colony_mind v1",
+    "ruleset": "dense-arena-v2",
+    "board": "256 × 256",
+    "step": 8192,
+    "verified": false
+  },
+  "latest": {
+    "schema_version": 4,
+    "colony_cells": 1428,
+    "cells_by_role": [382, 296, 254, 318, 178],
+    "cells_with_valid_memory": 1394,
+    "private_coverage_bits": 32420,
+    "explorer_coverage_bits": 6453,
+    "maximum_private_coverage_bits": 61,
+    "outcome_successes": [9240, 1810, 5370, 6840, 1380, 2470, 2330, 11020],
+    "outcome_setbacks": [180, 92, 21, 74, 35, 81, 144, 0],
+    "outcome_contentions": [1140, 710, 0, 490, 125, 360, 230, 0],
+    "guarded_loss_weighted_sum": 18960,
+    "guarded_loss_samples": 3160,
+    "unguarded_loss_weighted_sum": 92400,
+    "unguarded_loss_samples": 8400,
+    "digestion_progress_weighted_sum": 22680,
+    "digestion_samples": 7200,
+    "signal_retention_weighted_sum_q8": 539400,
+    "signal_samples": 2700,
+    "mapped_plant_records": 91,
+    "maximum_records_in_one_cell": 11,
+    "completed_wall_plan_records": 24,
+    "excavation_pit_pressure": 17,
+    "maximum_excavation_pit_pressure": 3,
+    "mapped_world_plant_tiles": 29,
+    "confirmed_mapped_plant_tiles": 27,
+    "builders_carrying_material": 73,
+    "defenders_on_station": 94,
+    "world_plant_tiles": 32,
+    "plant_ring_tiles": 224,
+    "elevated_ring_tiles": 198,
+    "impassable_ring_tiles": 168,
+    "occupied_ring_tiles": 101,
+    "signal_energy": [186400, 72100, 113800, 39600]
+  },
+  "timeline": [
+    { "step": 0, "plant_discovery": 0.03, "barrier_coverage": 0.00, "defender_coverage": 0.00 },
+    { "step": 1024, "plant_discovery": 0.19, "barrier_coverage": 0.02, "defender_coverage": 0.04 },
+    { "step": 2048, "plant_discovery": 0.38, "barrier_coverage": 0.10, "defender_coverage": 0.15 },
+    { "step": 3072, "plant_discovery": 0.53, "barrier_coverage": 0.22, "defender_coverage": 0.24 },
+    { "step": 4096, "plant_discovery": 0.63, "barrier_coverage": 0.35, "defender_coverage": 0.32 },
+    { "step": 5120, "plant_discovery": 0.72, "barrier_coverage": 0.47, "defender_coverage": 0.36 },
+    { "step": 6144, "plant_discovery": 0.78, "barrier_coverage": 0.59, "defender_coverage": 0.40 },
+    { "step": 7168, "plant_discovery": 0.81, "barrier_coverage": 0.68, "defender_coverage": 0.42 },
+    { "step": 8192, "plant_discovery": 0.84, "barrier_coverage": 0.75, "defender_coverage": 0.42 }
+  ],
+  "spatial": {
+    "ring": [
+      { "x": -1, "y": -1, "elevation": 2, "status": "wall" },
+      { "x": 0, "y": -1, "elevation": 2, "status": "wall", "occupant": "defender" },
+      { "x": 1, "y": -1, "elevation": 2, "status": "wall" },
+      { "x": 1, "y": 0, "elevation": 2, "status": "wall" },
+      { "x": 1, "y": 1, "elevation": 2, "status": "wall" },
+      { "x": 0, "y": 1, "elevation": 1, "status": "gate", "occupant": "defender" },
+      { "x": -1, "y": 1, "elevation": 2, "status": "wall" },
+      { "x": -1, "y": 0, "elevation": 2, "status": "wall" }
+    ]
+  },
+  "actions": {
+    "damage_dealt": 18420,
+    "terrain_lifted": 2841,
+    "terrain_dumped": 2698,
+    "failed": 743
+  },
+  "adversarial_checks": [
+    {
+      "name": "Defender relief through a gate",
+      "status": "passed",
+      "detail": "A defender outside the completed barrier reached the deliberate south relief tile and guarded on station."
+    },
+    {
+      "name": "Marker spoofing",
+      "status": "exposed",
+      "detail": "An opponent carrying a colony role marker suppresses the attacker's local target heuristic. Markers are hints, not identity."
+    },
+    {
+      "name": "Colliding signal gradients",
+      "status": "passed",
+      "detail": "Feeders selected the plant gradient while attackers selected the threat gradient under the same local field."
+    },
+    {
+      "name": "Productive construction tiles",
+      "status": "passed",
+      "detail": "Builders skipped known plant tiles as both wall targets and excavation sources, rotating only the affected private plant plan."
+    },
+    {
+      "name": "Independent founder frames",
+      "status": "warning",
+      "detail": "Trusted telemetry reconciled two private records to one world plant. Cells themselves still have no canonical coordinate frame."
+    }
+  ]
+}

@@ -11,12 +11,12 @@ use super::delta::{CellDelta, SimulationDelta, TileDelta};
 use super::hashing::CanonicalHash;
 use super::neighborhood::{LocalSlot, TileIndex};
 use super::reference::{
-    AccessMode, ActionOutcome, ActionRequest, BatchReport, CellColdState, CellKey, CellState,
-    CommitReceipt, EffortTier, OutcomeStatus, PendingAction, RejectReason, ResourceClaim,
-    ResourceKey, SimTime, TileState,
+    AccessMode, ActionOutcome, ActionRequest, AttackDamage, BatchReport, CellColdState, CellKey,
+    CellState, CommitReceipt, EffortTier, OutcomeStatus, PendingAction, RejectReason,
+    ResourceClaim, ResourceKey, SimTime, TerrainChange, TileState,
 };
 
-pub const REPLAY_FORMAT_VERSION: u16 = 8;
+pub const REPLAY_FORMAT_VERSION: u16 = 10;
 const REPLAY_MAGIC: &[u8; 8] = b"BLBRPL01";
 const GENESIS_DOMAIN: &[u8] = b"blob.replay.genesis";
 const EVENT_DOMAIN: &[u8] = b"blob.replay.batch";
@@ -912,10 +912,12 @@ fn validate_event_shape(event: &ReplayBatchEvent) -> Result<(), ReplayError> {
         return Err(ReplayError::NonCanonicalOrder("commitments"));
     }
     if event.outcomes.iter().any(|outcome| {
-        outcome.completed_at != event.completed_at || outcome.action != outcome.request.kind()
+        outcome.completed_at != event.completed_at
+            || outcome.action != outcome.request.kind()
+            || !outcome_effects_are_consistent(outcome)
     }) {
         return Err(ReplayError::InvalidBatch(
-            "outcome action or completion metadata is inconsistent",
+            "outcome action, effects, or completion metadata is inconsistent",
         ));
     }
     if !is_sorted_by(&event.outcomes, |left, right| {
@@ -977,6 +979,49 @@ fn validate_event_shape(event: &ReplayBatchEvent) -> Result<(), ReplayError> {
         ));
     }
     Ok(())
+}
+
+fn outcome_effects_are_consistent(outcome: &ActionOutcome) -> bool {
+    let damage_consistent = match (&outcome.request, outcome.status, &outcome.attack_damage) {
+        (ActionRequest::Attack { .. }, OutcomeStatus::Success, Some(damage)) => {
+            damage.victim != outcome.actor
+                && (!damage.target_was_guarded || damage.mitigated <= damage.raw)
+                && (damage.target_was_guarded || damage.mitigated == 0)
+                && damage
+                    .mitigated
+                    .checked_add(damage.applied)
+                    .and_then(|value| value.checked_add(damage.overkill))
+                    == Some(damage.raw)
+        }
+        (ActionRequest::Attack { .. }, OutcomeStatus::Success, None) => false,
+        (ActionRequest::Attack { .. }, _, None) => true,
+        (ActionRequest::Attack { .. }, _, Some(_)) | (_, _, Some(_)) => false,
+        (_, _, None) => true,
+    };
+    if !damage_consistent {
+        return false;
+    }
+
+    match (&outcome.request, outcome.status, &outcome.terrain_change) {
+        (ActionRequest::Excavate, OutcomeStatus::Success, Some(change)) => {
+            change.tile == outcome.origin
+                && change.material_mass > 0
+                && change.elevation_before.checked_sub(1) == Some(change.elevation_after)
+        }
+        (ActionRequest::DepositTerrain, OutcomeStatus::Success, Some(change)) => {
+            change.tile == outcome.origin
+                && change.material_mass > 0
+                && change.elevation_before.checked_add(1) == Some(change.elevation_after)
+        }
+        (ActionRequest::Excavate | ActionRequest::DepositTerrain, OutcomeStatus::Success, None) => {
+            false
+        }
+        (ActionRequest::Excavate | ActionRequest::DepositTerrain, _, None) => true,
+        (ActionRequest::Excavate | ActionRequest::DepositTerrain, _, Some(_)) | (_, _, Some(_)) => {
+            false
+        }
+        (_, _, None) => true,
+    }
 }
 
 fn is_sorted_by<T>(values: &[T], ordered: impl Fn(&T, &T) -> bool) -> bool {
@@ -1331,7 +1376,7 @@ pub(super) fn decode_cell_state(
             return Err(ReplayError::InvalidTag {
                 field: "pending action option",
                 tag,
-            })
+            });
         }
     };
     let last_outcome = decode_outcome_status_option(reader)?;
@@ -1467,6 +1512,7 @@ fn encode_commitment(writer: &mut Writer, commitment: &ReplayCommitment) {
         Some(signal) => {
             writer.u8(1);
             writer.u8(signal.channel);
+            writer.u64(signal.amount);
         }
         None => writer.u8(0),
     }
@@ -1494,12 +1540,13 @@ fn decode_commitment(
         0 => None,
         1 => Some(ReferenceSignalEmission {
             channel: reader.u8()?,
+            amount: reader.u64()?,
         }),
         tag => {
             return Err(ReplayError::InvalidTag {
                 field: "signal option",
                 tag,
-            })
+            });
         }
     };
     let memory_update = match reader.u8()? {
@@ -1511,7 +1558,7 @@ fn decode_commitment(
             return Err(ReplayError::InvalidTag {
                 field: "private memory update",
                 tag,
-            })
+            });
         }
     };
     let started_at = SimTime(reader.u64()?);
@@ -1547,6 +1594,8 @@ fn encode_outcome(writer: &mut Writer, outcome: &ActionOutcome) {
     encode_tile_option(writer, outcome.target);
     writer.u64(outcome.effort_spent);
     writer.u64(outcome.payload);
+    encode_attack_damage_option(writer, outcome.attack_damage.as_ref());
+    encode_terrain_change_option(writer, outcome.terrain_change.as_ref());
 }
 
 fn decode_outcome(
@@ -1566,7 +1615,73 @@ fn decode_outcome(
         target: decode_tile_option(reader)?,
         effort_spent: reader.u64()?,
         payload: reader.u64()?,
+        attack_damage: decode_attack_damage_option(reader)?,
+        terrain_change: decode_terrain_change_option(reader)?,
     })
+}
+
+fn encode_attack_damage_option(writer: &mut Writer, damage: Option<&AttackDamage>) {
+    let Some(damage) = damage else {
+        writer.u8(0);
+        return;
+    };
+    writer.u8(1);
+    writer.u64(damage.victim.0);
+    writer.u8(u8::from(damage.target_was_guarded));
+    writer.u64(damage.raw);
+    writer.u64(damage.mitigated);
+    writer.u64(damage.applied);
+    writer.u64(damage.overkill);
+}
+
+fn decode_attack_damage_option(
+    reader: &mut Reader<'_>,
+) -> Result<Option<AttackDamage>, ReplayError> {
+    match reader.u8()? {
+        0 => Ok(None),
+        1 => Ok(Some(AttackDamage {
+            victim: CellKey(reader.u64()?),
+            target_was_guarded: decode_bool(reader, "attack target guarded")?,
+            raw: reader.u64()?,
+            mitigated: reader.u64()?,
+            applied: reader.u64()?,
+            overkill: reader.u64()?,
+        })),
+        tag => Err(ReplayError::InvalidTag {
+            field: "attack damage option",
+            tag,
+        }),
+    }
+}
+
+fn encode_terrain_change_option(writer: &mut Writer, change: Option<&TerrainChange>) {
+    let Some(change) = change else {
+        writer.u8(0);
+        return;
+    };
+    writer.u8(1);
+    writer.u64(change.tile.0 as u64);
+    writer.i16(change.elevation_before);
+    writer.i16(change.elevation_after);
+    writer.u64(change.material_mass);
+}
+
+fn decode_terrain_change_option(
+    reader: &mut Reader<'_>,
+) -> Result<Option<TerrainChange>, ReplayError> {
+    match reader.u8()? {
+        0 => Ok(None),
+        1 => Ok(Some(TerrainChange {
+            tile: TileIndex(read_usize(reader, "terrain change tile")?),
+            elevation_before: reader.i16()?,
+            elevation_after: reader.i16()?,
+            material_mass: reader.u64()?,
+        })),
+        tag => Err(ReplayError::InvalidTag {
+            field: "terrain change option",
+            tag,
+        }),
+    }
 }
 
 fn encode_action_request(writer: &mut Writer, request: &ActionRequest) {
@@ -1612,6 +1727,12 @@ fn encode_action_request(writer: &mut Writer, request: &ActionRequest) {
             writer.u8(target.0);
             writer.u64(*amount);
         }
+        ActionRequest::Signal { amounts } => {
+            writer.u8(9);
+            for amount in amounts {
+                writer.u64(*amount);
+            }
+        }
         ActionRequest::Excavate => writer.u8(7),
         ActionRequest::DepositTerrain => writer.u8(8),
     }
@@ -1651,11 +1772,14 @@ fn decode_action_request(
         },
         7 => ActionRequest::Excavate,
         8 => ActionRequest::DepositTerrain,
+        9 => ActionRequest::Signal {
+            amounts: [reader.u64()?, reader.u64()?, reader.u64()?, reader.u64()?],
+        },
         _ => {
             return Err(ReplayError::InvalidTag {
                 field: "action",
                 tag,
-            })
+            });
         }
     })
 }
@@ -1804,7 +1928,7 @@ fn decode_claim(reader: &mut Reader<'_>) -> Result<ResourceClaim, ReplayError> {
             return Err(ReplayError::InvalidTag {
                 field: "resource key",
                 tag,
-            })
+            });
         }
     };
     let tag = reader.u8()?;
@@ -1817,7 +1941,7 @@ fn decode_claim(reader: &mut Reader<'_>) -> Result<ResourceClaim, ReplayError> {
             return Err(ReplayError::InvalidTag {
                 field: "access mode",
                 tag,
-            })
+            });
         }
     };
     Ok(ResourceClaim { actor, key, mode })

@@ -104,8 +104,6 @@ pub struct FileConfig {
     pub cell: CellConfig, // Add CellConfig here
     #[serde(default)]
     pub memory: MemoryConfig, // Add MemoryConfig here
-    #[serde(default)]
-    pub state: StateConfig, // Add StateConfig here
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)] // Add Serialize
@@ -158,29 +156,6 @@ impl MemoryConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StateConfig {
-    pub max_states_in_memory: usize,
-    pub save_interval: u64,
-    pub state_directory: String,
-    pub compress_states: bool,
-    pub auto_cleanup: bool,
-    pub max_disk_states: usize,
-}
-
-impl Default for StateConfig {
-    fn default() -> Self {
-        StateConfig {
-            max_states_in_memory: 100,
-            save_interval: 10,
-            state_directory: "game_states".to_string(),
-            compress_states: true,
-            auto_cleanup: true,
-            max_disk_states: 1000,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +196,4 @@ pub struct GameConfig {
     pub energy_options: EnergyConfig,
     pub cell_config: CellConfig,     // Add CellConfig here
     pub memory_config: MemoryConfig, // Add MemoryConfig here
-    pub state_config: StateConfig,   // Add StateConfig here
 }

@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
 use blob_engine::resolution::{
-    ActionRequest, ActivityCue, BoundaryRule, CellKey, DiagonalCornerRule, DurationRule,
-    EffortTier, LocalSlot, NeighborhoodSpec, OutcomeStatus, ReferenceRuleset, ReferenceSimulation,
-    RejectReason, SimTime,
+    ActionKind, ActionRequest, ActivityCue, BoundaryRule, CellKey, DecisionCommitment,
+    DiagonalCornerRule, DurationRule, EffortTier, LocalSlot, NeighborhoodSpec, OutcomeStatus,
+    ReferenceRuleset, ReferenceSimulation, RejectReason, SimTime,
 };
+use blob_interface::reference_mind::ReferenceSignalEmission;
 
 const WEST: LocalSlot = LocalSlot(3);
 const EAST: LocalSlot = LocalSlot(4);
@@ -320,6 +321,106 @@ fn same_time_attack_chain_does_not_cancel_outgoing_damage() {
     assert!(report.deaths.contains(&b));
     assert_eq!(statuses(&report)[&b], OutcomeStatus::Success);
     assert_eq!(c_before - simulation.cell(c).unwrap().assimilated_energy, 5);
+}
+
+#[test]
+fn simultaneous_damage_uses_deterministic_largest_remainder_attribution() {
+    let mut simulation = ReferenceSimulation::new(3, 3, uniform_rules()).unwrap();
+    let west = simulation
+        .add_cell(simulation.tile(0, 1).unwrap(), 10, 100, 0)
+        .unwrap();
+    let north = simulation
+        .add_cell(simulation.tile(1, 0).unwrap(), 10, 100, 0)
+        .unwrap();
+    let east = simulation
+        .add_cell(simulation.tile(2, 1).unwrap(), 10, 100, 0)
+        .unwrap();
+    let victim = simulation
+        .add_cell(simulation.tile(1, 1).unwrap(), 10, 3, 1)
+        .unwrap();
+
+    for (actor, target, payload) in [
+        (west, EAST, 1_u64),
+        (north, LocalSlot(6), 2),
+        (east, WEST, 3),
+    ] {
+        simulation
+            .commit_action(
+                actor,
+                ActionRequest::Attack {
+                    target,
+                    effort: EffortTier::Standard,
+                    payload,
+                },
+            )
+            .unwrap();
+    }
+    simulation
+        .commit_action(
+            victim,
+            ActionRequest::Guard {
+                effort: EffortTier::Standard,
+            },
+        )
+        .unwrap();
+
+    // Guard effort leaves two health-energy available. Six raw damage becomes
+    // three post-guard damage, of which two is applied and one is overkill.
+    let report = simulation.resolve_next_batch().unwrap();
+    let damage = report
+        .outcomes
+        .iter()
+        .filter_map(|outcome| {
+            outcome
+                .attack_damage
+                .as_ref()
+                .map(|damage| (outcome.actor, damage.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    assert_eq!(damage.len(), 3);
+    assert_eq!(
+        (
+            damage[&west].raw,
+            damage[&west].mitigated,
+            damage[&west].applied,
+            damage[&west].overkill
+        ),
+        (1, 0, 1, 0)
+    );
+    assert_eq!(
+        (
+            damage[&north].raw,
+            damage[&north].mitigated,
+            damage[&north].applied,
+            damage[&north].overkill
+        ),
+        (2, 1, 1, 0)
+    );
+    assert_eq!(
+        (
+            damage[&east].raw,
+            damage[&east].mitigated,
+            damage[&east].applied,
+            damage[&east].overkill
+        ),
+        (3, 2, 0, 1)
+    );
+    assert!(damage.values().all(|damage| {
+        damage.victim == victim
+            && damage.target_was_guarded
+            && damage.raw == damage.mitigated + damage.applied + damage.overkill
+    }));
+    assert_eq!(damage.values().map(|damage| damage.raw).sum::<u64>(), 6);
+    assert_eq!(
+        damage.values().map(|damage| damage.mitigated).sum::<u64>(),
+        3
+    );
+    assert_eq!(damage.values().map(|damage| damage.applied).sum::<u64>(), 2);
+    assert_eq!(
+        damage.values().map(|damage| damage.overkill).sum::<u64>(),
+        1
+    );
 }
 
 #[test]
@@ -696,6 +797,15 @@ fn excavation_and_deposition_conserve_terrain_mass_energy() {
         .unwrap();
     let excavated = simulation.resolve_next_batch().unwrap();
     assert_eq!(statuses(&excavated)[&actor], OutcomeStatus::Success);
+    let excavated_change = excavated.outcomes[0].terrain_change.as_ref().unwrap();
+    assert_eq!(excavated_change.tile, tile);
+    assert_eq!(excavated_change.elevation_before, 0);
+    assert_eq!(excavated_change.elevation_after, -1);
+    assert_eq!(
+        excavated_change.material_mass,
+        simulation.rules().terrain_mass_per_elevation
+    );
+    assert!(excavated.outcomes[0].attack_damage.is_none());
     assert_eq!(simulation.tile_state(tile).unwrap().elevation, -1);
     assert_eq!(
         simulation.cell(actor).unwrap().carried_material_mass,
@@ -708,6 +818,14 @@ fn excavation_and_deposition_conserve_terrain_mass_energy() {
         .unwrap();
     let deposited = simulation.resolve_next_batch().unwrap();
     assert_eq!(statuses(&deposited)[&actor], OutcomeStatus::Success);
+    let deposited_change = deposited.outcomes[0].terrain_change.as_ref().unwrap();
+    assert_eq!(deposited_change.tile, tile);
+    assert_eq!(deposited_change.elevation_before, -1);
+    assert_eq!(deposited_change.elevation_after, 0);
+    assert_eq!(
+        deposited_change.material_mass,
+        simulation.rules().terrain_mass_per_elevation
+    );
     assert_eq!(simulation.tile_state(tile).unwrap().elevation, 0);
     assert_eq!(simulation.cell(actor).unwrap().carried_material_mass, 0);
     assert_eq!(simulation.total_energy_equivalent(), before);
@@ -733,15 +851,18 @@ fn local_signal_is_committed_with_the_action_and_decays_to_diffuse_energy() {
         .commit_decision_with_signal(
             actor,
             ActionRequest::Wait,
-            Some(ReferenceSignalEmission { channel: 2 }),
+            Some(ReferenceSignalEmission {
+                channel: 2,
+                amount: 6,
+            }),
             Vec::new(),
         )
         .unwrap();
 
-    assert_eq!(simulation.cell(actor).unwrap().assimilated_energy, 97);
+    assert_eq!(simulation.cell(actor).unwrap().assimilated_energy, 94);
     assert_eq!(
         simulation.tile_state(actor_tile).unwrap().signal_energy[2],
-        3
+        6
     );
     let observed = simulation
         .reference_mind_input(
@@ -749,11 +870,11 @@ fn local_signal_is_committed_with_the_action_and_decays_to_diffuse_energy() {
             blob_interface::randomness::PrivateRandom::from_bytes([0; 32]),
         )
         .unwrap();
-    assert_eq!(observed.slots[3].signal_energy.unwrap()[2], 3);
+    assert_eq!(observed.slots[3].signal_energy.unwrap()[2], 6);
     simulation.resolve_next_batch().unwrap();
     assert_eq!(
         simulation.tile_state(actor_tile).unwrap().signal_energy[2],
-        2
+        5
     );
     assert_eq!(simulation.tile_state(actor_tile).unwrap().diffuse_energy, 1);
     assert_eq!(simulation.total_energy_equivalent(), before);
@@ -764,7 +885,7 @@ fn local_signal_is_committed_with_the_action_and_decays_to_diffuse_energy() {
     partitioned.advance_clock_to(SimTime(1536)).unwrap();
     partitioned.advance_clock_to(SimTime(2048)).unwrap();
     assert_eq!(direct.canonical_state(), partitioned.canonical_state());
-    assert_eq!(direct.tile_state(actor_tile).unwrap().signal_energy[2], 1);
+    assert_eq!(direct.tile_state(actor_tile).unwrap().signal_energy[2], 4);
     assert_eq!(direct.tile_state(actor_tile).unwrap().diffuse_energy, 2);
 
     let before_invalid = simulation.state_hash();
@@ -772,7 +893,10 @@ fn local_signal_is_committed_with_the_action_and_decays_to_diffuse_energy() {
         simulation.commit_decision_with_signal(
             observer,
             ActionRequest::Wait,
-            Some(ReferenceSignalEmission { channel: 4 }),
+            Some(ReferenceSignalEmission {
+                channel: 4,
+                amount: 3,
+            }),
             Vec::new(),
         ),
         Err(blob_engine::resolution::CommitError::InvalidSignal(_))
@@ -801,7 +925,10 @@ fn signal_cost_is_paid_before_primary_action_validation() {
                 payload: 1,
                 effort: EffortTier::Standard,
             },
-            Some(ReferenceSignalEmission { channel: 1 }),
+            Some(ReferenceSignalEmission {
+                channel: 1,
+                amount: 3,
+            }),
             Vec::new(),
         )
         .unwrap();
@@ -813,6 +940,118 @@ fn signal_cost_is_paid_before_primary_action_validation() {
         simulation.tile_state(actor_tile).unwrap().signal_energy[1],
         3
     );
+}
+
+#[test]
+fn explicit_signal_vector_is_variable_and_terrain_edits_erase_its_information() {
+    let mut rules = uniform_rules();
+    rules.signal_emission_cost = 2;
+    rules.signal_decay_rate_numerator = 1;
+    rules.signal_decay_rate_denominator = 1024;
+    rules.diffusion_rate_numerator = 0;
+    let mut simulation = ReferenceSimulation::new(1, 1, rules).unwrap();
+    let tile = simulation.tile(0, 0).unwrap();
+    let actor = simulation.add_cell(tile, 10, 100, 0).unwrap();
+    let before = simulation.total_energy_equivalent();
+
+    let receipt = simulation
+        .commit_action(
+            actor,
+            ActionRequest::Signal {
+                amounts: [2, 4, 0, 6],
+            },
+        )
+        .unwrap();
+    assert!(receipt.accepted);
+    assert_eq!(simulation.cell(actor).unwrap().assimilated_energy, 88);
+    assert_eq!(
+        simulation.tile_state(tile).unwrap().signal_energy,
+        [2, 4, 0, 6]
+    );
+    let report = simulation.resolve_next_batch().unwrap();
+    assert_eq!(report.outcomes[0].action, ActionKind::Signal);
+    assert_eq!(report.outcomes[0].status, OutcomeStatus::Success);
+
+    simulation.advance_clock_to(SimTime(1536)).unwrap();
+    assert!(simulation.tile_state(tile).unwrap().signal_decay_remainder[0] > 0);
+    simulation
+        .commit_action(actor, ActionRequest::Excavate)
+        .unwrap();
+    simulation.resolve_next_batch().unwrap();
+
+    let state = simulation.tile_state(tile).unwrap();
+    assert_eq!(state.signal_energy, [0; 4]);
+    assert_eq!(state.signal_decay_remainder, [0; 4]);
+    assert!(state.diffuse_energy >= 12);
+
+    simulation
+        .commit_action(
+            actor,
+            ActionRequest::Signal {
+                amounts: [0, 6, 0, 0],
+            },
+        )
+        .unwrap();
+    simulation.resolve_next_batch().unwrap();
+    assert!(simulation.tile_state(tile).unwrap().signal_energy[1] > 0);
+    simulation
+        .commit_action(actor, ActionRequest::DepositTerrain)
+        .unwrap();
+    simulation.resolve_next_batch().unwrap();
+    let state = simulation.tile_state(tile).unwrap();
+    assert_eq!(state.signal_energy, [0; 4]);
+    assert_eq!(state.signal_decay_remainder, [0; 4]);
+    assert_eq!(simulation.total_energy_equivalent(), before);
+}
+
+#[test]
+fn signal_deposits_reject_zero_nonquantized_and_double_emission_atomically() {
+    use blob_interface::reference_mind::ReferenceMemoryUpdate;
+
+    let mut rules = uniform_rules();
+    rules.signal_emission_cost = 3;
+    let mut simulation = ReferenceSimulation::new(1, 1, rules).unwrap();
+    let tile = simulation.tile(0, 0).unwrap();
+    let actor = simulation.add_cell(tile, 10, 100, 0).unwrap();
+    let before = simulation.state_hash();
+
+    for decision in [
+        DecisionCommitment {
+            actor,
+            request: ActionRequest::Wait,
+            signal: Some(ReferenceSignalEmission {
+                channel: 0,
+                amount: 0,
+            }),
+            memory_update: ReferenceMemoryUpdate::Retain,
+        },
+        DecisionCommitment {
+            actor,
+            request: ActionRequest::Wait,
+            signal: Some(ReferenceSignalEmission {
+                channel: 0,
+                amount: 4,
+            }),
+            memory_update: ReferenceMemoryUpdate::Retain,
+        },
+        DecisionCommitment {
+            actor,
+            request: ActionRequest::Signal {
+                amounts: [3, 0, 0, 0],
+            },
+            signal: Some(ReferenceSignalEmission {
+                channel: 1,
+                amount: 3,
+            }),
+            memory_update: ReferenceMemoryUpdate::Retain,
+        },
+    ] {
+        assert!(matches!(
+            simulation.commit_decisions_ordered(&[decision]),
+            Err(blob_engine::resolution::CommitError::InvalidSignal(_))
+        ));
+        assert_eq!(simulation.state_hash(), before);
+    }
 }
 
 #[test]

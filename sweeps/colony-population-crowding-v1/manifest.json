@@ -1,0 +1,238 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/colony_population_crowding_sweep.toml",
+  "spec_sha256": "df74bfe4987be29616b87e2f6dd54ccde0c7c8959e3a40713cf56f6045bf26a5",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1",
+  "seeds": [
+    1103,
+    2207,
+    3301
+  ],
+  "variants": [
+    {
+      "name": "crowding-1",
+      "description": "One initial cell per team on the fixed 16x16 resource field",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 1
+      }
+    },
+    {
+      "name": "crowding-2",
+      "description": "Two initial cells per team on the fixed 16x16 resource field",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 2
+      }
+    },
+    {
+      "name": "crowding-4",
+      "description": "Four initial cells per team on the fixed 16x16 resource field",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 4
+      }
+    },
+    {
+      "name": "crowding-8",
+      "description": "Eight initial cells per team on the fixed 16x16 resource field",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 8
+      }
+    },
+    {
+      "name": "crowding-16",
+      "description": "Sixteen initial cells per team on the fixed 16x16 resource field",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 16
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "crowding-1",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "f88448bae9342da8e192c9890905cb32090aab28a78e366812ff249a19446dd5",
+      "experiment_config_sha256": "e1c74d5f751351d45b9f42d68c1abb79419ddb744ba40db50b6d87997617c716",
+      "config_file_sha256": "593246cea47d80b964a2afd10b9fa8016e3d7674362ce97d4738aabb5bfcf437",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-1/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-1/seed-1103/config.toml"
+    },
+    {
+      "variant": "crowding-1",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "f88448bae9342da8e192c9890905cb32090aab28a78e366812ff249a19446dd5",
+      "experiment_config_sha256": "23759a7fbc4330e67888423ef8ed019371b88f47f8f868524f17b6d7c4f00415",
+      "config_file_sha256": "703322140adb1331429d8605d5032b8fb9df756de3945bc01324e860abf7f485",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-1/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-1/seed-2207/config.toml"
+    },
+    {
+      "variant": "crowding-1",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "f88448bae9342da8e192c9890905cb32090aab28a78e366812ff249a19446dd5",
+      "experiment_config_sha256": "6a0813543b7f2a9cf53efc8f20794dfe9c98aa5ad38cbb2321adf45b830160c1",
+      "config_file_sha256": "7f5b5cccb004e000c10ca2cd2558ae27a98412036fa72bab7576e524e5c3cc8e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-1/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-1/seed-3301/config.toml"
+    },
+    {
+      "variant": "crowding-2",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "00b4dc238660a1ff1e91c1f1dfe5040c8b8edbb962af291cda2bcf297d8bf461",
+      "config_file_sha256": "d44faf70baf66e5cb3e38be906417e539bcd015fd3af4463e7fd6500b0c1aac0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-2/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-2/seed-1103/config.toml"
+    },
+    {
+      "variant": "crowding-2",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "c1d7700d140248546f887c3e64d08421d09f5273ea6696567f94bacd593da471",
+      "config_file_sha256": "1cdd5525c3d05a6a582213c4eef76eb9d5194f307860883b27d219f1e922d20c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-2/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-2/seed-2207/config.toml"
+    },
+    {
+      "variant": "crowding-2",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "6fafbb221cc7b173efbd464f6a9787074f33d3e3110dd3315e4572238c5128ec",
+      "experiment_config_sha256": "dba71d49dc3493f1e332763bbc2a0660eaeeb26360a6b85984f8b01b601a1dea",
+      "config_file_sha256": "61d7188d04b801a07709485a1071e44f333c32f98138064825b74c0c98c5b30c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-2/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-2/seed-3301/config.toml"
+    },
+    {
+      "variant": "crowding-4",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "0de2f4b805e6cfa84d54f8eba24b833d35457684924b6ac9b6346e4f5e70a59f",
+      "experiment_config_sha256": "cd514158c2a291f2ff1311eca72f5721b3322f2ee7b0866c0f24a3de978b3ebb",
+      "config_file_sha256": "6a9702f2e48681fb0a6f800e4f7bda28a03a3d6185a9585f0a4f2c8ec9fe963c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-4/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-4/seed-1103/config.toml"
+    },
+    {
+      "variant": "crowding-4",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "0de2f4b805e6cfa84d54f8eba24b833d35457684924b6ac9b6346e4f5e70a59f",
+      "experiment_config_sha256": "ca52f76cffec2b0737be47e4a2aae150677e723ab8d7f9ccf718e626842ef54c",
+      "config_file_sha256": "52eb9eaf06d4279c72af8455743e145828c46752caa6eadec2607a24afb0db2c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-4/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-4/seed-2207/config.toml"
+    },
+    {
+      "variant": "crowding-4",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "0de2f4b805e6cfa84d54f8eba24b833d35457684924b6ac9b6346e4f5e70a59f",
+      "experiment_config_sha256": "998c47c2a8dc451a31b7edab8c48eaadbf776fb2240dee2cc8723254fb4c1e8d",
+      "config_file_sha256": "8556df71a61db870830838f0a5bcf7ed181df9a11b40e6d71645e8eed232d9de",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-4/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-4/seed-3301/config.toml"
+    },
+    {
+      "variant": "crowding-8",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "df3435a2fbe0390f472721547489353f61918d5bcfca743c49130a78af7575bc",
+      "experiment_config_sha256": "62566f640dfc3efb5139e29e40c6eba99ad22d8ccf1dc588d07e52a20c1d7d38",
+      "config_file_sha256": "73683de47c28b4ede6f7e765c6b8f5572b9a87c649736816164879b1558aebf4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-8/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-8/seed-1103/config.toml"
+    },
+    {
+      "variant": "crowding-8",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "df3435a2fbe0390f472721547489353f61918d5bcfca743c49130a78af7575bc",
+      "experiment_config_sha256": "1d0d9766e7e940faffe88875139d84d1c8e2492488585f47dd30382bcfa593f5",
+      "config_file_sha256": "104311b8b18d48c3c3fdc715209ce1914eac585c9a3d4d4aea153b86a7a2c809",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-8/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-8/seed-2207/config.toml"
+    },
+    {
+      "variant": "crowding-8",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "df3435a2fbe0390f472721547489353f61918d5bcfca743c49130a78af7575bc",
+      "experiment_config_sha256": "4daf62efd1508b1efe7c435c62eab378052c699ab21de810e6562bc2027d3a7c",
+      "config_file_sha256": "44d33a11b3882f7b5ee064c1634f40018fd3cc3bc6fec29a1208ef4e30cb54d9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-8/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-8/seed-3301/config.toml"
+    },
+    {
+      "variant": "crowding-16",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "242a56f782b4b8178c20b843056b8851b014f07170c67678e5861daefc8ad19b",
+      "experiment_config_sha256": "699e3b600426a0927bd7e86b401ba6066f827d877d2ca892a9ee537849f41759",
+      "config_file_sha256": "cb4555371eb7d099377286c83206aad6ca8056be5eda6feb07cf6bacd36ca9fe",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-16/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-16/seed-1103/config.toml"
+    },
+    {
+      "variant": "crowding-16",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "242a56f782b4b8178c20b843056b8851b014f07170c67678e5861daefc8ad19b",
+      "experiment_config_sha256": "e6ec3d67cd820fdc4fe1355cf353e95b79f9b87c647c40dfd1c6ee00f9a7fe07",
+      "config_file_sha256": "aa4c5eaa086ff6fea58eae122d65ef3463ff874180008ea7fdfea8a15ce2c76f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-16/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-16/seed-2207/config.toml"
+    },
+    {
+      "variant": "crowding-16",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "797e62becf28487a37b1c39a003c28f27084271aff201e90c97e2e8a674cc0d7",
+      "scenario_hash": "242a56f782b4b8178c20b843056b8851b014f07170c67678e5861daefc8ad19b",
+      "experiment_config_sha256": "addd4d463285140fc5b2f1ed969cae2a1040ac95a9426e4070a8cea5f632cf33",
+      "config_file_sha256": "abff84554fbba15ce1788e70607cc3bb4f5a4cbb447e6b652d4897cfc282bbaf",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-16/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-crowding-v1/crowding-16/seed-3301/config.toml"
+    }
+  ]
+}

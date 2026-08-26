@@ -1,0 +1,258 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/colony_population_fragmentation_sweep.toml",
+  "spec_sha256": "46d2eaf367574a749a0b14ec9b76f93b7a4f02b39ff724068e5daeb03b97ffc4",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/control_eval.toml",
+  "base_config_sha256": "07b12ece05a7895c51af48bb53c6592ccd193bf7b1386fc57cfe3faf33054e7d",
+  "output_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1",
+  "seeds": [
+    1103,
+    2207,
+    3301
+  ],
+  "variants": [
+    {
+      "name": "fragment-1",
+      "description": "One cell with 400 total initial cellular mass-energy",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 1,
+        "initial_energy": 399,
+        "num_plants": 16,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    },
+    {
+      "name": "fragment-2",
+      "description": "Two cells sharing 400 total initial cellular mass-energy",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 2,
+        "initial_energy": 199,
+        "num_plants": 16,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    },
+    {
+      "name": "fragment-4",
+      "description": "Four cells sharing 400 total initial cellular mass-energy",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 4,
+        "initial_energy": 99,
+        "num_plants": 16,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    },
+    {
+      "name": "fragment-8",
+      "description": "Eight cells sharing 400 total initial cellular mass-energy",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 8,
+        "initial_energy": 49,
+        "num_plants": 16,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    },
+    {
+      "name": "fragment-16",
+      "description": "Sixteen cells sharing 400 total initial cellular mass-energy",
+      "rules": {},
+      "scenario": {
+        "cells_per_team": 16,
+        "initial_energy": 24,
+        "num_plants": 16,
+        "num_scattered_energy": 128,
+        "world_size": 32
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "fragment-1",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "1fa34fc69a4be616c3b0b40c04e20111e9602a03a5666c6fe521f2d39a489581",
+      "experiment_config_sha256": "d6266fd4e72c343acef55afba258e6d9552272f738b04457cb1f8770812b8ff2",
+      "config_file_sha256": "ab2ad15a30688249278202d6fbb01045aaddfb490bf1662cd64c19c192cea4a3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-1/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-1/seed-1103/config.toml"
+    },
+    {
+      "variant": "fragment-1",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "1fa34fc69a4be616c3b0b40c04e20111e9602a03a5666c6fe521f2d39a489581",
+      "experiment_config_sha256": "20cfc41ae89c7e77bd0e3888ae0ab91ae59eb1a61fd1d8479d433120d0fc1a1b",
+      "config_file_sha256": "40bf00d4c3e2d5b01b913bf7252e786ebdad3e6ec0b02261a99b9a83ff2a58ad",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-1/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-1/seed-2207/config.toml"
+    },
+    {
+      "variant": "fragment-1",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "1fa34fc69a4be616c3b0b40c04e20111e9602a03a5666c6fe521f2d39a489581",
+      "experiment_config_sha256": "5d22717bef39a6ff5e1ec7fa31c7e43c3031226f3818c841b9f67f51efafd411",
+      "config_file_sha256": "f42c0904b2345584c1ca91fb0f8be2374d48a4aa81d0cec4e16415b5e51dcfcb",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-1/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-1/seed-3301/config.toml"
+    },
+    {
+      "variant": "fragment-2",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "a4da9460db74c624d848c33159ace537bcbb64b7b4a15b502a160e456f1972d2",
+      "experiment_config_sha256": "43762bcc3bb784a9b7771fb4ac0967c30e5a35b234bac7455fa0dc78823a1d6e",
+      "config_file_sha256": "1e83f0f601c097080253dfa2964369983949f4553e4fc67714f5344ebab82e44",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-2/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-2/seed-1103/config.toml"
+    },
+    {
+      "variant": "fragment-2",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "a4da9460db74c624d848c33159ace537bcbb64b7b4a15b502a160e456f1972d2",
+      "experiment_config_sha256": "02c74d95de56117e574f2ecaff796a70b36fe6704ac75292ca170c8b9d07b6aa",
+      "config_file_sha256": "85e94fe944902bdcaa88c852ab850475b9be5d973ab2875e736fb912c178d51e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-2/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-2/seed-2207/config.toml"
+    },
+    {
+      "variant": "fragment-2",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "a4da9460db74c624d848c33159ace537bcbb64b7b4a15b502a160e456f1972d2",
+      "experiment_config_sha256": "712ba31f224538bb37a9a43afd34c82b939e4baf6cb7e764083a1b540428fa28",
+      "config_file_sha256": "b9034d66567b55a91c70b239803a39053bf5cb280f92ced0ce30af38c111bf04",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-2/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-2/seed-3301/config.toml"
+    },
+    {
+      "variant": "fragment-4",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "13d561fec30ca767a38d796f8700e9e142fc339d2f11199a6acb09a342878adc",
+      "experiment_config_sha256": "004473eed7b678506da44ca734340f9ef97f4b5eaaae560be9ada05c629c0e9f",
+      "config_file_sha256": "7927ce37f2c783997c929f88d5dd888bebffd18227b340da2d594168c0c5ef2d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-4/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-4/seed-1103/config.toml"
+    },
+    {
+      "variant": "fragment-4",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "13d561fec30ca767a38d796f8700e9e142fc339d2f11199a6acb09a342878adc",
+      "experiment_config_sha256": "beca32a95ba0d18e3052c1f4d7955e5432a47daf085cb21e7196068b79b06f5a",
+      "config_file_sha256": "1a40020d6b4e21c907529168630b8708d1d46f141cd61b5e9f58901ec8b36067",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-4/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-4/seed-2207/config.toml"
+    },
+    {
+      "variant": "fragment-4",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "13d561fec30ca767a38d796f8700e9e142fc339d2f11199a6acb09a342878adc",
+      "experiment_config_sha256": "c0e2e421fabdc6598c5f1d49b30111ecb60c8618881ed98fcc334b6cd82955e0",
+      "config_file_sha256": "d3301d47c8724ba2afe7b07d237ed5c3bdaae886d5785b98e99111c32db8143c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-4/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-4/seed-3301/config.toml"
+    },
+    {
+      "variant": "fragment-8",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "fa17db861e555fba68a293f2859d9f5e017f06a81e5a40b570e89dd3e3487f5d",
+      "experiment_config_sha256": "658cd7954c70716e4780ca5b12b573155ae6f7a426b8aedbfbfc024e234dc3b2",
+      "config_file_sha256": "095483d37ae13e7e02df3c96c821f70434bd3a6f2af68bdd4ac4970e9912f30a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-8/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-8/seed-1103/config.toml"
+    },
+    {
+      "variant": "fragment-8",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "fa17db861e555fba68a293f2859d9f5e017f06a81e5a40b570e89dd3e3487f5d",
+      "experiment_config_sha256": "ee6f9bf55d3a6bbca948df42a29993064c0e21096ba706cf91463b418610875a",
+      "config_file_sha256": "485b6ea39b2a11948e9188391ad62061bc9465bdc0139314ab7627f1346ac31c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-8/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-8/seed-2207/config.toml"
+    },
+    {
+      "variant": "fragment-8",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "fa17db861e555fba68a293f2859d9f5e017f06a81e5a40b570e89dd3e3487f5d",
+      "experiment_config_sha256": "e4cb36ac865d7aace8e724f761cef9c9939d274694be15712a194ed36d78a59b",
+      "config_file_sha256": "957c741423e1ea65e90f1b6c1b1fa231d88c67d582b0ea63ee543939d08d4f89",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-8/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-8/seed-3301/config.toml"
+    },
+    {
+      "variant": "fragment-16",
+      "replicate": 0,
+      "training_seed": 1103,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "2fee36413379c1821972ffb07d8bc9565a6aeb8a75461e023ac1b106523e4c4e",
+      "experiment_config_sha256": "1ac1b2576d69d24173f2413c522dcc2ef9290ec2b8c25a1489fda0ba376491d4",
+      "config_file_sha256": "b1e380cc536b0749427b9da26555c2da8d2b537e819fe42772831f8c097f5ef9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-16/seed-1103",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-16/seed-1103/config.toml"
+    },
+    {
+      "variant": "fragment-16",
+      "replicate": 1,
+      "training_seed": 2207,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "2fee36413379c1821972ffb07d8bc9565a6aeb8a75461e023ac1b106523e4c4e",
+      "experiment_config_sha256": "53d5868ac650e170fd719da7560c34828670e5abb8de2273b8d9bbafa78c808a",
+      "config_file_sha256": "423305e91a703c66f5ce0d4a92d739aa84a86a54808502c45828ce1df1bc6356",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-16/seed-2207",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-16/seed-2207/config.toml"
+    },
+    {
+      "variant": "fragment-16",
+      "replicate": 2,
+      "training_seed": 3301,
+      "semantic_ruleset_hash": "145d0331b02cb49614ea626743eeeeb9b516f46424432df3b0b1c0408792ede9",
+      "compiled_ruleset_hash": "6f63df4b34a542ae3294dffb8ae40648b75d437a0f528af4c846ced9de98d31f",
+      "scenario_hash": "2fee36413379c1821972ffb07d8bc9565a6aeb8a75461e023ac1b106523e4c4e",
+      "experiment_config_sha256": "f2a180da21832da706994c94da7eb253da017a3787b905e7057d77451525ba45",
+      "config_file_sha256": "7c5ee89789d1af2fe675a907daf660c274c4bd30e998f2cebc5afbc7cb115e07",
+      "run_directory": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-16/seed-3301",
+      "config_file": "/Users/adam/code/blobs/sweeps/colony-population-fragmentation-v1/fragment-16/seed-3301/config.toml"
+    }
+  ]
+}

@@ -18,13 +18,12 @@ use blob_interface::types::{CellId, Coordinate, TeamId};
 use blob_interface::world::{EnergySource, World};
 
 use crate::resolution::{
-    verify_replay_from_cursor, ActionRequest, BatchReport, BoundaryRule, CellColdState, CellKey,
-    CellState as ReferenceCellState, DecisionCommitment, IntegrityMode, NeighborhoodSpec,
-    ReferenceCheckpoint, ReferenceObservationBatch, ReferenceRuleset, ReferenceSimulation,
-    ReplayArchive, ReplayBatchEvent, ReplayBundle, ReplayBundleLimits, ReplayChainCursor,
-    ReplayCommitment, ReplayLimits, ReplayManifest, ReplayManifestLimits, ReplayRecorder,
-    ReplaySegment, ReplaySegmentDescriptor, ReplaySegmentLimits, SimTime, SimulationState,
-    TileIndex, TileState,
+    verify_replay_from_cursor, ActionRequest, BatchReport, CellColdState, CellKey,
+    CellState as ReferenceCellState, DecisionCommitment, IntegrityMode, ReferenceCheckpoint,
+    ReferenceObservationBatch, ReferenceRuleset, ReferenceSimulation, ReplayArchive,
+    ReplayBatchEvent, ReplayBundle, ReplayBundleLimits, ReplayChainCursor, ReplayCommitment,
+    ReplayLimits, ReplayManifest, ReplayManifestLimits, ReplayRecorder, ReplaySegment,
+    ReplaySegmentDescriptor, ReplaySegmentLimits, SimTime, SimulationState, TileIndex, TileState,
 };
 
 /// Configuration for cell behavior
@@ -237,12 +236,9 @@ impl Engine {
         cell_config: CellConfig,
         seed: Option<u64>,
         match_secret: [u8; 32],
-        mut rules: ReferenceRuleset,
+        rules: ReferenceRuleset,
     ) -> Self {
         let actual_seed = seed.unwrap_or(0);
-        rules.neighborhood = NeighborhoodSpec::moore_8(BoundaryRule::Wrap);
-        rules.child_core_mass = u64::from(cell_config.min_energy);
-        rules.minimum_survival_energy = 1;
         Engine {
             world: World::new(world_width, world_height),
             reference_minds: HashMap::new(),
@@ -951,6 +947,87 @@ impl Engine {
             .map_err(|error| error.to_string())
     }
 
+    /// Prepare independently owned canonical inputs for a trusted host that
+    /// will invoke Minds outside the engine, advancing private decision
+    /// sequences exactly once. Inputs stay anonymous; `CellId` is returned
+    /// only as host routing metadata and is never embedded in an input.
+    ///
+    /// Preparation is transactional: validation or projection failure restores
+    /// every sequence. A caller must pass every returned decision to the next
+    /// `tick_reference_with_overrides` call and treat a later tick failure as
+    /// fatal, matching the external-Wasm host contract.
+    pub fn prepare_reference_mind_inputs(
+        &mut self,
+        cell_ids: &[CellId],
+    ) -> Result<Vec<(CellId, ReferenceMindInput)>, String> {
+        let simulation = self
+            .reference_simulation
+            .as_ref()
+            .ok_or("reference simulation was not initialized")?;
+        let mut sorted = cell_ids.to_vec();
+        sorted.sort_unstable_by_key(|cell_id| cell_id.0);
+        if sorted.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err("reference Mind input batch contains duplicate cells".into());
+        }
+
+        let mut invocations = Vec::with_capacity(sorted.len());
+        for cell_id in &sorted {
+            let actor = CellKey(
+                u64::try_from(cell_id.0).map_err(|_| "cell ID does not fit reference key")?,
+            );
+            let canonical = simulation
+                .cells()
+                .get(&actor)
+                .ok_or("reference Mind input cell is not canonical")?;
+            if !canonical.is_ready_at(simulation.now()) {
+                return Err("reference Mind input cell is not ready".into());
+            }
+            let cell = self
+                .cells
+                .get(cell_id)
+                .ok_or("reference Mind input cell is not host-visible")?;
+            let next_sequence = cell
+                .decision_sequence
+                .checked_add(1)
+                .ok_or("cell decision sequence overflow")?;
+            invocations.push((
+                *cell_id,
+                actor,
+                cell.random_lineage,
+                cell.decision_sequence,
+                next_sequence,
+            ));
+        }
+
+        for (cell_id, _, _, _, next_sequence) in &invocations {
+            self.cells
+                .get_mut(cell_id)
+                .expect("preflighted reference Mind cell disappeared")
+                .decision_sequence = *next_sequence;
+        }
+
+        let deriver = PrivateRandomDeriver::new(&self.match_secret);
+        let observations = simulation.observation_batch();
+        let projected = invocations
+            .iter()
+            .map(|(cell_id, actor, lineage, sequence, _)| {
+                observations
+                    .reference_mind_input(*actor, deriver.derive(*lineage, *sequence))
+                    .map(|input| (*cell_id, input))
+                    .map_err(|error| error.to_string())
+            })
+            .collect::<Result<Vec<_>, _>>();
+        if let Err(error) = projected {
+            for (cell_id, _, _, sequence, _) in invocations {
+                if let Some(cell) = self.cells.get_mut(&cell_id) {
+                    cell.decision_sequence = sequence;
+                }
+            }
+            return Err(error);
+        }
+        projected
+    }
+
     /// Replaces the pre-match host projection before the canonical resolver
     /// has imported it. This is used by external Mind hosts such as
     /// `blob_game`; mutation is rejected once authoritative execution starts.
@@ -988,6 +1065,23 @@ impl Engine {
         team_id: TeamId,
         minds: Vec<R>,
     ) -> Result<(), String> {
+        self.add_team_with_boxed_minds(
+            team_id,
+            minds
+                .into_iter()
+                .map(|mind| Box::new(mind) as Box<dyn ReferenceMind>)
+                .collect(),
+        )
+    }
+
+    /// Type-erased form used by hosts that select among multiple native Mind
+    /// implementations at runtime. Every instance still crosses the exact
+    /// `ReferenceMind` boundary and is reset before each invocation.
+    pub fn add_team_with_boxed_minds(
+        &mut self,
+        team_id: TeamId,
+        minds: Vec<Box<dyn ReferenceMind>>,
+    ) -> Result<(), String> {
         if self.reference_simulation.is_some() || self.iteration != 0 {
             return Err("cannot add a team after authoritative execution starts".into());
         }
@@ -997,13 +1091,7 @@ impl Engine {
         if self.reference_minds.contains_key(&team_id) {
             return Err("team already has a Mind pool".into());
         }
-        self.reference_minds.insert(
-            team_id,
-            minds
-                .into_iter()
-                .map(|mind| Box::new(mind) as Box<dyn ReferenceMind>)
-                .collect(),
-        );
+        self.reference_minds.insert(team_id, minds);
         self.place_team_cluster(team_id)?;
         Ok(())
     }
@@ -1088,7 +1176,7 @@ impl Engine {
         &mut self,
         eligible: &[CellId],
         overrides: &HashMap<CellId, ReferenceMindDecision>,
-    ) -> Result<(Vec<GatheredReferenceDecision>, u64, u64, u64, u64, bool), String> {
+    ) -> Result<GatheredReferenceBatch, String> {
         let mut all_decisions = Vec::with_capacity(eligible.len());
         let mut work_by_team: HashMap<TeamId, Vec<(CellId, u64, u64, bool)>> = HashMap::new();
         let mut cell_ids = eligible.to_vec();
@@ -1200,23 +1288,21 @@ impl Engine {
                 team_total_work_ns += u128::from(result.total_ns);
                 all_decisions.extend(result.decisions);
             }
-            let projected_wall_ns = if team_total_work_ns == 0 {
-                0
-            } else {
-                u64::try_from(
-                    u128::from(team_wall_ns) * team_projection_work_ns / team_total_work_ns,
-                )
-                .unwrap_or(u64::MAX)
-            };
+            let projected_wall_ns = u64::try_from(
+                u128::from(team_wall_ns)
+                    .saturating_mul(team_projection_work_ns)
+                    .checked_div(team_total_work_ns)
+                    .unwrap_or(0),
+            )
+            .unwrap_or(u64::MAX);
             observation_projection_ns = observation_projection_ns.saturating_add(projected_wall_ns);
-            let randomness_wall_ns = if team_total_work_ns == 0 {
-                0
-            } else {
-                u64::try_from(
-                    u128::from(team_wall_ns) * team_randomness_work_ns / team_total_work_ns,
-                )
-                .unwrap_or(u64::MAX)
-            };
+            let randomness_wall_ns = u64::try_from(
+                u128::from(team_wall_ns)
+                    .saturating_mul(team_randomness_work_ns)
+                    .checked_div(team_total_work_ns)
+                    .unwrap_or(0),
+            )
+            .unwrap_or(u64::MAX);
             randomness_derivation_ns = randomness_derivation_ns.saturating_add(randomness_wall_ns);
         }
         let mind_execution_ns = pipeline_started
@@ -1225,14 +1311,14 @@ impl Engine {
             .saturating_sub(observation_projection_ns);
         let mind_execution_ns = mind_execution_ns.saturating_sub(randomness_derivation_ns);
         all_decisions.sort_by_key(|decision| decision.cell_id.0);
-        Ok((
-            all_decisions,
+        Ok(GatheredReferenceBatch {
+            decisions: all_decisions,
             observation_index_ns,
             observation_projection_ns,
             randomness_derivation_ns,
             mind_execution_ns,
             parallel_observation,
-        ))
+        })
     }
 
     fn tick_reference(
@@ -1276,14 +1362,7 @@ impl Engine {
             })
             .collect();
         let ready_frontier_ns = ready_started.elapsed_ns();
-        let (
-            reference_decisions,
-            observation_index_ns,
-            observation_projection_ns,
-            randomness_derivation_ns,
-            mind_execution_ns,
-            parallel_observation,
-        ) = match self.gather_reference_decisions(&ready_cells, reference_overrides) {
+        let gathered = match self.gather_reference_decisions(&ready_cells, reference_overrides) {
             Ok(gathered) => gathered,
             Err(error) => {
                 for (cell_id, sequence) in decision_sequences_before {
@@ -1294,6 +1373,12 @@ impl Engine {
                 return Err(error);
             }
         };
+        let reference_decisions = gathered.decisions;
+        let observation_index_ns = gathered.observation_index_ns;
+        let observation_projection_ns = gathered.observation_projection_ns;
+        let randomness_derivation_ns = gathered.randomness_derivation_ns;
+        let mind_execution_ns = gathered.mind_execution_ns;
+        let parallel_observation = gathered.parallel_observation;
 
         let commit_started = HostPhaseTimer::start();
         let mut decision_commitments = Vec::with_capacity(ready_cells.len());
@@ -1848,8 +1933,7 @@ impl Engine {
             project_reference_tile(&mut self.world, tile.0, state)?;
         }
 
-        let mut events = TickEvents::default();
-        events.reference_projection_cells = merge_sorted_unique(
+        let reference_projection_cells = merge_sorted_unique(
             report.delta.cells.iter().map(|delta| delta.cell),
             passive_cells.iter().copied(),
         )
@@ -1860,10 +1944,15 @@ impl Engine {
                 .map_err(|_| "cell key does not fit CellId".to_string())
         })
         .collect::<Result<_, _>>()?;
-        events.reference_projection_tiles = merge_sorted_unique(
+        let reference_projection_tiles = merge_sorted_unique(
             report.delta.tiles.iter().map(|delta| delta.tile.0),
             passive_tiles.iter().map(|tile| tile.0),
         );
+        let mut events = TickEvents {
+            reference_projection_cells,
+            reference_projection_tiles,
+            ..TickEvents::default()
+        };
         for (parent, child) in &report.births {
             events.splits.push((
                 CellId(usize::try_from(parent.0).map_err(|_| "parent key overflow")?),
@@ -2029,6 +2118,15 @@ struct GatheredReferenceDecision {
     cell_id: CellId,
     decision: ReferenceMindDecision,
     host_visible_noop: bool,
+}
+
+struct GatheredReferenceBatch {
+    decisions: Vec<GatheredReferenceDecision>,
+    observation_index_ns: u64,
+    observation_projection_ns: u64,
+    randomness_derivation_ns: u64,
+    mind_execution_ns: u64,
+    parallel_observation: bool,
 }
 
 struct ReferenceDecisionChunk {
@@ -2246,7 +2344,9 @@ fn project_reference_tile(world: &mut World, index: usize, tile: &TileState) -> 
 mod tests {
     use super::*;
     use crate::native_minds::RandomMind;
-    use crate::resolution::{DurationRule, OutcomeStatus, ReferenceReplayDriver};
+    use crate::resolution::{
+        BoundaryRule, DurationRule, NeighborhoodSpec, OutcomeStatus, ReferenceReplayDriver,
+    };
 
     fn create_test_engine(seed: u64) -> Engine {
         Engine::new(
@@ -2296,6 +2396,20 @@ mod tests {
         assert_eq!(engine.iteration, 0);
         assert!(engine.cells.is_empty());
         assert!(engine.reference_minds.is_empty());
+    }
+
+    #[test]
+    fn engine_preserves_every_caller_configured_rule() {
+        let rules = ReferenceRuleset {
+            neighborhood: NeighborhoodSpec::moore_8(BoundaryRule::Bounded),
+            child_core_mass: 17,
+            minimum_survival_energy: 3,
+            bite_capacity: 9,
+            ..ReferenceRuleset::default()
+        };
+        let mut engine = Engine::new(4, 4, 10, CellConfig::default(), Some(1), rules.clone());
+        engine.initialize_reference_state().unwrap();
+        assert_eq!(engine.reference_simulation().unwrap().rules(), &rules);
     }
 
     #[test]

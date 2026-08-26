@@ -1,0 +1,571 @@
+{
+  "schema_version": 3,
+  "package_version": "0.1.0",
+  "code_revision": "7ded31a692297ddcd7fff73b5e55f20f6ceafff3+dirty",
+  "characterization_hash": "bddf34d64639cf5a21c2cd4eaa9757f0283d4805b1716780a8c7b4eaebcaad2b",
+  "results_hash": "2a0ef71c305ab47600623f514e7573b5225d261c73c46d005e5ef1309e858c76",
+  "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+  "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+  "scenario_hash": "5f49b8d91e241f4dcf475f76d72e0a4a6a227b3fccc4ea6e55325d12a05c75b8",
+  "scenario": {
+    "world_size": 64,
+    "cells_per_team": 12,
+    "victory": {
+      "immediate": "extermination",
+      "deadline": "draw",
+      "sim_time_limit_quanta": 1048576
+    },
+    "num_teams": 2,
+    "min_energy": 10,
+    "initial_energy": 100,
+    "num_scattered_energy": 200,
+    "scattered_energy_amount": 25,
+    "num_plants": 50,
+    "plant_rate": 3,
+    "plant_max_energy": 100
+  },
+  "rules": {
+    "neighborhood": {
+      "slots": [
+        {
+          "dx": -1,
+          "dy": -1,
+          "distance_cost_q10": 1448
+        },
+        {
+          "dx": 0,
+          "dy": -1,
+          "distance_cost_q10": 1024
+        },
+        {
+          "dx": 1,
+          "dy": -1,
+          "distance_cost_q10": 1448
+        },
+        {
+          "dx": -1,
+          "dy": 0,
+          "distance_cost_q10": 1024
+        },
+        {
+          "dx": 1,
+          "dy": 0,
+          "distance_cost_q10": 1024
+        },
+        {
+          "dx": -1,
+          "dy": 1,
+          "distance_cost_q10": 1448
+        },
+        {
+          "dx": 0,
+          "dy": 1,
+          "distance_cost_q10": 1024
+        },
+        {
+          "dx": 1,
+          "dy": 1,
+          "distance_cost_q10": 1448
+        }
+      ],
+      "observations": {
+        "occupancy": 255,
+        "marker": 255,
+        "apparent_mass": 255,
+        "activity": 255,
+        "terrain": 255,
+        "energy": 255,
+        "signal": 255
+      },
+      "target_masks": [
+        255,
+        255,
+        255,
+        255
+      ],
+      "diagonal_corner_rule": "allow",
+      "boundary_rule": "wrap",
+      "max_radius": 1
+    },
+    "time": {
+      "arithmetic_quanta_per_unit": 1024,
+      "completion_bucket": 64,
+      "decision_interval_floor": 1024
+    },
+    "effort_profiles": [
+      {
+        "cost_numerator": 1,
+        "cost_denominator": 2,
+        "duration_numerator": 5,
+        "duration_denominator": 4
+      },
+      {
+        "cost_numerator": 1,
+        "cost_denominator": 1,
+        "duration_numerator": 1,
+        "duration_denominator": 1
+      },
+      {
+        "cost_numerator": 2,
+        "cost_denominator": 1,
+        "duration_numerator": 3,
+        "duration_denominator": 4
+      }
+    ],
+    "wait_duration": {
+      "base_quanta": 1024,
+      "mass_quanta_numerator": 0,
+      "mass_units_denominator": 1
+    },
+    "move_duration": {
+      "base_quanta": 768,
+      "mass_quanta_numerator": 4,
+      "mass_units_denominator": 1
+    },
+    "attack_duration": {
+      "base_quanta": 640,
+      "mass_quanta_numerator": 3,
+      "mass_units_denominator": 1
+    },
+    "consume_duration": {
+      "base_quanta": 768,
+      "mass_quanta_numerator": 1,
+      "mass_units_denominator": 1
+    },
+    "split_duration": {
+      "base_quanta": 1024,
+      "mass_quanta_numerator": 2,
+      "mass_units_denominator": 1
+    },
+    "regurgitate_duration": {
+      "base_quanta": 768,
+      "mass_quanta_numerator": 1,
+      "mass_units_denominator": 1
+    },
+    "excavate_duration": {
+      "base_quanta": 1024,
+      "mass_quanta_numerator": 2,
+      "mass_units_denominator": 1
+    },
+    "deposit_terrain_duration": {
+      "base_quanta": 1024,
+      "mass_quanta_numerator": 2,
+      "mass_units_denominator": 1
+    },
+    "move_effort_base": 1,
+    "move_mass_units_per_effort": 100,
+    "attack_effort_base": 2,
+    "guard_effort_base": 1,
+    "consume_effort_base": 1,
+    "split_effort_base": 2,
+    "regurgitate_effort_base": 1,
+    "excavate_effort_base": 2,
+    "deposit_terrain_effort_base": 2,
+    "bite_capacity": 16,
+    "gut_capacity": 64,
+    "digestion_rate_numerator": 1,
+    "digestion_rate_denominator": 256,
+    "metabolism_rate_numerator": 1,
+    "metabolism_rate_denominator": 1024,
+    "signal_emission_cost": 1,
+    "signal_decay_rate_numerator": 1,
+    "signal_decay_rate_denominator": 1024,
+    "diffusion_interval_quanta": 1024,
+    "diffusion_rate_numerator": 1,
+    "diffusion_rate_denominator": 4,
+    "diffusion_targets": 90,
+    "terrain_mass_per_elevation": 10,
+    "minimum_survival_energy": 1,
+    "child_core_mass": 10,
+    "maximum_elevation_delta": 1,
+    "guard_damage_numerator": 1,
+    "guard_damage_denominator": 2,
+    "attack_payload_damage_numerator": 1,
+    "attack_payload_damage_denominator": 1,
+    "attack_mass_damage_numerator": 0,
+    "attack_mass_damage_denominator": 1,
+    "apparent_mass_bucket_width": 32,
+    "max_private_memory_bytes": 2048
+  },
+  "options": {
+    "seeds": [
+      700,
+      701,
+      702,
+      703,
+      704,
+      705,
+      706,
+      707
+    ],
+    "max_micro_actions": 1000
+  },
+  "stationary_lifetime_quanta": 102400,
+  "travel": [
+    {
+      "effort": "low",
+      "completed_moves": 43,
+      "completed_distance_q10": 44032,
+      "travel_time_quanta": 55232,
+      "death_time_quanta": 55296,
+      "final_assimilated_energy": 0,
+      "censored": false
+    },
+    {
+      "effort": "standard",
+      "completed_moves": 31,
+      "completed_distance_q10": 31744,
+      "travel_time_quanta": 33472,
+      "death_time_quanta": 33792,
+      "final_assimilated_energy": 0,
+      "censored": false
+    },
+    {
+      "effort": "high",
+      "completed_moves": 19,
+      "completed_distance_q10": 19456,
+      "travel_time_quanta": 19456,
+      "death_time_quanta": 20480,
+      "final_assimilated_energy": 0,
+      "censored": false
+    }
+  ],
+  "distance_to_plants": {
+    "source_tiles_across_seeds": 400,
+    "move_steps": {
+      "samples": 96,
+      "reachable_samples": 96,
+      "unreachable_samples": 0,
+      "mean": 4.291666666666667,
+      "p50": 4.0,
+      "p90": 7.0,
+      "maximum": 9.0
+    },
+    "weighted_distance_units": {
+      "samples": 96,
+      "reachable_samples": 96,
+      "unreachable_samples": 0,
+      "mean": 4.982828776041667,
+      "p50": 4.828125,
+      "p90": 8.828125,
+      "maximum": 10.65625
+    }
+  },
+  "distance_to_major_food": {
+    "source_tiles_across_seeds": 2000,
+    "move_steps": {
+      "samples": 96,
+      "reachable_samples": 96,
+      "unreachable_samples": 0,
+      "mean": 1.8125,
+      "p50": 2.0,
+      "p90": 3.0,
+      "maximum": 4.0
+    },
+    "weighted_distance_units": {
+      "samples": 96,
+      "reachable_samples": 96,
+      "unreachable_samples": 0,
+      "mean": 2.1057942708333335,
+      "p50": 2.0,
+      "p90": 3.828125,
+      "maximum": 4.4140625
+    }
+  },
+  "attack_volleys": [
+    {
+      "effort": "low",
+      "full_strength_payload": 98,
+      "maximum_local_attackers": 8,
+      "single_attack_lands": false,
+      "single_attacker_survives": false,
+      "single_attack_raw_damage": 0,
+      "single_attack_applied_damage": 0,
+      "unguarded_attackers_required": null,
+      "guarded_attackers_required": null,
+      "unguarded_victim_energy_at_volley": 100,
+      "guarded_victim_energy_at_volley": 98
+    },
+    {
+      "effort": "standard",
+      "full_strength_payload": 97,
+      "maximum_local_attackers": 8,
+      "single_attack_lands": true,
+      "single_attacker_survives": false,
+      "single_attack_raw_damage": 97,
+      "single_attack_applied_damage": 97,
+      "unguarded_attackers_required": 2,
+      "guarded_attackers_required": 2,
+      "unguarded_victim_energy_at_volley": 100,
+      "guarded_victim_energy_at_volley": 98
+    },
+    {
+      "effort": "high",
+      "full_strength_payload": 95,
+      "maximum_local_attackers": 8,
+      "single_attack_lands": true,
+      "single_attacker_survives": false,
+      "single_attack_raw_damage": 95,
+      "single_attack_applied_damage": 95,
+      "unguarded_attackers_required": 2,
+      "guarded_attackers_required": 3,
+      "unguarded_victim_energy_at_volley": 100,
+      "guarded_victim_energy_at_volley": 98
+    }
+  ],
+  "feeding_cycle": {
+    "requested_energy": 16,
+    "consumed_energy": 16,
+    "consume_effort_spent": 1,
+    "consume_completion_quanta": 1024,
+    "digestion_completion_quanta": 5120,
+    "energy_before_consume": 100,
+    "energy_after_commit": 99,
+    "energy_after_digestion": 110,
+    "gut_after_consume": 16,
+    "gut_after_digestion": 0,
+    "survived_full_digestion": true
+  },
+  "reproduction_break_even": {
+    "minimum_child_allocation": 11,
+    "minimum_commit_energy": 14,
+    "minimum_successful_parent_energy": 15,
+    "split_effort_spent": 2,
+    "split_completion_quanta": 1088,
+    "parent_energy_after_split": 1,
+    "child_energy_after_split": 1
+  },
+  "terrain_cycle": {
+    "initial_energy": 100,
+    "material_mass_per_elevation": 10,
+    "excavation_succeeded": true,
+    "deposition_succeeded": true,
+    "excavation_effort_spent": 2,
+    "deposition_effort_spent": 2,
+    "total_completion_quanta": 2560,
+    "final_energy": 94,
+    "final_carried_material_mass": 0,
+    "elevation_restored": true
+  },
+  "signals": {
+    "emission_quantum": 1,
+    "neighbor_observation_slots": 8,
+    "minimum_distinct_observable_neighbors": 8,
+    "maximum_distinct_observable_neighbors": 8,
+    "directed_observation_edges": 32768,
+    "impulse_trials": [
+      {
+        "strength_multiplier": 1,
+        "requested_energy": 1,
+        "accepted": true,
+        "actor_energy_after_commit": 99,
+        "action_completion_quanta": 1024,
+        "field_energy_after_commit": 1,
+        "field_energy_after_completion": 0,
+        "decayed_during_action": 1,
+        "time_to_half_energy_quanta": 1024,
+        "time_to_extinction_quanta": 1024
+      },
+      {
+        "strength_multiplier": 2,
+        "requested_energy": 2,
+        "accepted": true,
+        "actor_energy_after_commit": 98,
+        "action_completion_quanta": 1024,
+        "field_energy_after_commit": 2,
+        "field_energy_after_completion": 1,
+        "decayed_during_action": 1,
+        "time_to_half_energy_quanta": 1024,
+        "time_to_extinction_quanta": 2048
+      },
+      {
+        "strength_multiplier": 4,
+        "requested_energy": 4,
+        "accepted": true,
+        "actor_energy_after_commit": 96,
+        "action_completion_quanta": 1024,
+        "field_energy_after_commit": 4,
+        "field_energy_after_completion": 3,
+        "decayed_during_action": 1,
+        "time_to_half_energy_quanta": 2048,
+        "time_to_extinction_quanta": 4096
+      },
+      {
+        "strength_multiplier": 8,
+        "requested_energy": 8,
+        "accepted": true,
+        "actor_energy_after_commit": 92,
+        "action_completion_quanta": 1024,
+        "field_energy_after_commit": 8,
+        "field_energy_after_completion": 7,
+        "decayed_during_action": 1,
+        "time_to_half_energy_quanta": 4096,
+        "time_to_extinction_quanta": 8192
+      },
+      {
+        "strength_multiplier": 16,
+        "requested_energy": 16,
+        "accepted": true,
+        "actor_energy_after_commit": 84,
+        "action_completion_quanta": 1024,
+        "field_energy_after_commit": 16,
+        "field_energy_after_completion": 15,
+        "decayed_during_action": 1,
+        "time_to_half_energy_quanta": 8192,
+        "time_to_extinction_quanta": 16384
+      }
+    ],
+    "terrain_disruption": {
+      "strength_multiplier": 16,
+      "emitted_energy": 16,
+      "signal_before_terrain_action": 15,
+      "decayed_during_terrain_action": 1,
+      "erased_by_terrain_action": 14,
+      "signal_after_terrain_action": 0,
+      "diffuse_energy_after_terrain_action": 20,
+      "terrain_action_succeeded": true
+    }
+  },
+  "sustained_siege": {
+    "attacker_effort": "high",
+    "payload_fraction_numerator": 1,
+    "payload_fraction_denominator": 4,
+    "time_limit_quanta": 1048576,
+    "maximum_local_attackers": 8,
+    "minimum_attackers_to_kill": 3,
+    "trials": [
+      {
+        "attackers": 1,
+        "victim_killed": false,
+        "elapsed_quanta": 6144,
+        "completed_attacks": 6,
+        "applied_damage": 45,
+        "completed_consumes": 3,
+        "completed_guards": 3,
+        "surviving_attackers": 1,
+        "victim_final_energy": 59,
+        "victim_final_gut_energy": 32,
+        "plant_final_energy": 63,
+        "censored": false
+      },
+      {
+        "attackers": 2,
+        "victim_killed": false,
+        "elapsed_quanta": 6144,
+        "completed_attacks": 12,
+        "applied_damage": 91,
+        "completed_consumes": 3,
+        "completed_guards": 3,
+        "surviving_attackers": 2,
+        "victim_final_energy": 13,
+        "victim_final_gut_energy": 32,
+        "plant_final_energy": 64,
+        "censored": false
+      },
+      {
+        "attackers": 3,
+        "victim_killed": true,
+        "elapsed_quanta": 3072,
+        "completed_attacks": 9,
+        "applied_damage": 98,
+        "completed_consumes": 1,
+        "completed_guards": 2,
+        "surviving_attackers": 3,
+        "victim_final_energy": null,
+        "victim_final_gut_energy": null,
+        "plant_final_energy": 87,
+        "censored": false
+      },
+      {
+        "attackers": 4,
+        "victim_killed": true,
+        "elapsed_quanta": 2048,
+        "completed_attacks": 8,
+        "applied_damage": 96,
+        "completed_consumes": 1,
+        "completed_guards": 1,
+        "surviving_attackers": 4,
+        "victim_final_energy": null,
+        "victim_final_gut_energy": null,
+        "plant_final_energy": 84,
+        "censored": false
+      },
+      {
+        "attackers": 5,
+        "victim_killed": true,
+        "elapsed_quanta": 2048,
+        "completed_attacks": 10,
+        "applied_damage": 96,
+        "completed_consumes": 1,
+        "completed_guards": 1,
+        "surviving_attackers": 5,
+        "victim_final_energy": null,
+        "victim_final_gut_energy": null,
+        "plant_final_energy": 84,
+        "censored": false
+      },
+      {
+        "attackers": 6,
+        "victim_killed": true,
+        "elapsed_quanta": 2048,
+        "completed_attacks": 12,
+        "applied_damage": 96,
+        "completed_consumes": 1,
+        "completed_guards": 1,
+        "surviving_attackers": 6,
+        "victim_final_energy": null,
+        "victim_final_gut_energy": null,
+        "plant_final_energy": 84,
+        "censored": false
+      },
+      {
+        "attackers": 7,
+        "victim_killed": true,
+        "elapsed_quanta": 2048,
+        "completed_attacks": 14,
+        "applied_damage": 96,
+        "completed_consumes": 1,
+        "completed_guards": 1,
+        "surviving_attackers": 7,
+        "victim_final_energy": null,
+        "victim_final_gut_energy": null,
+        "plant_final_energy": 84,
+        "censored": false
+      },
+      {
+        "attackers": 8,
+        "victim_killed": true,
+        "elapsed_quanta": 2048,
+        "completed_attacks": 16,
+        "applied_damage": 96,
+        "completed_consumes": 1,
+        "completed_guards": 1,
+        "surviving_attackers": 8,
+        "victim_final_energy": null,
+        "victim_final_gut_energy": null,
+        "plant_final_energy": 84,
+        "censored": false
+      }
+    ]
+  },
+  "collapse_indicators": {
+    "no_bidirectional_movement": false,
+    "no_plant_sources": false,
+    "some_starting_cells_cannot_reach_a_plant": false,
+    "median_plant_beyond_best_travel_endurance": false,
+    "p90_plant_beyond_best_travel_endurance": false,
+    "full_strength_high_attack_fails_to_land": false,
+    "initial_cell_cannot_establish_standard_guard": false,
+    "unguarded_initial_cell_survives_maximum_local_high_volley": false,
+    "guarded_initial_cell_survives_maximum_local_high_volley": false,
+    "maximum_bite_cannot_be_fully_digested": false,
+    "minimum_viable_reproduction_is_impossible": false,
+    "initial_cell_cannot_complete_terrain_cycle": false,
+    "plant_defender_survives_bounded_maximum_siege": false,
+    "signaling_disabled": false,
+    "minimum_signal_is_unaffordable": false,
+    "minimum_signal_expires_before_its_action_completes": true,
+    "no_neighbor_signal_observation_edges": false,
+    "terrain_disruption_probe_unavailable": false
+  }
+}

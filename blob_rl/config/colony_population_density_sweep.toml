@@ -1,0 +1,51 @@
+# Scale population, board area, and initial resource sources together. Board
+# sides approximate 8*sqrt(cells), keeping cell and resource density nearly
+# constant while increasing the absolute coordination problem.
+base_config = "control_eval.toml"
+output_dir = "../../sweeps/colony-population-density-v1"
+seeds = [1103, 2207, 3301]
+
+[[variants]]
+name = "density-1"
+description = "One cell on 8x8 with two plants and eight loose-energy sources"
+[variants.scenario]
+world_size = 8
+cells_per_team = 1
+num_scattered_energy = 8
+num_plants = 2
+
+[[variants]]
+name = "density-2"
+description = "Two cells on 12x12 with four plants and sixteen loose-energy sources"
+[variants.scenario]
+world_size = 12
+cells_per_team = 2
+num_scattered_energy = 16
+num_plants = 4
+
+[[variants]]
+name = "density-4"
+description = "Four cells on 16x16 with eight plants and thirty-two loose-energy sources"
+[variants.scenario]
+world_size = 16
+cells_per_team = 4
+num_scattered_energy = 32
+num_plants = 8
+
+[[variants]]
+name = "density-8"
+description = "Eight cells on 24x24 with sixteen plants and sixty-four loose-energy sources"
+[variants.scenario]
+world_size = 24
+cells_per_team = 8
+num_scattered_energy = 64
+num_plants = 16
+
+[[variants]]
+name = "density-16"
+description = "Sixteen cells on 32x32 with thirty-two plants and 128 loose-energy sources"
+[variants.scenario]
+world_size = 32
+cells_per_team = 16
+num_scattered_energy = 128
+num_plants = 32

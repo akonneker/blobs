@@ -1,0 +1,28 @@
+# Starter pre-training gates for the documented three-seed viability matrix.
+# These are explicit exploratory thresholds, not permanent game-balance goals.
+schema_version = 1
+
+[absolute]
+# Timeouts are retained as a separate result rather than silently scored as a
+# loss. This initial bound permits one of three seeds to time out.
+max_timeout_rate = 0.34
+# Non-attacking profiles should not eliminate each other through upkeep alone
+# during the configured horizon.
+max_extinction_without_combat_rate = 0.0
+# Native baseline profiles do not excavate, so tracked non-terrain mass-energy
+# should remain exact from episode start to finish.
+max_mass_energy_drift_episode_rate = 0.0
+min_candidate_survival_rate = 0.66
+# When either profile can attack, require evidence that the combat rules are
+# reachable rather than merely enabled in the action catalog.
+min_attack_commits_per_episode_for_combat_profiles = 0.1
+min_applied_damage_per_episode_for_combat_profiles = 0.1
+max_commit_rejection_rate = 0.05
+max_frustrated_resolution_rate = 0.50
+
+[paired]
+# With three paired seeds, tolerate at most one ordinal outcome regression.
+max_regressed_outcome_rate = 0.34
+max_candidate_win_rate_drop = 0.34
+max_final_candidate_cell_mean_drop = 1.0
+max_timeout_rate_increase = 0.34

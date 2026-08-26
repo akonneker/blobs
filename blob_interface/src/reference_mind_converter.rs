@@ -99,6 +99,27 @@ pub fn reference_mind_input_to_capnp(
         builder.set_signal_enabled(space.signal_enabled);
         builder.set_terrain_mass_per_elevation(space.terrain_mass_per_elevation);
         builder.set_signal_emission_cost(space.signal_emission_cost);
+        {
+            let mut values = builder.reborrow().init_effort_cost_numerators(3);
+            for (index, value) in space.effort_cost_numerators.into_iter().enumerate() {
+                values.set(index as u32, value);
+            }
+        }
+        {
+            let mut values = builder.reborrow().init_effort_cost_denominators(3);
+            for (index, value) in space.effort_cost_denominators.into_iter().enumerate() {
+                values.set(index as u32, value);
+            }
+        }
+        builder.set_move_effort_base(space.move_effort_base);
+        builder.set_move_mass_units_per_effort(space.move_mass_units_per_effort);
+        builder.set_attack_effort_base(space.attack_effort_base);
+        builder.set_guard_effort_base(space.guard_effort_base);
+        builder.set_consume_effort_base(space.consume_effort_base);
+        builder.set_split_effort_base(space.split_effort_base);
+        builder.set_regurgitate_effort_base(space.regurgitate_effort_base);
+        builder.set_excavate_effort_base(space.excavate_effort_base);
+        builder.set_deposit_terrain_effort_base(space.deposit_terrain_effort_base);
     }
     root.set_private_memory(&input.private_memory);
     root.set_randomness(input.randomness.as_bytes());
@@ -223,6 +244,17 @@ pub fn capnp_to_reference_mind_input(
     }
 
     let action = root.get_action_space()?;
+    let effort_numerator_reader = action.get_effort_cost_numerators()?;
+    let effort_denominator_reader = action.get_effort_cost_denominators()?;
+    if effort_numerator_reader.len() != 3 || effort_denominator_reader.len() != 3 {
+        return Err(failed(
+            "reference Mind effort cost profiles have the wrong length",
+        ));
+    }
+    let effort_cost_numerators =
+        std::array::from_fn(|index| effort_numerator_reader.get(index as u32));
+    let effort_cost_denominators =
+        std::array::from_fn(|index| effort_denominator_reader.get(index as u32));
     let action_space = ReferenceActionSpace {
         wait_enabled: action.get_wait_enabled(),
         guard_enabled: action.get_guard_enabled(),
@@ -244,6 +276,17 @@ pub fn capnp_to_reference_mind_input(
         signal_enabled: action.get_signal_enabled(),
         terrain_mass_per_elevation: action.get_terrain_mass_per_elevation(),
         signal_emission_cost: action.get_signal_emission_cost(),
+        effort_cost_numerators,
+        effort_cost_denominators,
+        move_effort_base: action.get_move_effort_base(),
+        move_mass_units_per_effort: action.get_move_mass_units_per_effort(),
+        attack_effort_base: action.get_attack_effort_base(),
+        guard_effort_base: action.get_guard_effort_base(),
+        consume_effort_base: action.get_consume_effort_base(),
+        split_effort_base: action.get_split_effort_base(),
+        regurgitate_effort_base: action.get_regurgitate_effort_base(),
+        excavate_effort_base: action.get_excavate_effort_base(),
+        deposit_terrain_effort_base: action.get_deposit_terrain_effort_base(),
     };
     let private_memory = root.get_private_memory()?.to_vec();
     if private_memory.len() > limits.max_private_memory_bytes {
@@ -393,6 +436,22 @@ pub fn reference_mind_decision_to_capnp(
     {
         return Err(failed("reference Mind signal channel is outside its range"));
     }
+    if decision.signal.is_some_and(|signal| signal.amount == 0) {
+        return Err(failed("reference Mind signal amount must be positive"));
+    }
+    if matches!(decision.action, ReferenceMindAction::Signal { .. }) && decision.signal.is_some() {
+        return Err(failed(
+            "reference Mind explicit signal action cannot include a sidecar signal",
+        ));
+    }
+    if matches!(
+        &decision.action,
+        ReferenceMindAction::Signal { amounts } if amounts.iter().all(|amount| *amount == 0)
+    ) {
+        return Err(failed(
+            "reference Mind explicit signal action must deposit energy",
+        ));
+    }
     let mut message = capnp::message::Builder::new_default();
     let mut root = message.init_root::<wire::reference_mind_decision::Builder>();
     set_reference_action(root.reborrow().init_action(), &decision.action);
@@ -409,7 +468,11 @@ pub fn reference_mind_decision_to_capnp(
     {
         let mut signal = root.reborrow().init_signal();
         match decision.signal {
-            Some(value) => signal.init_some().set_channel(value.channel),
+            Some(value) => {
+                let mut emission = signal.init_some();
+                emission.set_channel(value.channel);
+                emission.set_amount(value.amount);
+            }
             None => signal.set_none(()),
         }
     }
@@ -465,6 +528,13 @@ fn set_reference_action(mut root: wire::reference_action::Builder, action: &Refe
             value.set_target_slot(*target_slot);
             value.set_amount(*amount);
         }
+        ReferenceMindAction::Signal { amounts } => {
+            let mut value = root.init_signal();
+            value.set_amount0(amounts[0]);
+            value.set_amount1(amounts[1]);
+            value.set_amount2(amounts[2]);
+            value.set_amount3(amounts[3]);
+        }
         ReferenceMindAction::Excavate => root.set_excavate(()),
         ReferenceMindAction::DepositTerrain => root.set_deposit_terrain(()),
     }
@@ -488,10 +558,24 @@ pub fn capnp_to_reference_mind_decision(
         .map_err(|_| failed("unknown optional signal emission variant"))?
     {
         wire::optional_signal_emission::Which::None(()) => None,
-        wire::optional_signal_emission::Which::Some(value) => Some(ReferenceSignalEmission {
-            channel: value?.get_channel(),
-        }),
+        wire::optional_signal_emission::Which::Some(value) => {
+            let value = value?;
+            Some(ReferenceSignalEmission {
+                channel: value.get_channel(),
+                amount: value.get_amount(),
+            })
+        }
     };
+    if signal.is_some_and(|emission| {
+        usize::from(emission.channel) >= REFERENCE_SIGNAL_CHANNELS || emission.amount == 0
+    }) {
+        return Err(failed("reference Mind signal emission is invalid"));
+    }
+    if matches!(&action, ReferenceMindAction::Signal { amounts } if amounts.iter().all(|amount| *amount == 0))
+        || matches!(&action, ReferenceMindAction::Signal { .. }) && signal.is_some()
+    {
+        return Err(failed("reference Mind explicit signal action is invalid"));
+    }
     let next_private_memory = root.get_next_private_memory()?;
     let memory_update = if root.get_retain_private_memory() {
         if !next_private_memory.is_empty() {
@@ -573,6 +657,17 @@ fn read_reference_action(
         }
         Which::Excavate(()) => Ok(ReferenceMindAction::Excavate),
         Which::DepositTerrain(()) => Ok(ReferenceMindAction::DepositTerrain),
+        Which::Signal(value) => {
+            let value = value?;
+            Ok(ReferenceMindAction::Signal {
+                amounts: [
+                    value.get_amount0(),
+                    value.get_amount1(),
+                    value.get_amount2(),
+                    value.get_amount3(),
+                ],
+            })
+        }
     }
 }
 
@@ -661,6 +756,13 @@ fn validate_input_scalars(
     if action_space.metabolism_rate_denominator == 0 {
         return Err(failed(
             "reference Mind metabolism rate denominator must be nonzero",
+        ));
+    }
+    if action_space.effort_cost_denominators.contains(&0)
+        || action_space.move_mass_units_per_effort == 0
+    {
+        return Err(failed(
+            "reference Mind action cost denominators must be nonzero",
         ));
     }
     if action_space.terrain_mass_per_elevation == 0 {

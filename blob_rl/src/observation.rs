@@ -5,7 +5,9 @@ use blob_interface::reference_mind::{
     REFERENCE_MAX_LOCAL_SLOTS,
 };
 
-use crate::action::{action_mask, NUM_ACTIONS};
+use crate::action::{
+    policy_masks, NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+};
 
 const HEADER_FEATURES: usize = 38;
 const SLOT_FEATURES: usize = 33;
@@ -15,6 +17,11 @@ pub const OBS_DIM: usize = HEADER_FEATURES + REFERENCE_MAX_LOCAL_SLOTS * SLOT_FE
 pub struct Observation {
     pub data: [f32; OBS_DIM],
     pub action_mask: [bool; NUM_ACTIONS],
+    /// Five conditional amount masks packed into the low bits per action.
+    pub amount_choice_bits: [u8; NUM_ACTIONS],
+    /// Five signal-strength bits packed for each action-amount tier.
+    pub sidecar_strength_bits: [u32; NUM_ACTIONS],
+    pub explicit_signal_strength_bits: [u8; 4],
 }
 
 fn amount(value: u64) -> f32 {
@@ -166,10 +173,61 @@ impl Observation {
             }
         }
 
+        let masks = policy_masks(input);
         Self {
             data,
-            action_mask: action_mask(input),
+            action_mask: masks.actions,
+            amount_choice_bits: masks.amount_choice_bits,
+            sidecar_strength_bits: masks.sidecar_strength_bits,
+            explicit_signal_strength_bits: masks.explicit_signal_strength_bits,
         }
+    }
+
+    pub fn amount_mask(&self, action: usize) -> [bool; NUM_AMOUNT_CHOICES] {
+        let bits = self.amount_choice_bits.get(action).copied().unwrap_or(1);
+        std::array::from_fn(|choice| bits & (1 << choice) != 0)
+    }
+
+    pub fn signal_mask(&self, action: usize, amount: usize) -> [bool; NUM_SIGNAL_CHOICES] {
+        let mut mask = [false; NUM_SIGNAL_CHOICES];
+        if action == NUM_ACTIONS - 1 {
+            for (pattern, allowed) in mask.iter_mut().enumerate().skip(1) {
+                *allowed =
+                    self.explicit_signal_strength_bits[pattern.count_ones() as usize - 1] != 0;
+            }
+        } else {
+            mask[0] = true;
+            let shift = amount * NUM_SIGNAL_STRENGTH_CHOICES;
+            if self
+                .sidecar_strength_bits
+                .get(action)
+                .is_some_and(|bits| (*bits >> shift) & 0x1f != 0)
+            {
+                for pattern in [1, 2, 4, 8] {
+                    mask[pattern] = true;
+                }
+            }
+        }
+        mask
+    }
+
+    pub fn signal_strength_mask(
+        &self,
+        action: usize,
+        amount: usize,
+        signal: usize,
+    ) -> [bool; NUM_SIGNAL_STRENGTH_CHOICES] {
+        if signal == 0 {
+            return [true, false, false, false, false];
+        }
+        let bits = if action == NUM_ACTIONS - 1 && signal < NUM_SIGNAL_CHOICES {
+            self.explicit_signal_strength_bits[signal.count_ones() as usize - 1]
+        } else {
+            self.sidecar_strength_bits.get(action).map_or(0, |bits| {
+                ((*bits >> (amount * NUM_SIGNAL_STRENGTH_CHOICES)) & 0x1f) as u8
+            })
+        };
+        std::array::from_fn(|choice| bits & (1 << choice) != 0)
     }
 
     pub fn to_vec(&self) -> Vec<f32> {
@@ -243,6 +301,17 @@ mod tests {
                 metabolism_rate_denominator: 1024,
                 terrain_mass_per_elevation: 10,
                 signal_emission_cost: 1,
+                effort_cost_numerators: [1, 1, 2],
+                effort_cost_denominators: [2, 1, 1],
+                move_effort_base: 1,
+                move_mass_units_per_effort: 100,
+                attack_effort_base: 2,
+                guard_effort_base: 1,
+                consume_effort_base: 1,
+                split_effort_base: 2,
+                regurgitate_effort_base: 1,
+                excavate_effort_base: 2,
+                deposit_terrain_effort_base: 2,
             },
             private_memory: Vec::new(),
             randomness: PrivateRandom::ZERO,
