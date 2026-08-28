@@ -13,6 +13,19 @@ evaluation_seed = 1_000_000_000
 checkpoint_interval = 100
 checkpoint_dir = "./checkpoints/fast_learn"
 
+[feeding_curriculum]
+enabled = true
+on_food_until_sim_time_quanta_per_env = 524_288
+adjacent_food_until_sim_time_quanta_per_env = 1_572_864
+
+[feeding_curriculum.promotion]
+min_on_food_episode_success_rate = 0.95
+min_adjacent_episode_success_rate = 0.80
+min_survival_rate = 0.80
+min_consumed_energy_per_initial_cell = 1.0
+evaluation_max_episode_len = 4096
+evaluation_sim_time_limit_quanta = 65_536
+
 [ppo]
 clip_epsilon = 0.2
 value_clip_epsilon = 0.2
@@ -68,7 +81,7 @@ move_toward_enemy = 0.02      # reward per step closer to nearest enemy (when he
 proximity_search_radius = 10  # tiles to scan for nearest food/enemy
 
 [self_play]
-start_after_timesteps = 500_000
+start_after_sim_time_quanta_per_env = 2_097_152
 opponent_update_interval = 50
 max_opponent_pool = 10
 baseline_probability = 0.2

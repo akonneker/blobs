@@ -1,0 +1,17 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "f508d8e032cede4608370782319bd873dbd300e1a35fbe834a8110e59475a8ba",
+  "execution_contract_sha256": "d2fe441dabf6d58b9a208bb82f3c557ff60d99212965ea0ab7d031a69c60cbb3",
+  "trainer_sha256": "d46e1ea527560331ad689f0271112c31e2c1172924b4c9dc87a54e8e4f3fd6aa",
+  "variant": "control",
+  "replicate": 1,
+  "training_seed": 46,
+  "experiment_config_sha256": "32b0abb131c8843b80d9c4cbefa8d1526663c9fdc0ad1d3e37ec324602643426",
+  "state": "succeeded",
+  "attempts": 1,
+  "started_unix_millis": 1787888643450,
+  "finished_unix_millis": 1787888693209,
+  "resume_checkpoint": null,
+  "exit_code": 0,
+  "error": null
+}

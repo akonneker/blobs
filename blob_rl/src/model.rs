@@ -4,7 +4,8 @@ use burn::nn;
 use burn::prelude::*;
 
 use crate::action::{
-    NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORT_LOGITS,
+    NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::observation::OBS_DIM;
 
@@ -22,7 +23,9 @@ pub struct PolicyValueNet<B: Backend> {
     shared_fc1: nn::Linear<B>,
     recurrent: nn::Linear<B>,
     shared_fc2: nn::Linear<B>,
-    policy_head: nn::Linear<B>,
+    action_kind_head: nn::Linear<B>,
+    target_head: nn::Linear<B>,
+    effort_head: nn::Linear<B>,
     amount_head: nn::Linear<B>,
     signal_head: nn::Linear<B>,
     signal_strength_head: nn::Linear<B>,
@@ -41,6 +44,21 @@ pub struct PolicyValueNetConfig {
 }
 
 impl PolicyValueNetConfig {
+    /// Exact trainable scalar count for capacity and deployment planning.
+    pub fn parameter_count(&self) -> usize {
+        let linear = |inputs: usize, outputs: usize| inputs * outputs + outputs;
+        linear(OBS_DIM, self.hidden1)
+            + linear(self.hidden1 + self.recurrent_size, self.recurrent_size)
+            + linear(self.recurrent_size, self.hidden2)
+            + linear(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            + linear(self.hidden2, NUM_POLICY_TARGET_LOGITS)
+            + linear(self.hidden2, NUM_POLICY_EFFORT_LOGITS)
+            + linear(self.hidden2, NUM_POLICY_AMOUNT_LOGITS)
+            + linear(self.hidden2, NUM_SIGNAL_CHOICES)
+            + linear(self.hidden2, NUM_SIGNAL_STRENGTH_CHOICES)
+            + linear(self.hidden2, 1)
+    }
+
     /// Initialize a new PolicyValueNet on the given device.
     pub fn init<B: Backend>(&self, device: &B::Device) -> PolicyValueNet<B> {
         PolicyValueNet {
@@ -51,8 +69,11 @@ impl PolicyValueNetConfig {
             )
             .init(device),
             shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
-            policy_head: nn::LinearConfig::new(self.hidden2, NUM_ACTIONS).init(device),
-            amount_head: nn::LinearConfig::new(self.hidden2, NUM_AMOUNT_CHOICES).init(device),
+            action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+                .init(device),
+            target_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_TARGET_LOGITS).init(device),
+            effort_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_EFFORT_LOGITS).init(device),
+            amount_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_AMOUNT_LOGITS).init(device),
             signal_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_CHOICES).init(device),
             signal_strength_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_STRENGTH_CHOICES)
                 .init(device),
@@ -63,9 +84,13 @@ impl PolicyValueNetConfig {
 
 /// Output of a forward pass through the model.
 pub struct ModelOutput<B: Backend> {
-    /// Action logits [batch, NUM_ACTIONS]
-    pub policy_logits: Tensor<B, 2>,
-    /// Conditional payload/amount logits [batch, NUM_AMOUNT_CHOICES].
+    pub action_kind_logits: Tensor<B, 2>,
+    /// Action-kind-conditioned target logits, flattened as [kind, target].
+    pub target_logits: Tensor<B, 2>,
+    /// Action-kind-conditioned effort logits, flattened as [kind, effort].
+    pub effort_logits: Tensor<B, 2>,
+    /// Action-kind-conditioned payload/amount logits, flattened as
+    /// [kind, amount].
     pub amount_logits: Tensor<B, 2>,
     /// Optional signal-selection logits [batch, NUM_SIGNAL_CHOICES].
     pub signal_logits: Tensor<B, 2>,
@@ -101,14 +126,18 @@ impl<B: Backend> PolicyValueNet<B> {
         let x = self.shared_fc2.forward(next_memory.clone());
         let x = burn::tensor::activation::relu(x);
 
-        let policy_logits = self.policy_head.forward(x.clone());
+        let action_kind_logits = self.action_kind_head.forward(x.clone());
+        let target_logits = self.target_head.forward(x.clone());
+        let effort_logits = self.effort_head.forward(x.clone());
         let amount_logits = self.amount_head.forward(x.clone());
         let signal_logits = self.signal_head.forward(x.clone());
         let signal_strength_logits = self.signal_strength_head.forward(x.clone());
         let values = self.value_head.forward(x);
 
         ModelOutput {
-            policy_logits,
+            action_kind_logits,
+            target_logits,
+            effort_logits,
             amount_logits,
             signal_logits,
             signal_strength_logits,
@@ -118,9 +147,9 @@ impl<B: Backend> PolicyValueNet<B> {
     }
 
     /// Get action probabilities via softmax.
-    pub fn action_probs(&self, obs: Tensor<B, 2>) -> Tensor<B, 2> {
+    pub fn action_kind_probs(&self, obs: Tensor<B, 2>) -> Tensor<B, 2> {
         let output = self.forward(obs);
-        burn::tensor::activation::softmax(output.policy_logits, 1)
+        burn::tensor::activation::softmax(output.action_kind_logits, 1)
     }
 }
 
@@ -185,10 +214,21 @@ mod tests {
         let obs = Tensor::<TestBackend, 2>::zeros([batch_size, OBS_DIM], &device);
         let output = model.forward(obs);
 
-        assert_eq!(output.policy_logits.dims(), [batch_size, NUM_ACTIONS]);
+        assert_eq!(
+            output.action_kind_logits.dims(),
+            [batch_size, NUM_POLICY_ACTION_KINDS]
+        );
+        assert_eq!(
+            output.target_logits.dims(),
+            [batch_size, NUM_POLICY_TARGET_LOGITS]
+        );
+        assert_eq!(
+            output.effort_logits.dims(),
+            [batch_size, NUM_POLICY_EFFORT_LOGITS]
+        );
         assert_eq!(
             output.amount_logits.dims(),
-            [batch_size, NUM_AMOUNT_CHOICES]
+            [batch_size, NUM_POLICY_AMOUNT_LOGITS]
         );
         assert_eq!(
             output.signal_logits.dims(),
@@ -200,6 +240,64 @@ mod tests {
         );
         assert_eq!(output.values.dims(), [batch_size, 1]);
         assert_eq!(output.next_memory.dims(), [batch_size, 64]);
+        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 188_848);
+    }
+
+    #[test]
+    fn large_capacity_profile_has_an_explicit_cost() {
+        let large = PolicyValueNetConfig {
+            hidden1: 256,
+            hidden2: 128,
+            recurrent_size: 128,
+        };
+        assert_eq!(large.parameter_count(), 410_032);
+        assert_eq!(policy_memory_bytes(large.recurrent_size), Some(264));
+    }
+
+    #[test]
+    #[ignore = "manual release-mode small/large policy inference comparison"]
+    fn benchmark_policy_capacity_inference() {
+        fn run(config: PolicyValueNetConfig, batch: usize, iterations: usize) -> f64 {
+            let device = Default::default();
+            let model: PolicyValueNet<TestBackend> = config.init(&device);
+            let observations = Tensor::<TestBackend, 2>::zeros([batch, OBS_DIM], &device);
+            let memory = Tensor::<TestBackend, 2>::zeros([batch, model.recurrent_size()], &device);
+            for _ in 0..3 {
+                std::hint::black_box(
+                    model
+                        .forward_with_memory(observations.clone(), memory.clone())
+                        .action_kind_logits
+                        .into_data(),
+                );
+            }
+            let started = std::time::Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(
+                    model
+                        .forward_with_memory(observations.clone(), memory.clone())
+                        .action_kind_logits
+                        .into_data(),
+                );
+            }
+            started.elapsed().as_secs_f64()
+        }
+
+        let batch = 512;
+        let iterations = 20;
+        let small = run(PolicyValueNetConfig::new(), batch, iterations);
+        let large = run(
+            PolicyValueNetConfig {
+                hidden1: 256,
+                hidden2: 128,
+                recurrent_size: 128,
+            },
+            batch,
+            iterations,
+        );
+        eprintln!(
+            "policy capacity inference: batch={batch} iterations={iterations} small={small:.3}s large={large:.3}s slowdown={:.2}x",
+            large / small
+        );
     }
 
     #[test]
@@ -209,7 +307,7 @@ mod tests {
         let model: PolicyValueNet<TestBackend> = PolicyValueNetConfig::new().init(&device);
 
         let obs = Tensor::<TestBackend, 2>::zeros([4, OBS_DIM], &device);
-        let probs = model.action_probs(obs);
+        let probs = model.action_kind_probs(obs);
 
         // Sum across actions dimension should be ~1.0 for each batch item
         let sums = probs.sum_dim(1);

@@ -1,0 +1,161 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/specialist_distillation_precursor_sweep.toml",
+  "spec_sha256": "6881d2042bc2ece43ce5650f9c57dc23fcb9b95cba2aaba3ae93b99d6bc59906",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_specialist_distillation.toml",
+  "base_config_sha256": "e1e7b1f24d8366f62b11bc523317265e669a11ff93a8769ddd323a682b6f7887",
+  "output_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1",
+  "seeds": [
+    45,
+    46,
+    47,
+    48,
+    49
+  ],
+  "variants": [
+    {
+      "name": "qualified-only",
+      "description": "Coefficient 0.05 with combat teachers restricted to gate-qualified checkpoints",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {}
+    },
+    {
+      "name": "damage-precursor",
+      "description": "Coefficient 0.05 with a positive-skirmish-damage fallback combat teacher",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {
+        "combat_coeff": 0.05,
+        "combat_precursor_min_skirmish_damage": 1,
+        "ecology_coeff": 0.05,
+        "enabled": true
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "qualified-only",
+      "replicate": 0,
+      "training_seed": 45,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "fba219e01510d99a76e887a22741c6be2d6e8b114ddd88bb3fb347b9f3447d64",
+      "config_file_sha256": "2a590145f59b2eab3548a71013af2eb4620fda97cbe34efebd84c4ab3e3d0fac",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-45",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-45/config.toml"
+    },
+    {
+      "variant": "qualified-only",
+      "replicate": 1,
+      "training_seed": 46,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "e8b346c59f5bf540c8e9e66e74165732d8f179974bee8d01d164961e26e9e9a9",
+      "config_file_sha256": "23ec6383de3e8ecfb53239d28983d661754cc1d90c7b78a276f738091c58a0a4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-46",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-46/config.toml"
+    },
+    {
+      "variant": "qualified-only",
+      "replicate": 2,
+      "training_seed": 47,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "b1de1b900a67d61552a2e5a9be7f685bcc5fb98bfbe039f4a5ac4f43c3e9f1ba",
+      "config_file_sha256": "cce12a2efdeb72585c35dd38349c3dac9cf151bbb3bc2185b5b25ac1dd4d745d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-47",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-47/config.toml"
+    },
+    {
+      "variant": "qualified-only",
+      "replicate": 3,
+      "training_seed": 48,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "4050c098b2a58ecc872e1aef938a278f5c5b2cb2c1eba55fce889cb7d71a4e3c",
+      "config_file_sha256": "c7ed776edd7e8a0b4ad05d4c983601a8a66011fb43046490a4d5d60b5cd2ae06",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-48",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-48/config.toml"
+    },
+    {
+      "variant": "qualified-only",
+      "replicate": 4,
+      "training_seed": 49,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "de21bf81e253412c743654505c9253b208c105976fd73bcf99c1ee80185da73f",
+      "config_file_sha256": "8cf38ae510714181737066dbb252392817d484d8fedf566b16c8207f00c0ce4f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-49",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/qualified-only/seed-49/config.toml"
+    },
+    {
+      "variant": "damage-precursor",
+      "replicate": 0,
+      "training_seed": 45,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "767a44522af43513b23f623f35dacb4f79a4b765500f7f9e8118d971f148e2e7",
+      "config_file_sha256": "08099bfed6ea4d4695df1111dde1b604467dea97db9c385b0a771435250d79f5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-45",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-45/config.toml"
+    },
+    {
+      "variant": "damage-precursor",
+      "replicate": 1,
+      "training_seed": 46,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "eb17e38f75ee39767b018ef7d01fc7c7056a12d58ecf006a3141d06c29d0d016",
+      "config_file_sha256": "475d87620b9d3457de4d916ea241bb1bb8759d8a2ecc6bc866ff586667600fe9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-46",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-46/config.toml"
+    },
+    {
+      "variant": "damage-precursor",
+      "replicate": 2,
+      "training_seed": 47,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "d7b59545938336ac1d2b549c07dda48f95dd9752655275651176954cf6d46669",
+      "config_file_sha256": "b8f24c71f7b705b05767b426ee1615230a2e4bc1827addb8ec4cbe4f1b2ad3e0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-47",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-47/config.toml"
+    },
+    {
+      "variant": "damage-precursor",
+      "replicate": 3,
+      "training_seed": 48,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "da2c0ecdc6a3b58da18a78215cef834db1b18811d02bc4f4d16255f0bc08d342",
+      "config_file_sha256": "ce594b83f1300a4e272881a5ed5b795323275cad5927d7dacb750e742d1bd1d7",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-48",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-48/config.toml"
+    },
+    {
+      "variant": "damage-precursor",
+      "replicate": 4,
+      "training_seed": 49,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "2289b2f130d77808aa251bdac24a342b37aa34ed070e84cfabe78483d70a09e5",
+      "config_file_sha256": "277db68e5a0f1d8aac0a77faf5945da288b72515a6e529ca3831d978a4c83367",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-49",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-precursor-v1/damage-precursor/seed-49/config.toml"
+    }
+  ]
+}

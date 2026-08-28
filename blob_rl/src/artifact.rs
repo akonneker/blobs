@@ -13,13 +13,18 @@ use rand_chacha::ChaCha12Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::config::{OpponentProfile, SelfPlayConfig, TrainingConfig};
+use crate::competency_frontier::{CompetencyFrontier, SpecialistTeacherSelection};
+use crate::config::{
+    OpponentProfile, SelfPlayConfig, SpecialistDistillationConfig, TrainingConfig,
+};
+use crate::contact_evaluation::ContactEvaluationReport;
 use crate::env::BlobEnvCheckpoint;
 use crate::evaluation::EvaluationMetrics;
+use crate::feeding_curriculum::FeedingPromotionReport;
 use crate::model::{PolicyValueNet, PolicyValueNetConfig};
 use crate::telemetry::TrainingTelemetryState;
 
-pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 16;
+pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 36;
 const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_RESUME_STATE_BYTES: u64 = 512 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -47,6 +52,15 @@ pub struct CheckpointMetadata {
     pub resume_scope: String,
     pub config: TrainingConfig,
     pub evaluation: Option<EvaluationMetrics>,
+    /// Complete independently recomputable feeding competency report from the
+    /// same held-out evaluation boundary.
+    pub feeding_evaluation: Option<FeedingPromotionReport>,
+    /// Independent replay of the initial clone's qualification seed suite.
+    /// Omitted when it is identical to the configured evaluation suite.
+    pub retention_feeding_evaluation: Option<FeedingPromotionReport>,
+    /// Held-out direct-contact and multi-cell skirmish evidence from the same
+    /// primary seed suite.
+    pub contact_evaluation: Option<ContactEvaluationReport>,
     /// This checkpoint passed the rollout-pool gates. The resume record stores
     /// the pool immediately before this member is appended, avoiding a
     /// self-referential artifact hash.
@@ -111,13 +125,41 @@ pub struct TrainingResumeState {
     pub env_episode_rewards: Vec<f32>,
     pub environments: Vec<BlobEnvCheckpoint>,
     pub best_evaluation: Option<EvaluationMetrics>,
+    pub best_contact_evaluation: Option<ContactEvaluationReport>,
+    /// Bounded host-only ecology/combat Pareto evidence. Entries point only to
+    /// immutable evaluated checkpoints and do not affect Mind inputs.
+    pub competency_frontier: CompetencyFrontier,
+    /// Exact stage-local distillation teachers for the following update.
+    /// Selection identities must be members of `competency_frontier`.
+    pub specialist_teachers: SpecialistTeacherSelection,
     pub rollout_pool: Vec<RolloutLeagueMember>,
     /// Evicted pool members still needed by episodes already in progress.
     pub active_retired_snapshots: Vec<RolloutSnapshotDescriptor>,
     pub environment_opponents: Vec<RolloutOpponentAssignment>,
+    /// Curriculum scenario actually active in each in-flight environment.
+    pub environment_curriculum_stages: Vec<crate::config::FeedingCurriculumStage>,
     /// Exact bounded host-telemetry continuation. This is scientifically
     /// useful output state, never an input to policy or physics.
     pub telemetry: Option<TrainingTelemetryState>,
+}
+
+fn validate_specialist_teacher_selection(
+    state: &TrainingResumeState,
+    config: &SpecialistDistillationConfig,
+) -> Result<(), String> {
+    let expected = if config.enabled {
+        state
+            .competency_frontier
+            .specialist_teachers(config.combat_precursor_min_skirmish_damage)
+    } else {
+        SpecialistTeacherSelection::default()
+    };
+    if state.specialist_teachers != expected {
+        return Err(
+            "specialist teachers do not match deterministic configured frontier selection".into(),
+        );
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -127,6 +169,9 @@ pub struct BestCheckpointPointer {
     pub update: usize,
     pub actions: u64,
     pub evaluation: EvaluationMetrics,
+    pub feeding_evaluation: Option<FeedingPromotionReport>,
+    pub retention_feeding_evaluation: Option<FeedingPromotionReport>,
+    pub contact_evaluation: Option<ContactEvaluationReport>,
 }
 
 /// Integrity-checked immutable policy ready for stateless opponent inference.
@@ -158,6 +203,10 @@ pub struct RolloutPoolManifest {
     pub actions: u64,
     pub compiled_ruleset_hash: String,
     pub self_play: SelfPlayConfig,
+    /// Gate report for the checkpoint promoted by this manifest update.
+    pub promotion_feeding_evaluation: Option<FeedingPromotionReport>,
+    pub promotion_retention_feeding_evaluation: Option<FeedingPromotionReport>,
+    pub promotion_contact_evaluation: Option<ContactEvaluationReport>,
     pub members: Vec<RolloutLeagueMember>,
 }
 
@@ -217,6 +266,10 @@ fn verified_metadata(directory: &Path) -> Result<CheckpointMetadata, String> {
             metadata.schema_version, TRAINING_ARTIFACT_SCHEMA_VERSION
         ));
     }
+    metadata
+        .config
+        .validate()
+        .map_err(|error| format!("checkpoint contains an invalid training config: {error}"))?;
     if metadata.model_file != "model.mpk"
         || metadata.optimizer_file != "optimizer.mpk"
         || metadata.resume_file != "resume.mpk"
@@ -235,7 +288,96 @@ fn verified_metadata(directory: &Path) -> Result<CheckpointMetadata, String> {
     {
         return Err("checkpoint artifact SHA-256 mismatch".into());
     }
+    validate_evaluation_artifact_binding(&metadata)?;
     Ok(metadata)
+}
+
+fn validate_evaluation_artifact_binding(metadata: &CheckpointMetadata) -> Result<(), String> {
+    match (
+        metadata.config.feeding_curriculum.enabled,
+        metadata.evaluation.as_ref(),
+        metadata.feeding_evaluation.as_ref(),
+    ) {
+        (true, Some(evaluation), Some(feeding)) => feeding.validate_against(
+            &metadata.compiled_ruleset_hash,
+            &evaluation.seeds,
+            &metadata.config.feeding_curriculum.promotion,
+        )?,
+        (true, Some(_), None) => {
+            return Err("evaluated curriculum checkpoint is missing its feeding gate report".into())
+        }
+        (true, None, Some(_)) | (false, _, Some(_)) => {
+            return Err("checkpoint has an unexpected feeding gate report".into())
+        }
+        (true, None, None) | (false, _, None) => {}
+    }
+    if let Some(retention) = &metadata.retention_feeding_evaluation {
+        let qualification = metadata
+            .config
+            .initial_policy
+            .as_ref()
+            .and_then(|initial| initial.qualification.as_ref())
+            .ok_or("retention feeding evaluation has no initial qualification binding")?;
+        if metadata.feeding_evaluation.is_none()
+            || metadata
+                .evaluation
+                .as_ref()
+                .is_some_and(|evaluation| evaluation.seeds == retention.seeds)
+            || qualification.artifact_hash.trim().is_empty()
+        {
+            return Err(
+                "retention feeding evaluation is missing or duplicates its primary suite".into(),
+            );
+        }
+        retention.validate_against(
+            &metadata.compiled_ruleset_hash,
+            &retention.seeds,
+            &metadata.config.feeding_curriculum.promotion,
+        )?;
+    }
+    match (
+        metadata.config.combat_curriculum.enabled,
+        metadata.evaluation.as_ref(),
+        metadata.contact_evaluation.as_ref(),
+    ) {
+        (true, Some(evaluation), Some(contact)) => contact.validate_against(
+            &metadata.compiled_ruleset_hash,
+            &evaluation.seeds,
+            &metadata.config.combat_curriculum,
+        )?,
+        (true, Some(_), None) => {
+            return Err("evaluated combat checkpoint is missing its contact report".into())
+        }
+        (true, None, Some(_)) | (false, _, Some(_)) => {
+            return Err("checkpoint has an unexpected contact report".into())
+        }
+        (true, None, None) | (false, _, None) => {}
+    }
+    if metadata.rollout_pool_promotion.is_some() {
+        if metadata.evaluation.is_none() {
+            return Err("rollout-pool promotion is missing held-out evaluation".into());
+        }
+        if metadata.config.feeding_curriculum.enabled
+            && (!metadata
+                .feeding_evaluation
+                .as_ref()
+                .is_some_and(|report| report.passed)
+                || metadata
+                    .retention_feeding_evaluation
+                    .as_ref()
+                    .is_some_and(|report| !report.passed))
+        {
+            return Err("rollout-pool promotion did not pass the feeding gate".into());
+        }
+        if metadata.config.combat_curriculum.enabled
+            && !metadata.contact_evaluation.as_ref().is_some_and(|report| {
+                report.meets_promotion_thresholds(&metadata.config.combat_curriculum)
+            })
+        {
+            return Err("rollout-pool promotion has no active contact evidence".into());
+        }
+    }
+    Ok(())
 }
 
 /// Read a checkpoint's metadata only after verifying its complete immutable
@@ -294,6 +436,9 @@ pub fn publish_checkpoint<B, O>(
     actions: u64,
     compiled_ruleset_hash: &str,
     evaluation: Option<&EvaluationMetrics>,
+    feeding_evaluation: Option<&FeedingPromotionReport>,
+    retention_feeding_evaluation: Option<&FeedingPromotionReport>,
+    contact_evaluation: Option<&ContactEvaluationReport>,
     rollout_pool_promotion: Option<&LeaguePromotion>,
     resume_state: &TrainingResumeState,
 ) -> Result<PathBuf, String>
@@ -301,6 +446,7 @@ where
     B: AutodiffBackend,
     O: Optimizer<PolicyValueNet<B>, B>,
 {
+    validate_specialist_teacher_selection(resume_state, &config.specialist_distillation)?;
     fs::create_dir_all(root)
         .map_err(|error| format!("failed to create artifact root {}: {error}", root.display()))?;
     let directory_name = format!("checkpoint-{update:08}");
@@ -362,8 +508,12 @@ where
         resume_scope: "exact-update-boundary".into(),
         config: config.clone(),
         evaluation: evaluation.cloned(),
+        feeding_evaluation: feeding_evaluation.cloned(),
+        retention_feeding_evaluation: retention_feeding_evaluation.cloned(),
+        contact_evaluation: contact_evaluation.cloned(),
         rollout_pool_promotion: rollout_pool_promotion.cloned(),
     };
+    validate_evaluation_artifact_binding(&metadata)?;
     write_json_file(&staging_path.join("metadata.json"), &metadata)?;
     sync_directory(staging_path)?;
     fs::rename(staging_path, &final_directory).map_err(|error| {
@@ -418,6 +568,7 @@ where
     let resume_state: TrainingResumeState =
         rmp_serde::from_slice(&read_bounded(&resume_path, MAX_RESUME_STATE_BYTES)?)
             .map_err(|error| format!("failed to decode exact resume state: {error}"))?;
+    validate_specialist_teacher_selection(&resume_state, &metadata.config.specialist_distillation)?;
     if resume_state.schema_version != TRAINING_ARTIFACT_SCHEMA_VERSION
         || resume_state.total_timesteps != metadata.actions
         || resume_state.update_count != metadata.update
@@ -472,14 +623,30 @@ pub fn load_rollout_snapshot<B: Backend>(
 }
 
 /// Publish an immutable, human-inspectable description of the active pool.
+#[allow(clippy::too_many_arguments)]
 pub fn publish_rollout_pool_manifest(
     root: &Path,
     update: usize,
     actions: u64,
     compiled_ruleset_hash: &str,
     self_play: &SelfPlayConfig,
+    promotion_feeding_evaluation: Option<&FeedingPromotionReport>,
+    promotion_retention_feeding_evaluation: Option<&FeedingPromotionReport>,
+    promotion_contact_evaluation: Option<&ContactEvaluationReport>,
     members: &[RolloutLeagueMember],
 ) -> Result<PathBuf, String> {
+    if promotion_feeding_evaluation
+        .is_some_and(|report| !report.passed || report.ruleset_hash != compiled_ruleset_hash)
+        || promotion_retention_feeding_evaluation
+            .is_some_and(|report| !report.passed || report.ruleset_hash != compiled_ruleset_hash)
+    {
+        return Err("rollout-pool manifest promotion has an invalid feeding gate".into());
+    }
+    if promotion_contact_evaluation
+        .is_some_and(|report| !report.is_active() || report.ruleset_hash != compiled_ruleset_hash)
+    {
+        return Err("rollout-pool manifest promotion has invalid contact evidence".into());
+    }
     let pool_root = root.join("opponent-pool");
     fs::create_dir_all(&pool_root).map_err(|error| {
         format!(
@@ -499,31 +666,115 @@ pub fn publish_rollout_pool_manifest(
         ".manifest-{update:08}.tmp-{}-{nonce}",
         std::process::id()
     ));
-    write_json_file(
-        &temporary,
-        &RolloutPoolManifest {
-            schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
-            update,
-            actions,
-            compiled_ruleset_hash: compiled_ruleset_hash.to_string(),
-            self_play: self_play.clone(),
-            members: members.to_vec(),
-        },
-    )?;
+    let manifest = RolloutPoolManifest {
+        schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
+        update,
+        actions,
+        compiled_ruleset_hash: compiled_ruleset_hash.to_string(),
+        self_play: self_play.clone(),
+        promotion_feeding_evaluation: promotion_feeding_evaluation.cloned(),
+        promotion_retention_feeding_evaluation: promotion_retention_feeding_evaluation.cloned(),
+        promotion_contact_evaluation: promotion_contact_evaluation.cloned(),
+        members: members.to_vec(),
+    };
+    validate_rollout_pool_manifest(root, &manifest)?;
+    write_json_file(&temporary, &manifest)?;
     fs::rename(&temporary, &final_path)
         .map_err(|error| format!("failed to publish rollout-pool manifest: {error}"))?;
     sync_directory(&pool_root)?;
     Ok(final_path)
 }
 
-/// Atomically point `best.json` at an already-published immutable checkpoint.
-pub fn publish_best_pointer(
+/// Verify a pool manifest against the promoted checkpoint and every active
+/// member artifact. This is intentionally an offline/audit path: it hashes the
+/// complete checkpoint file sets rather than trusting descriptor strings.
+pub fn verify_rollout_pool_manifest(path: &Path) -> Result<RolloutPoolManifest, String> {
+    let manifest: RolloutPoolManifest =
+        serde_json::from_slice(&read_bounded(path, MAX_METADATA_BYTES)?)
+            .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    let expected_name = format!("manifest-{:08}.json", manifest.update);
+    if manifest.schema_version != TRAINING_ARTIFACT_SCHEMA_VERSION
+        || path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str())
+    {
+        return Err("rollout-pool manifest has an unsupported schema or filename".into());
+    }
+    let root = path
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("rollout-pool manifest is not inside an artifact root")?;
+    validate_rollout_pool_manifest(root, &manifest)?;
+    Ok(manifest)
+}
+
+fn validate_rollout_pool_manifest(
     root: &Path,
-    checkpoint: &Path,
-    update: usize,
-    actions: u64,
-    evaluation: &EvaluationMetrics,
+    manifest: &RolloutPoolManifest,
 ) -> Result<(), String> {
+    let promotion_checkpoint = root.join(format!("checkpoint-{:08}", manifest.update));
+    let promotion = verified_metadata(&promotion_checkpoint)?;
+    if promotion.actions != manifest.actions
+        || promotion.compiled_ruleset_hash != manifest.compiled_ruleset_hash
+        || promotion.config.self_play != manifest.self_play
+        || promotion.rollout_pool_promotion.is_none()
+        || promotion.feeding_evaluation != manifest.promotion_feeding_evaluation
+        || promotion.retention_feeding_evaluation != manifest.promotion_retention_feeding_evaluation
+        || promotion.contact_evaluation != manifest.promotion_contact_evaluation
+    {
+        return Err("rollout-pool manifest does not match its promotion checkpoint".into());
+    }
+    if promotion.config.combat_curriculum.enabled
+        && !manifest
+            .promotion_contact_evaluation
+            .as_ref()
+            .is_some_and(|report| {
+                report.meets_promotion_thresholds(&promotion.config.combat_curriculum)
+            })
+    {
+        return Err("rollout-pool manifest does not meet combat promotion thresholds".into());
+    }
+    for member in &manifest.members {
+        let directory = Path::new(&member.snapshot.directory);
+        let metadata = verified_metadata(directory)?;
+        if directory.file_name().and_then(|name| name.to_str())
+            != Some(member.snapshot.checkpoint.as_str())
+            || metadata.update != member.snapshot.update
+            || metadata.actions != member.snapshot.actions
+            || metadata.model_sha256 != member.snapshot.model_sha256
+            || metadata.compiled_ruleset_hash != manifest.compiled_ruleset_hash
+            || metadata.rollout_pool_promotion.is_none()
+        {
+            return Err("rollout-pool member does not match its promoted checkpoint".into());
+        }
+    }
+    Ok(())
+}
+
+/// Atomically point `best.json` at an already-published immutable checkpoint.
+pub fn publish_best_pointer(root: &Path, checkpoint: &Path) -> Result<(), String> {
+    let metadata = verified_metadata(checkpoint)?;
+    let evaluation = metadata
+        .evaluation
+        .clone()
+        .ok_or("best checkpoint has no held-out evaluation")?;
+    if metadata.config.feeding_curriculum.enabled
+        && (!metadata
+            .feeding_evaluation
+            .as_ref()
+            .is_some_and(|report| report.passed)
+            || metadata
+                .retention_feeding_evaluation
+                .as_ref()
+                .is_some_and(|report| !report.passed))
+    {
+        return Err("best checkpoint did not pass the feeding gate".into());
+    }
+    if metadata.config.combat_curriculum.enabled
+        && !metadata.contact_evaluation.as_ref().is_some_and(|report| {
+            report.meets_promotion_thresholds(&metadata.config.combat_curriculum)
+        })
+    {
+        return Err("best checkpoint has no active contact evidence".into());
+    }
     let checkpoint_name = checkpoint
         .file_name()
         .and_then(|name| name.to_str())
@@ -531,9 +782,12 @@ pub fn publish_best_pointer(
     let pointer = BestCheckpointPointer {
         schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
         checkpoint: checkpoint_name.to_string(),
-        update,
-        actions,
-        evaluation: evaluation.clone(),
+        update: metadata.update,
+        actions: metadata.actions,
+        evaluation,
+        feeding_evaluation: metadata.feeding_evaluation,
+        retention_feeding_evaluation: metadata.retention_feeding_evaluation,
+        contact_evaluation: metadata.contact_evaluation,
     };
     let nonce = TEMP_NONCE.fetch_add(1, Ordering::Relaxed);
     let temporary = root.join(format!(".best.json.tmp-{}-{nonce}", std::process::id()));
@@ -541,6 +795,55 @@ pub fn publish_best_pointer(
     fs::rename(&temporary, root.join("best.json"))
         .map_err(|error| format!("failed to publish best checkpoint pointer: {error}"))?;
     sync_directory(root)
+}
+
+/// Verify that the mutable best pointer exactly mirrors the immutable
+/// checkpoint it names, including the independently recomputable feeding gate.
+pub fn verify_best_pointer(root: &Path) -> Result<BestCheckpointPointer, String> {
+    let path = root.join("best.json");
+    let pointer: BestCheckpointPointer =
+        serde_json::from_slice(&read_bounded(&path, MAX_METADATA_BYTES)?)
+            .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    let checkpoint_component = Path::new(&pointer.checkpoint);
+    if pointer.schema_version != TRAINING_ARTIFACT_SCHEMA_VERSION
+        || checkpoint_component.components().count() != 1
+        || checkpoint_component
+            .file_name()
+            .and_then(|name| name.to_str())
+            != Some(pointer.checkpoint.as_str())
+    {
+        return Err("best pointer has an unsupported schema or checkpoint path".into());
+    }
+    let metadata = verified_metadata(&root.join(&pointer.checkpoint))?;
+    if metadata.update != pointer.update
+        || metadata.actions != pointer.actions
+        || metadata.evaluation.as_ref() != Some(&pointer.evaluation)
+        || metadata.feeding_evaluation != pointer.feeding_evaluation
+        || metadata.retention_feeding_evaluation != pointer.retention_feeding_evaluation
+        || metadata.contact_evaluation != pointer.contact_evaluation
+    {
+        return Err("best pointer does not match its immutable checkpoint".into());
+    }
+    if metadata.config.feeding_curriculum.enabled
+        && (!pointer
+            .feeding_evaluation
+            .as_ref()
+            .is_some_and(|report| report.passed)
+            || pointer
+                .retention_feeding_evaluation
+                .as_ref()
+                .is_some_and(|report| !report.passed))
+    {
+        return Err("best pointer does not contain a passing feeding gate".into());
+    }
+    if metadata.config.combat_curriculum.enabled
+        && !pointer.contact_evaluation.as_ref().is_some_and(|report| {
+            report.meets_promotion_thresholds(&metadata.config.combat_curriculum)
+        })
+    {
+        return Err("best pointer contains no active contact evidence".into());
+    }
+    Ok(pointer)
 }
 
 #[cfg(test)]
@@ -574,11 +877,31 @@ mod tests {
             env_episode_rewards: Vec::new(),
             environments: Vec::new(),
             best_evaluation: None,
+            best_contact_evaluation: None,
+            competency_frontier: CompetencyFrontier::default(),
+            specialist_teachers: SpecialistTeacherSelection::default(),
             rollout_pool: Vec::new(),
             active_retired_snapshots: Vec::new(),
             environment_opponents: Vec::new(),
+            environment_curriculum_stages: Vec::new(),
             telemetry: None,
         };
+        let mut invalid_teacher_state = resume_state.clone();
+        invalid_teacher_state.specialist_teachers.ecology =
+            Some(crate::competency_frontier::CompetencyCheckpointIdentity {
+                checkpoint_directory: temporary.path().display().to_string(),
+                checkpoint: "checkpoint-00000007".into(),
+                update: 7,
+                actions: 1234,
+            });
+        let specialist_config = SpecialistDistillationConfig {
+            enabled: true,
+            ..SpecialistDistillationConfig::default()
+        };
+        assert!(
+            validate_specialist_teacher_selection(&invalid_teacher_state, &specialist_config)
+                .is_err()
+        );
 
         let checkpoint = publish_checkpoint(
             temporary.path(),
@@ -588,6 +911,9 @@ mod tests {
             7,
             1234,
             "ruleset-hash",
+            None,
+            None,
+            None,
             None,
             None,
             &resume_state,
@@ -657,33 +983,6 @@ mod tests {
         let mut substituted = descriptor.clone();
         substituted.update += 1;
         assert!(load_rollout_snapshot::<NdArray<f32>>(&substituted, &device).is_err());
-        let member = RolloutLeagueMember {
-            snapshot: descriptor.clone(),
-            rating: 1_024.0,
-            evaluation_games: 8,
-            rollout_selections: 3,
-        };
-        let manifest = publish_rollout_pool_manifest(
-            temporary.path(),
-            7,
-            1234,
-            "ruleset-hash",
-            &config.self_play,
-            std::slice::from_ref(&member),
-        )
-        .unwrap();
-        let decoded: RolloutPoolManifest =
-            serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
-        assert_eq!(decoded.members, vec![member.clone()]);
-        assert!(publish_rollout_pool_manifest(
-            temporary.path(),
-            7,
-            1234,
-            "ruleset-hash",
-            &config.self_play,
-            &[member],
-        )
-        .is_err());
         assert!(publish_checkpoint(
             temporary.path(),
             &model,
@@ -692,6 +991,9 @@ mod tests {
             7,
             1234,
             "ruleset-hash",
+            None,
+            None,
+            None,
             None,
             None,
             &resume_state,
@@ -710,9 +1012,22 @@ mod tests {
 
     #[test]
     fn best_pointer_references_an_immutable_checkpoint() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
         let temporary = tempfile::tempdir().unwrap();
-        let checkpoint = temporary.path().join("checkpoint-00000003");
-        fs::create_dir(&checkpoint).unwrap();
+        let device = Default::default();
+        let model: PolicyValueNet<TestBackend> =
+            crate::model::PolicyValueNetConfig::new().init(&device);
+        let optimizer = AdamWConfig::new().init();
+        let mut config = TrainingConfig::default();
+        config.feeding_curriculum.enabled = true;
+        config.initial_policy = Some(crate::config::InitialPolicyConfig {
+            directory: "qualified-clone".into(),
+            artifact_sha256: "a".repeat(64),
+            qualification: Some(crate::config::InitialPolicyQualificationConfig {
+                path: "qualification.json".into(),
+                artifact_hash: "b".repeat(64),
+            }),
+        });
         let evaluation = EvaluationMetrics {
             seeds: vec![100],
             opponents: Vec::new(),
@@ -726,10 +1041,189 @@ mod tests {
             average_reward: 2.5,
             actions: 8,
         };
-        publish_best_pointer(temporary.path(), &checkpoint, 3, 90, &evaluation).unwrap();
-        let pointer: BestCheckpointPointer =
-            serde_json::from_slice(&fs::read(temporary.path().join("best.json")).unwrap()).unwrap();
+        let stage = |stage| crate::feeding_curriculum::FeedingStageMetrics {
+            stage,
+            episodes: 1,
+            successful_episodes: 1,
+            initial_cells: 1,
+            surviving_cells: 1,
+            movement_successes: 1,
+            consume_successes: 1,
+            consumed_energy: 2,
+            safety_aborts: 0,
+            episode_success_rate: 1.0,
+            survival_rate: 1.0,
+            consumed_energy_per_initial_cell: 2.0,
+        };
+        let feeding = crate::feeding_curriculum::report_from_metrics(
+            "ruleset-hash".into(),
+            evaluation.seeds.clone(),
+            [
+                stage(crate::config::FeedingCurriculumStage::OnFood),
+                stage(crate::config::FeedingCurriculumStage::AdjacentFood),
+            ],
+            &config.feeding_curriculum.promotion,
+        );
+        let retention_feeding = crate::feeding_curriculum::report_from_metrics(
+            "ruleset-hash".into(),
+            vec![200],
+            [
+                stage(crate::config::FeedingCurriculumStage::OnFood),
+                stage(crate::config::FeedingCurriculumStage::AdjacentFood),
+            ],
+            &config.feeding_curriculum.promotion,
+        );
+        let failed_stage = |stage| crate::feeding_curriculum::FeedingStageMetrics {
+            stage,
+            episodes: 1,
+            successful_episodes: 0,
+            initial_cells: 1,
+            surviving_cells: 0,
+            movement_successes: 0,
+            consume_successes: 0,
+            consumed_energy: 0,
+            safety_aborts: 0,
+            episode_success_rate: 0.0,
+            survival_rate: 0.0,
+            consumed_energy_per_initial_cell: 0.0,
+        };
+        let failed_retention = crate::feeding_curriculum::report_from_metrics(
+            "ruleset-hash".into(),
+            vec![200],
+            [
+                failed_stage(crate::config::FeedingCurriculumStage::OnFood),
+                failed_stage(crate::config::FeedingCurriculumStage::AdjacentFood),
+            ],
+            &config.feeding_curriculum.promotion,
+        );
+        let resume_state = TrainingResumeState {
+            schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
+            total_timesteps: 90,
+            cumulative_sim_time_quanta: Vec::new(),
+            update_count: 3,
+            action_rng: ChaCha12Rng::seed_from_u64(1),
+            optimizer_rng: ChaCha12Rng::seed_from_u64(2),
+            opponent_rng: ChaCha12Rng::seed_from_u64(3),
+            env_episode_ids: Vec::new(),
+            env_episode_rewards: Vec::new(),
+            environments: Vec::new(),
+            best_evaluation: None,
+            best_contact_evaluation: None,
+            competency_frontier: CompetencyFrontier::default(),
+            specialist_teachers: SpecialistTeacherSelection::default(),
+            rollout_pool: Vec::new(),
+            active_retired_snapshots: Vec::new(),
+            environment_opponents: Vec::new(),
+            environment_curriculum_stages: Vec::new(),
+            telemetry: None,
+        };
+        let promotion = LeaguePromotion {
+            rating: 1_000.0,
+            evaluation_games: 1,
+        };
+        let mut rejected_state = resume_state.clone();
+        rejected_state.total_timesteps = 80;
+        rejected_state.update_count = 2;
+        let rejected = publish_checkpoint(
+            temporary.path(),
+            &model,
+            &optimizer,
+            &config,
+            2,
+            80,
+            "ruleset-hash",
+            Some(&evaluation),
+            Some(&feeding),
+            Some(&failed_retention),
+            None,
+            None,
+            &rejected_state,
+        )
+        .unwrap();
+        assert!(verify_checkpoint_metadata(&rejected).is_ok());
+        assert!(publish_best_pointer(temporary.path(), &rejected).is_err());
+        let checkpoint = publish_checkpoint(
+            temporary.path(),
+            &model,
+            &optimizer,
+            &config,
+            3,
+            90,
+            "ruleset-hash",
+            Some(&evaluation),
+            Some(&feeding),
+            Some(&retention_feeding),
+            None,
+            Some(&promotion),
+            &resume_state,
+        )
+        .unwrap();
+        publish_best_pointer(temporary.path(), &checkpoint).unwrap();
+        let pointer = verify_best_pointer(temporary.path()).unwrap();
         assert_eq!(pointer.checkpoint, "checkpoint-00000003");
         assert_eq!(pointer.evaluation, evaluation);
+        assert_eq!(pointer.feeding_evaluation, Some(feeding.clone()));
+        assert_eq!(
+            pointer.retention_feeding_evaluation,
+            Some(retention_feeding.clone())
+        );
+
+        let snapshot = load_policy_snapshot::<NdArray<f32>>(&checkpoint, &device).unwrap();
+        let member = RolloutLeagueMember {
+            snapshot: snapshot.descriptor(),
+            rating: promotion.rating,
+            evaluation_games: promotion.evaluation_games,
+            rollout_selections: 0,
+        };
+        assert!(publish_rollout_pool_manifest(
+            temporary.path(),
+            2,
+            80,
+            "ruleset-hash",
+            &config.self_play,
+            Some(&feeding),
+            Some(&failed_retention),
+            None,
+            std::slice::from_ref(&member),
+        )
+        .is_err());
+        let manifest_path = publish_rollout_pool_manifest(
+            temporary.path(),
+            3,
+            90,
+            "ruleset-hash",
+            &config.self_play,
+            Some(&feeding),
+            Some(&retention_feeding),
+            None,
+            &[member],
+        )
+        .unwrap();
+        let manifest = verify_rollout_pool_manifest(&manifest_path).unwrap();
+        assert_eq!(manifest.promotion_feeding_evaluation, Some(feeding.clone()));
+        assert_eq!(
+            manifest.promotion_retention_feeding_evaluation,
+            Some(retention_feeding)
+        );
+        let mut tampered_manifest = manifest;
+        tampered_manifest
+            .promotion_feeding_evaluation
+            .as_mut()
+            .unwrap()
+            .passed = false;
+        write_json_file(&manifest_path, &tampered_manifest).unwrap();
+        assert!(verify_rollout_pool_manifest(&manifest_path).is_err());
+
+        let mut tampered_pointer = pointer;
+        tampered_pointer.feeding_evaluation.as_mut().unwrap().checks[0].passed = false;
+        write_json_file(&temporary.path().join("best.json"), &tampered_pointer).unwrap();
+        assert!(verify_best_pointer(temporary.path()).is_err());
+
+        let metadata_path = checkpoint.join("metadata.json");
+        let mut metadata: CheckpointMetadata =
+            serde_json::from_slice(&fs::read(&metadata_path).unwrap()).unwrap();
+        metadata.feeding_evaluation.as_mut().unwrap().passed = false;
+        write_json_file(&metadata_path, &metadata).unwrap();
+        assert!(verify_checkpoint_metadata(&checkpoint).is_err());
     }
 }

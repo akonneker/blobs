@@ -14,9 +14,10 @@ use crate::telemetry::{ActionFamilyTelemetry, SideTelemetry};
 use crate::viability::ViabilityReport;
 use crate::viability_matrix::{
     validate_viability_matrix_report, PairedViabilityComparison, ViabilityMatrixReport,
+    ViabilityMatrixVariant,
 };
 
-pub const VIABILITY_GATE_SCHEMA_VERSION: u32 = 1;
+pub const VIABILITY_GATE_SCHEMA_VERSION: u32 = 2;
 const MAX_MATRIX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GATE_SPEC_BYTES: u64 = 1024 * 1024;
 const MAX_GATE_REPORT_BYTES: u64 = 16 * 1024 * 1024;
@@ -33,6 +34,8 @@ pub struct AbsoluteViabilityGates {
     pub min_applied_damage_per_episode_for_combat_profiles: Option<f64>,
     pub max_commit_rejection_rate: Option<f64>,
     pub max_frustrated_resolution_rate: Option<f64>,
+    pub min_forager_plant_occupancy_rate: Option<f64>,
+    pub min_forager_consumed_energy_per_episode: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -44,12 +47,30 @@ pub struct PairedViabilityGates {
     pub max_timeout_rate_increase: Option<f64>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct GeometryViabilityGates {
+    /// Variants listed here still receive reachability/endurance checks but
+    /// are exempt from cross-team symmetry thresholds. Names are exact and
+    /// must exist in the bound matrix.
+    pub asymmetry_allowed_variants: Vec<String>,
+    pub require_all_starting_cells_can_reach_plants: bool,
+    pub require_team_p90_within_best_travel_endurance: bool,
+    pub max_team_mean_plant_distance_gap: Option<f64>,
+    pub max_team_p90_plant_distance_gap: Option<f64>,
+    pub max_exclusive_plant_share_gap: Option<f64>,
+    pub max_exclusive_major_food_share_gap: Option<f64>,
+    pub max_starting_plant_occupancy_rate_gap: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ViabilityGateSpec {
     pub schema_version: u32,
     #[serde(default)]
     pub absolute: AbsoluteViabilityGates,
+    #[serde(default)]
+    pub geometry: GeometryViabilityGates,
     #[serde(default)]
     pub paired: PairedViabilityGates,
 }
@@ -69,9 +90,13 @@ impl ViabilityGateSpec {
             self.absolute.min_candidate_survival_rate,
             self.absolute.max_commit_rejection_rate,
             self.absolute.max_frustrated_resolution_rate,
+            self.absolute.min_forager_plant_occupancy_rate,
             self.paired.max_regressed_outcome_rate,
             self.paired.max_candidate_win_rate_drop,
             self.paired.max_timeout_rate_increase,
+            self.geometry.max_exclusive_plant_share_gap,
+            self.geometry.max_exclusive_major_food_share_gap,
+            self.geometry.max_starting_plant_occupancy_rate_gap,
         ];
         if rates
             .into_iter()
@@ -86,6 +111,9 @@ impl ViabilityGateSpec {
             self.absolute
                 .min_applied_damage_per_episode_for_combat_profiles,
             self.paired.max_final_candidate_cell_mean_drop,
+            self.geometry.max_team_mean_plant_distance_gap,
+            self.geometry.max_team_p90_plant_distance_gap,
+            self.absolute.min_forager_consumed_energy_per_episode,
         ];
         if nonnegative
             .into_iter()
@@ -98,8 +126,22 @@ impl ViabilityGateSpec {
         }
         if rates.into_iter().all(|value| value.is_none())
             && nonnegative.into_iter().all(|value| value.is_none())
+            && !self.geometry.require_all_starting_cells_can_reach_plants
+            && !self.geometry.require_team_p90_within_best_travel_endurance
         {
             return Err("viability gate specification enables no checks".into());
+        }
+        let mut asymmetry_variants = std::collections::HashSet::new();
+        if self.geometry.asymmetry_allowed_variants.iter().any(|name| {
+            name.is_empty()
+                || !name.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'-' | b'_')
+                })
+                || !asymmetry_variants.insert(name)
+        }) {
+            return Err("geometry asymmetry-allowed variants are invalid or duplicated".into());
         }
         Ok(())
     }
@@ -124,8 +166,8 @@ pub enum GateComparator {
 pub struct ViabilityGateSubject {
     pub variant: String,
     pub baseline_variant: Option<String>,
-    pub candidate_profile: OpponentProfile,
-    pub opponent_profile: OpponentProfile,
+    pub candidate_profile: Option<OpponentProfile>,
+    pub opponent_profile: Option<OpponentProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -262,8 +304,8 @@ fn subject(report: &ViabilityReport, variant: &str) -> ViabilityGateSubject {
     ViabilityGateSubject {
         variant: variant.to_string(),
         baseline_variant: None,
-        candidate_profile: report.candidate,
-        opponent_profile: report.opponent,
+        candidate_profile: Some(report.candidate),
+        opponent_profile: Some(report.opponent),
     }
 }
 
@@ -271,8 +313,17 @@ fn comparison_subject(comparison: &PairedViabilityComparison) -> ViabilityGateSu
     ViabilityGateSubject {
         variant: comparison.candidate_variant.clone(),
         baseline_variant: Some(comparison.baseline_variant.clone()),
-        candidate_profile: comparison.candidate_profile,
-        opponent_profile: comparison.opponent_profile,
+        candidate_profile: Some(comparison.candidate_profile),
+        opponent_profile: Some(comparison.opponent_profile),
+    }
+}
+
+fn geometry_subject(variant: &ViabilityMatrixVariant) -> ViabilityGateSubject {
+    ViabilityGateSubject {
+        variant: variant.name.clone(),
+        baseline_variant: None,
+        candidate_profile: None,
+        opponent_profile: None,
     }
 }
 
@@ -360,6 +411,33 @@ fn evaluate_absolute(
             threshold,
         );
     }
+    if report.candidate == OpponentProfile::Forager {
+        if let Some(threshold) = gates.min_forager_plant_occupancy_rate {
+            push_check(
+                checks,
+                "forager_plant_occupancy_rate",
+                check_subject.clone(),
+                GateComparator::AtLeast,
+                if report.telemetry.sample_means.training_cells == 0.0 {
+                    0.0
+                } else {
+                    report.telemetry.sample_means.training_cells_on_plants
+                        / report.telemetry.sample_means.training_cells
+                },
+                threshold,
+            );
+        }
+        if let Some(threshold) = gates.min_forager_consumed_energy_per_episode {
+            push_check(
+                checks,
+                "forager_consumed_energy_per_episode",
+                check_subject.clone(),
+                GateComparator::AtLeast,
+                report.telemetry.training.actions.consume.consumed_energy as f64 / episodes,
+                threshold,
+            );
+        }
+    }
     let sides = [&report.telemetry.training, &report.telemetry.opponents];
     if !report.aggregate.no_combat_profiles {
         if let Some(threshold) = gates.min_attack_commits_per_episode_for_combat_profiles {
@@ -426,6 +504,108 @@ fn evaluate_absolute(
     }
 }
 
+fn evaluate_geometry(
+    checks: &mut Vec<ViabilityGateCheck>,
+    variant: &ViabilityMatrixVariant,
+    gates: &GeometryViabilityGates,
+) {
+    let ecology = &variant.ecological_characterization;
+    let access = &ecology.resource_access;
+    let check_subject = geometry_subject(variant);
+    if gates.require_all_starting_cells_can_reach_plants {
+        let samples = access
+            .teams
+            .iter()
+            .map(|team| team.distance_to_plants.weighted_distance_units.samples)
+            .sum::<usize>();
+        let unreachable = access
+            .teams
+            .iter()
+            .map(|team| {
+                team.distance_to_plants
+                    .weighted_distance_units
+                    .unreachable_samples
+            })
+            .sum::<usize>();
+        push_check(
+            checks,
+            "starting_cell_unreachable_plant_rate",
+            check_subject.clone(),
+            GateComparator::AtMost,
+            if samples == 0 {
+                1.0
+            } else {
+                unreachable as f64 / samples as f64
+            },
+            0.0,
+        );
+    }
+    if gates.require_team_p90_within_best_travel_endurance {
+        let best_travel = ecology
+            .travel
+            .iter()
+            .filter(|travel| !travel.censored)
+            .map(|travel| travel.completed_distance_q10 as f64 / 1024.0)
+            .fold(0.0_f64, f64::max);
+        let worst_p90 = access
+            .teams
+            .iter()
+            .filter_map(|team| team.distance_to_plants.weighted_distance_units.p90)
+            .fold(None, |maximum: Option<f64>, distance| {
+                Some(maximum.map_or(distance, |maximum| maximum.max(distance)))
+            });
+        push_check(
+            checks,
+            "team_p90_plant_travel_endurance_margin",
+            check_subject.clone(),
+            GateComparator::AtLeast,
+            worst_p90.map_or(-1.0, |distance| best_travel - distance),
+            0.0,
+        );
+    }
+    if gates.asymmetry_allowed_variants.contains(&variant.name) {
+        return;
+    }
+    for (metric, observed, threshold) in [
+        (
+            "team_mean_plant_distance_gap",
+            access.maximum_team_mean_plant_distance_gap,
+            gates.max_team_mean_plant_distance_gap,
+        ),
+        (
+            "team_p90_plant_distance_gap",
+            access.maximum_team_p90_plant_distance_gap,
+            gates.max_team_p90_plant_distance_gap,
+        ),
+        (
+            "exclusive_plant_share_gap",
+            access.maximum_exclusive_plant_share_gap,
+            gates.max_exclusive_plant_share_gap,
+        ),
+        (
+            "exclusive_major_food_share_gap",
+            access.maximum_exclusive_major_food_share_gap,
+            gates.max_exclusive_major_food_share_gap,
+        ),
+        (
+            "starting_plant_occupancy_rate_gap",
+            access.maximum_starting_plant_occupancy_rate_gap,
+            gates.max_starting_plant_occupancy_rate_gap,
+        ),
+    ] {
+        if let Some(threshold) = threshold {
+            push_check(
+                checks,
+                metric,
+                check_subject.clone(),
+                GateComparator::AtMost,
+                observed.unwrap_or(0.0),
+                threshold,
+            );
+        }
+    }
+}
+
 fn evaluate_paired(
     checks: &mut Vec<ViabilityGateCheck>,
     comparison: &PairedViabilityComparison,
@@ -488,6 +668,14 @@ fn evaluate(
 ) -> Result<ViabilityGateReport, String> {
     validate_viability_matrix_report(matrix)?;
     spec.validate()?;
+    if spec
+        .geometry
+        .asymmetry_allowed_variants
+        .iter()
+        .any(|name| !matrix.variants.iter().any(|variant| &variant.name == name))
+    {
+        return Err("geometry gate names an asymmetry exception absent from the matrix".into());
+    }
     let mut checks = Vec::new();
     let by_matchup = matrix
         .matchups
@@ -510,6 +698,9 @@ fn evaluate(
             &matchup.report,
             &spec.absolute,
         );
+    }
+    for variant in &matrix.variants {
+        evaluate_geometry(&mut checks, variant, &spec.geometry);
     }
     for comparison in &matrix.paired_comparisons {
         let baseline = by_matchup
@@ -741,6 +932,7 @@ mod tests {
                 opponents: vec![OpponentProfile::Wait],
                 baseline_variant: None,
                 max_parallel: 2,
+                max_micro_actions: 1_000,
             },
         )
         .unwrap()
@@ -764,6 +956,7 @@ mod tests {
                 max_frustrated_resolution_rate: Some(1.0),
                 ..AbsoluteViabilityGates::default()
             },
+            geometry: GeometryViabilityGates::default(),
             paired: PairedViabilityGates {
                 max_regressed_outcome_rate: Some(1.0),
                 max_candidate_win_rate_drop: Some(1.0),
@@ -792,18 +985,52 @@ mod tests {
                 min_applied_damage_per_episode_for_combat_profiles: Some(f64::MAX / 4.0),
                 ..AbsoluteViabilityGates::default()
             },
+            geometry: GeometryViabilityGates::default(),
             paired: PairedViabilityGates::default(),
         };
         let failed = evaluate(&matrix, &failing, "matrix".into(), "policy".into()).unwrap();
         assert_eq!(failed.decision, ViabilityGateDecision::Failed);
         assert_eq!(failed.failed_checks, matrix.matchups.len());
+
+        let observed_gap = matrix
+            .variants
+            .iter()
+            .filter_map(|variant| {
+                variant
+                    .ecological_characterization
+                    .resource_access
+                    .maximum_exclusive_plant_share_gap
+            })
+            .fold(0.0_f64, f64::max);
+        assert!(observed_gap > 0.0);
+        let mut geometry = passing_spec(&matrix);
+        geometry.geometry.max_exclusive_plant_share_gap = Some(observed_gap);
+        let at_boundary = evaluate(&matrix, &geometry, "matrix".into(), "policy".into()).unwrap();
+        assert_eq!(at_boundary.decision, ViabilityGateDecision::Passed);
+        assert!(at_boundary.checks.iter().any(|check| {
+            check.metric == "exclusive_plant_share_gap"
+                && check.observed == check.threshold
+                && check.passed
+                && check.subject.candidate_profile.is_none()
+        }));
+
+        geometry.geometry.max_exclusive_plant_share_gap = Some(observed_gap / 2.0);
+        let asymmetric = evaluate(&matrix, &geometry, "matrix".into(), "policy".into()).unwrap();
+        assert_eq!(asymmetric.decision, ViabilityGateDecision::Failed);
+        geometry.geometry.asymmetry_allowed_variants = matrix
+            .variants
+            .iter()
+            .map(|variant| variant.name.clone())
+            .collect();
+        let exempted = evaluate(&matrix, &geometry, "matrix".into(), "policy".into()).unwrap();
+        assert_eq!(exempted.decision, ViabilityGateDecision::Passed);
     }
 
     #[test]
     fn strict_specs_tamper_detection_and_immutable_publication_hold() {
         assert!(toml::from_str::<ViabilityGateSpec>(
             r#"
-            schema_version = 1
+            schema_version = 2
             [absolute]
             max_timeuot_rate = 0.5
             "#,
@@ -817,6 +1044,7 @@ mod tests {
         assert!(ViabilityGateSpec {
             schema_version: VIABILITY_GATE_SCHEMA_VERSION,
             absolute: AbsoluteViabilityGates::default(),
+            geometry: GeometryViabilityGates::default(),
             paired: PairedViabilityGates::default(),
         }
         .validate()

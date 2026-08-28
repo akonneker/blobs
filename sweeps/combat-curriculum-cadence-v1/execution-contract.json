@@ -1,0 +1,18 @@
+{
+  "schema_version": 7,
+  "manifest_sha256": "dd445ea58dd9f38d8c536d4a14fe2a19dfc00c8f0c8814528904735785d344c8",
+  "trainer_sha256": "516ac3dc464142adee2ec9d29e9746990621363b6a73c83974be480d972dc643",
+  "trainer_size_bytes": 10800640,
+  "trainer_container_digest": null,
+  "train_arguments": [
+    "--initial-policy",
+    "/tmp/blob-skirmish-warmstart.sop1Ne/behavior-clone",
+    "--initial-policy-artifact-sha256",
+    "e993c632ffc1391ea6711ca2895b6376de481230f22bf570bb5181d6cac616d8",
+    "--initial-policy-qualification",
+    "/tmp/blob-skirmish-warmstart.sop1Ne/feeding-evaluation-schema32.json",
+    "--initial-policy-qualification-hash",
+    "3927e8b383e4b17059c4782f2f080516fa203c1af435b6c08e51da851a01b16a"
+  ],
+  "threads_per_run": null
+}

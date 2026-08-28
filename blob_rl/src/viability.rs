@@ -15,7 +15,7 @@ use crate::telemetry::{
     TelemetryConfig, TelemetryEpisodeOutcome, TrainingTelemetryState, TrainingTelemetrySummary,
 };
 
-pub const VIABILITY_REPORT_SCHEMA_VERSION: u32 = 2;
+pub const VIABILITY_REPORT_SCHEMA_VERSION: u32 = 5;
 static VIABILITY_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -108,6 +108,7 @@ fn zero_reward() -> RewardConfig {
     RewardConfig {
         survive_tick: 0.0,
         eat_energy: 0.0,
+        damage_enemy: 0.0,
         kill_enemy: 0.0,
         cell_died: 0.0,
         split_success: 0.0,
@@ -297,9 +298,19 @@ pub fn run_baseline_viability(
             ));
         }
         if let Some(state) = telemetry_state.as_mut() {
-            state.start_episode(0, episode_id as u64, seed, initial.clone());
+            state.start_episode(
+                0,
+                episode_id as u64,
+                seed,
+                "viability".into(),
+                initial.clone(),
+            );
         } else {
-            telemetry_state = Some(TrainingTelemetryState::new(vec![(seed, initial.clone())]));
+            telemetry_state = Some(TrainingTelemetryState::new(vec![(
+                seed,
+                "viability".into(),
+                initial.clone(),
+            )]));
         }
         let compiled = env.compiled_ruleset_hash();
         if compiled_ruleset_hash

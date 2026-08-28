@@ -1,0 +1,27 @@
+# Holdout confirmation of the two-cycle balanced cadence against the frequent
+# four-cycle balanced cadence. Total stage exposure, qualified initial policy,
+# PPO, physics, evaluation seeds, and world-time budget are paired. Historical
+# stage-episode horizons scale with cadence and are analyzed as a confound.
+
+base_config = "competitive_transfer_large_skirmish.toml"
+output_dir = "../../sweeps/combat-curriculum-cadence-holdout-v2"
+seeds = [45, 46, 47, 48, 49]
+
+[[variants]]
+name = "two-cycle-balanced"
+description = "Two 262,144-quanta cycles with equal ecology, contact, and skirmish proportions"
+
+[[variants]]
+name = "four-cycle-balanced"
+description = "Four 131,072-quanta cycles with the same total stage exposure"
+[variants.combat_curriculum]
+cycle_sim_time_quanta_per_env = 131_072
+on_food_sim_time_quanta_per_cycle = 16_384
+adjacent_food_sim_time_quanta_per_cycle = 16_384
+contact_sim_time_quanta_per_cycle = 32_768
+skirmish_sim_time_quanta_per_cycle = 32_768
+retention_episode_sim_time_limit_quanta = 16_384
+contact_episode_sim_time_limit_quanta = 16_384
+skirmish_episode_sim_time_limit_quanta = 32_768
+contact_evaluation_sim_time_limit_quanta = 16_384
+skirmish_evaluation_sim_time_limit_quanta = 32_768

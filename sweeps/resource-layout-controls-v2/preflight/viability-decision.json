@@ -1,0 +1,1304 @@
+{
+  "schema_version": 2,
+  "package_version": "0.1.0",
+  "code_revision": "6a161c47d9ea6b2a21c5f121bb5283b704406685+dirty",
+  "matrix_file_sha256": "0a51a7d4239a73c50990ebb8d63ccc3ee7fc11d7be06616b87301cd494537e41",
+  "matrix_package_version": "0.1.0",
+  "matrix_code_revision": "6a161c47d9ea6b2a21c5f121bb5283b704406685+dirty",
+  "matrix_config_hash": "15251a05b56331c06d7440c1805d9cc2127ee51b5278a6454a046b8f45d04c99",
+  "manifest_sha256": "75c642181533147a92726163f8d6683dcbb98beb34f17f8f8f709b7c345ae7ac",
+  "gate_spec_sha256": "01d8743b5799b9bdb47c6c0b16550e28340661e89e7d699196c62e56b8745482",
+  "gate_config_hash": "90b83f8454d3e159d8e37ee5a8ff87b3de576771fd65bb3983bdce03832f0de0",
+  "decision": "passed",
+  "total_checks": 99,
+  "failed_checks": 0,
+  "checks": [
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.12946783161239078,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 3289.0,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.10829694323144105,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 3122.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.10491803278688525,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 3180.75,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.13745173745173747,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 3380.25,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.2165300546448087,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 4906.25,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.14524765729585007,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 4429.75,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.17909300538047657,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 3406.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.34030418250950567,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 6610.0,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.17009493670886075,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 3300.25,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.14036697247706423,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 2944.25,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.16521739130434784,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 3714.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.1190909090909091,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 3111.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.14568226763348716,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 4096.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.1742857142857143,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 4959.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.14077952297847587,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 4813.75,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.305439330543933,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 4272.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.33252309188138063,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 7415.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.300953245574217,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 6440.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.34235120511559275,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 5365.25,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.5080878105141536,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 13845.75,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.33816675297773174,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 5196.75,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 0.1615658362989324,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "wait"
+      },
+      "comparator": "at_least",
+      "observed": 3799.75,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 0.24194653872515426,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "forager"
+      },
+      "comparator": "at_least",
+      "observed": 5064.5,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "forager_plant_occupancy_rate",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 0.2417409543786051,
+      "threshold": 0.005,
+      "passed": true
+    },
+    {
+      "metric": "forager_consumed_energy_per_episode",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": "forager",
+        "opponent_profile": "aggressive"
+      },
+      "comparator": "at_least",
+      "observed": 5541.25,
+      "threshold": 10.0,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 35.7578125,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.218505859375,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.4140625,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.046875,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.05555555555555558,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 31.171875,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.53515625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 5.171875,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.15625,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.07812500000000006,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.015625,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 29.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.9478759765625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.7578125,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.234375,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.06597222222222221,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.03125,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 35.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.47119140625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 3.5859375,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.078125,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.024305555555555525,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.015625,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 35.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.47119140625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 3.5859375,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.078125,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.2326388888888889,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.015625,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 41.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.101318359375,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.017361111111111105,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 26.859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 29.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.9478759765625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.7578125,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.234375,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.234375,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.03125,
+      "threshold": 0.1,
+      "passed": true
+    }
+  ]
+}

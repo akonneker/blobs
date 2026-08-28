@@ -1,0 +1,11 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "f508d8e032cede4608370782319bd873dbd300e1a35fbe834a8110e59475a8ba",
+  "execution_contract_sha256": "d2fe441dabf6d58b9a208bb82f3c557ff60d99212965ea0ab7d031a69c60cbb3",
+  "trainer_sha256": "d46e1ea527560331ad689f0271112c31e2c1172924b4c9dc87a54e8e4f3fd6aa",
+  "total_runs": 10,
+  "succeeded": 10,
+  "failed": 0,
+  "still_running": 0,
+  "aggregate_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-holdout-v1/aggregate.json"
+}

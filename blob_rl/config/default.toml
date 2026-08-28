@@ -20,6 +20,24 @@ checkpoint_dir = "./checkpoints"
 # directory = "./pretrained/colony-curriculum-v1"
 # artifact_sha256 = "<64 lowercase hex characters>"
 
+# Episode-boundary curriculum. The first stage teaches extraction while
+# already standing on food, the second requires a visible one-step move before
+# extraction, and the ordinary competitive field begins at the final frontier.
+[feeding_curriculum]
+enabled = true
+on_food_until_sim_time_quanta_per_env = 524_288
+adjacent_food_until_sim_time_quanta_per_env = 1_572_864
+
+# Held-out greedy-policy competencies required before a checkpoint may be
+# labeled best or enter the self-play rollout pool.
+[feeding_curriculum.promotion]
+min_on_food_episode_success_rate = 0.95
+min_adjacent_episode_success_rate = 0.80
+min_survival_rate = 0.80
+min_consumed_energy_per_initial_cell = 1.0
+evaluation_max_episode_len = 4096
+evaluation_sim_time_limit_quanta = 65_536
+
 # Host-only bounded experiment telemetry. Action outcomes are counted exactly;
 # canonical cells/tiles are scanned only at the configured episode-step cadence.
 [telemetry]
@@ -54,6 +72,7 @@ recurrent_size = 64
 [env]
 world_size = 64
 cells_per_team = 12
+starting_cell_layout = "loose_random"
 max_episode_len = 1000
 num_teams = 2
 opponent = "aggressive"
@@ -90,6 +109,7 @@ attack_mass_damage_denominator = 1
 [reward]
 survive_tick = 0.01
 eat_energy = 0.002
+damage_enemy = 0.0
 kill_enemy = 1.0
 cell_died = -1.0
 split_success = 2.0
@@ -103,7 +123,7 @@ mode = "none"
 
 # Self-play settings
 [self_play]
-start_after_timesteps = 500_000
+start_after_sim_time_quanta_per_env = 2_097_152
 opponent_update_interval = 50
 max_opponent_pool = 10
 baseline_probability = 0.2

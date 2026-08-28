@@ -25,6 +25,239 @@ pub const NUM_AMOUNT_CHOICES: usize = 5;
 /// Four-bit channel patterns, including zero for no sidecar emission.
 pub const NUM_SIGNAL_CHOICES: usize = 16;
 pub const NUM_SIGNAL_STRENGTH_CHOICES: usize = 5;
+pub const NUM_POLICY_ACTION_KINDS: usize = 10;
+pub const NUM_POLICY_TARGETS: usize = REFERENCE_MAX_LOCAL_SLOTS;
+pub const NUM_POLICY_EFFORTS: usize = EFFORT_COUNT;
+pub const NUM_POLICY_TARGET_LOGITS: usize = NUM_POLICY_ACTION_KINDS * NUM_POLICY_TARGETS;
+pub const NUM_POLICY_EFFORT_LOGITS: usize = NUM_POLICY_ACTION_KINDS * NUM_POLICY_EFFORTS;
+pub const NUM_POLICY_AMOUNT_LOGITS: usize = NUM_POLICY_ACTION_KINDS * NUM_AMOUNT_CHOICES;
+
+pub const fn policy_wait_action() -> usize {
+    WAIT
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+pub enum PolicyActionKind {
+    Wait,
+    Guard,
+    Consume,
+    Move,
+    Attack,
+    Split,
+    Regurgitate,
+    Excavate,
+    DepositTerrain,
+    Signal,
+}
+
+impl PolicyActionKind {
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Wait),
+            1 => Some(Self::Guard),
+            2 => Some(Self::Consume),
+            3 => Some(Self::Move),
+            4 => Some(Self::Attack),
+            5 => Some(Self::Split),
+            6 => Some(Self::Regurgitate),
+            7 => Some(Self::Excavate),
+            8 => Some(Self::DepositTerrain),
+            9 => Some(Self::Signal),
+            _ => None,
+        }
+    }
+
+    pub const fn uses_target(self) -> bool {
+        matches!(
+            self,
+            Self::Move | Self::Attack | Self::Split | Self::Regurgitate
+        )
+    }
+
+    pub const fn uses_effort(self) -> bool {
+        matches!(self, Self::Guard | Self::Move | Self::Attack)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HierarchicalActionChoice {
+    pub kind: usize,
+    pub target: usize,
+    pub effort: usize,
+}
+
+pub const fn decompose_policy_action(action: usize) -> Option<HierarchicalActionChoice> {
+    let (kind, target, effort) = match action {
+        WAIT => (PolicyActionKind::Wait, 0, 0),
+        GUARD_START..CONSUME => (PolicyActionKind::Guard, 0, action - GUARD_START),
+        CONSUME => (PolicyActionKind::Consume, 0, 0),
+        MOVE_START..ATTACK_START => {
+            let offset = action - MOVE_START;
+            (
+                PolicyActionKind::Move,
+                offset / EFFORT_COUNT,
+                offset % EFFORT_COUNT,
+            )
+        }
+        ATTACK_START..SPLIT_START => {
+            let offset = action - ATTACK_START;
+            (
+                PolicyActionKind::Attack,
+                offset / EFFORT_COUNT,
+                offset % EFFORT_COUNT,
+            )
+        }
+        SPLIT_START..REGURGITATE_START => (PolicyActionKind::Split, action - SPLIT_START, 0),
+        REGURGITATE_START..EXCAVATE => {
+            (PolicyActionKind::Regurgitate, action - REGURGITATE_START, 0)
+        }
+        EXCAVATE => (PolicyActionKind::Excavate, 0, 0),
+        DEPOSIT_TERRAIN => (PolicyActionKind::DepositTerrain, 0, 0),
+        SIGNAL => (PolicyActionKind::Signal, 0, 0),
+        _ => return None,
+    };
+    Some(HierarchicalActionChoice {
+        kind: kind.index(),
+        target,
+        effort,
+    })
+}
+
+pub const fn compose_policy_action(choice: HierarchicalActionChoice) -> Option<usize> {
+    let kind = match PolicyActionKind::from_index(choice.kind) {
+        Some(kind) => kind,
+        None => return None,
+    };
+    if choice.target >= NUM_POLICY_TARGETS || choice.effort >= NUM_POLICY_EFFORTS {
+        return None;
+    }
+    match kind {
+        PolicyActionKind::Wait if choice.target == 0 && choice.effort == 0 => Some(WAIT),
+        PolicyActionKind::Guard if choice.target == 0 => Some(GUARD_START + choice.effort),
+        PolicyActionKind::Consume if choice.target == 0 && choice.effort == 0 => Some(CONSUME),
+        PolicyActionKind::Move => Some(MOVE_START + choice.target * EFFORT_COUNT + choice.effort),
+        PolicyActionKind::Attack => {
+            Some(ATTACK_START + choice.target * EFFORT_COUNT + choice.effort)
+        }
+        PolicyActionKind::Split if choice.effort == 0 => Some(SPLIT_START + choice.target),
+        PolicyActionKind::Regurgitate if choice.effort == 0 => {
+            Some(REGURGITATE_START + choice.target)
+        }
+        PolicyActionKind::Excavate if choice.target == 0 && choice.effort == 0 => Some(EXCAVATE),
+        PolicyActionKind::DepositTerrain if choice.target == 0 && choice.effort == 0 => {
+            Some(DEPOSIT_TERRAIN)
+        }
+        PolicyActionKind::Signal if choice.target == 0 && choice.effort == 0 => Some(SIGNAL),
+        _ => None,
+    }
+}
+
+pub fn policy_action_kind_mask(action_mask: &[bool]) -> [bool; NUM_POLICY_ACTION_KINDS] {
+    let allowed = |action| action_mask.get(action).copied().unwrap_or(false);
+    let any_allowed = |start, end| (start..end).any(&allowed);
+    [
+        allowed(WAIT),
+        any_allowed(GUARD_START, CONSUME),
+        allowed(CONSUME),
+        any_allowed(MOVE_START, ATTACK_START),
+        any_allowed(ATTACK_START, SPLIT_START),
+        any_allowed(SPLIT_START, REGURGITATE_START),
+        any_allowed(REGURGITATE_START, EXCAVATE),
+        allowed(EXCAVATE),
+        allowed(DEPOSIT_TERRAIN),
+        allowed(SIGNAL),
+    ]
+}
+
+pub fn policy_target_mask(action_mask: &[bool], kind: usize) -> [bool; NUM_POLICY_TARGETS] {
+    let Some(kind_value) = PolicyActionKind::from_index(kind) else {
+        return [false; NUM_POLICY_TARGETS];
+    };
+    if !kind_value.uses_target() {
+        let mut mask = [false; NUM_POLICY_TARGETS];
+        mask[0] = true;
+        return mask;
+    }
+    let allowed = |action| action_mask.get(action).copied().unwrap_or(false);
+    std::array::from_fn(|target| match kind_value {
+        PolicyActionKind::Move => {
+            (0..EFFORT_COUNT).any(|effort| allowed(MOVE_START + target * EFFORT_COUNT + effort))
+        }
+        PolicyActionKind::Attack => {
+            (0..EFFORT_COUNT).any(|effort| allowed(ATTACK_START + target * EFFORT_COUNT + effort))
+        }
+        PolicyActionKind::Split => allowed(SPLIT_START + target),
+        PolicyActionKind::Regurgitate => allowed(REGURGITATE_START + target),
+        _ => unreachable!("non-target kinds returned above"),
+    })
+}
+
+pub fn policy_effort_mask(
+    action_mask: &[bool],
+    kind: usize,
+    target: usize,
+) -> [bool; NUM_POLICY_EFFORTS] {
+    let Some(kind_value) = PolicyActionKind::from_index(kind) else {
+        return [false; NUM_POLICY_EFFORTS];
+    };
+    if !kind_value.uses_effort() {
+        let mut mask = [false; NUM_POLICY_EFFORTS];
+        mask[0] = true;
+        return mask;
+    }
+    let allowed = |action| action_mask.get(action).copied().unwrap_or(false);
+    let start = match kind_value {
+        PolicyActionKind::Guard => GUARD_START,
+        PolicyActionKind::Move => MOVE_START + target * EFFORT_COUNT,
+        PolicyActionKind::Attack => ATTACK_START + target * EFFORT_COUNT,
+        _ => unreachable!("non-effort kinds returned above"),
+    };
+    std::array::from_fn(|effort| allowed(start + effort))
+}
+
+/// Coarse physical family used for diagnostics and supervised class
+/// balancing. Target slots and effort variants remain distinct policy labels,
+/// but should not each receive the weight of an independent behavior family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolicyActionFamily {
+    Wait,
+    Guard,
+    Consume,
+    Move,
+    Attack,
+    Split,
+    Regurgitate,
+    Terrain,
+    Signal,
+}
+
+impl PolicyActionFamily {
+    pub const COUNT: usize = 9;
+
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+pub const fn policy_action_family(action: usize) -> Option<PolicyActionFamily> {
+    match action {
+        WAIT => Some(PolicyActionFamily::Wait),
+        GUARD_START..CONSUME => Some(PolicyActionFamily::Guard),
+        CONSUME => Some(PolicyActionFamily::Consume),
+        MOVE_START..ATTACK_START => Some(PolicyActionFamily::Move),
+        ATTACK_START..SPLIT_START => Some(PolicyActionFamily::Attack),
+        SPLIT_START..REGURGITATE_START => Some(PolicyActionFamily::Split),
+        REGURGITATE_START..EXCAVATE => Some(PolicyActionFamily::Regurgitate),
+        EXCAVATE..SIGNAL => Some(PolicyActionFamily::Terrain),
+        SIGNAL => Some(PolicyActionFamily::Signal),
+        _ => None,
+    }
+}
 
 /// A row-separable policy choice. Signal selection is deliberately factored
 /// away from the physical catalog so future multi-channel patterns do not
@@ -1362,5 +1595,42 @@ mod tests {
 
         input.self_state.assimilated_energy = 20;
         assert!(!signal_strength_mask(&input, SIGNAL, 0, 0b1111)[1]);
+    }
+
+    #[test]
+    fn hierarchical_catalog_round_trips_and_projects_conditional_masks() {
+        for action in 0..NUM_ACTIONS {
+            let choice = decompose_policy_action(action).unwrap();
+            assert_eq!(compose_policy_action(choice), Some(action));
+        }
+
+        let input = input();
+        let flat = action_mask(&input);
+        let kinds = policy_action_kind_mask(&flat);
+        for (action, allowed) in flat.iter().copied().enumerate() {
+            let choice = decompose_policy_action(action).unwrap();
+            if allowed {
+                assert!(kinds[choice.kind]);
+                assert!(policy_target_mask(&flat, choice.kind)[choice.target]);
+                assert!(policy_effort_mask(&flat, choice.kind, choice.target)[choice.effort]);
+            }
+        }
+        for (kind, kind_allowed) in kinds.iter().copied().enumerate() {
+            for target in 0..NUM_POLICY_TARGETS {
+                for effort in 0..NUM_POLICY_EFFORTS {
+                    let choice = HierarchicalActionChoice {
+                        kind,
+                        target,
+                        effort,
+                    };
+                    if let Some(action) = compose_policy_action(choice) {
+                        let projected = kind_allowed
+                            && policy_target_mask(&flat, kind)[target]
+                            && policy_effort_mask(&flat, kind, target)[effort];
+                        assert_eq!(projected, flat[action]);
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,0 +1,11 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "a070bad671d7705c7db1d92a4be3f9e2c31f780372fbeb3797bfd89dedb5b79b",
+  "execution_contract_sha256": "c71b89b636dae7a4b18995c23819072d6c7570ae002579595b432181a3be8b8c",
+  "trainer_sha256": "d46e1ea527560331ad689f0271112c31e2c1172924b4c9dc87a54e8e4f3fd6aa",
+  "total_runs": 3,
+  "succeeded": 3,
+  "failed": 0,
+  "still_running": 0,
+  "aggregate_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/aggregate.json"
+}

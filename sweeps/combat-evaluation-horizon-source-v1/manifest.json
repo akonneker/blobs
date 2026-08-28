@@ -1,0 +1,88 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/combat_evaluation_horizon_source_sweep.toml",
+  "spec_sha256": "f5243f8cfc5a666179eb86d03e765d07243da16f261e1e83d0a0488b4177accd",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_skirmish_frequent.toml",
+  "base_config_sha256": "45fa09aaf4a69961787feb93a6f5bd07a9c4e370c59ed6e0ac55eaecf16cf9ed",
+  "output_directory": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1",
+  "seeds": [
+    45,
+    46,
+    47,
+    48,
+    49
+  ],
+  "variants": [
+    {
+      "name": "four-cycle-source",
+      "description": "Schema-36 four-cycle policies frozen before evaluation-horizon variation",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "four-cycle-source",
+      "replicate": 0,
+      "training_seed": 45,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "65a51a6b43c47efc9f411b93cf9be494ade8f2ed171828bfbc02099868a9c69a",
+      "config_file_sha256": "68a4221d215fc67aa99e4950581694563fd099470e27c48d2cdb5f5fe101068d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-45",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-45/config.toml"
+    },
+    {
+      "variant": "four-cycle-source",
+      "replicate": 1,
+      "training_seed": 46,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "4474cc7ebf6353eaec8d938cfd9c3a1bfe4b38963a0372ca039a12a58cb06118",
+      "config_file_sha256": "67a15a332e7a7dc1ff963f608be6fa2529215ca817aa8a85e04edc64ad824166",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-46",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-46/config.toml"
+    },
+    {
+      "variant": "four-cycle-source",
+      "replicate": 2,
+      "training_seed": 47,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "f6766acb86c0e68ebd0165dd65201d4749df5b4a06c25a148e76a4b4216b239c",
+      "config_file_sha256": "54d140127b1ee6c8c5f4f46e93eb9330c0602107c18aeaf48b0df432c3d22f0c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-47",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-47/config.toml"
+    },
+    {
+      "variant": "four-cycle-source",
+      "replicate": 3,
+      "training_seed": 48,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "ba2373f33ed41666589a3e708bf10d374a0f693c64fe473e9aa3f43d19f56d20",
+      "config_file_sha256": "4c3f8678ead2c99cf93b82fcfea9b9f7be31f16070100aad1c9b7e29330a9c8e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-48",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-48/config.toml"
+    },
+    {
+      "variant": "four-cycle-source",
+      "replicate": 4,
+      "training_seed": 49,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "15fb2dae6b08906b96e1294821105989ee5fb3ab0bd73b47216b989b44d46f64",
+      "config_file_sha256": "1b0c5c97c47d1683c6c3dbb3169afb922e704bb85f2d3bf95c64983fa45c16c4",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-49",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-evaluation-horizon-source-v1/four-cycle-source/seed-49/config.toml"
+    }
+  ]
+}

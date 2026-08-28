@@ -4,10 +4,14 @@ use blob_interface::reference_mind::{ReferenceMind, ReferenceMindDecision, Refer
 use burn::prelude::*;
 
 use crate::action::{
-    attach_policy_memory, decode_policy_choice, PolicyChoice, NUM_ACTIONS, NUM_AMOUNT_CHOICES,
-    NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    attach_policy_memory, decode_policy_choice, decompose_policy_action, PolicyChoice,
+    NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS,
+    NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
+    NUM_SIGNAL_STRENGTH_CHOICES,
 };
-use crate::evaluation::{greedy_action, greedy_amount, greedy_signal, greedy_signal_strength};
+use crate::evaluation::{
+    greedy_amount, greedy_policy_action, greedy_signal, greedy_signal_strength,
+};
 use crate::model::{decode_policy_memory, encode_policy_memory, PolicyValueNet};
 use crate::observation::{Observation, OBS_DIM};
 
@@ -77,14 +81,18 @@ where
                 &self.device,
             ),
         );
-        let width = NUM_ACTIONS
-            + NUM_AMOUNT_CHOICES
+        let width = NUM_POLICY_ACTION_KINDS
+            + NUM_POLICY_TARGET_LOGITS
+            + NUM_POLICY_EFFORT_LOGITS
+            + NUM_POLICY_AMOUNT_LOGITS
             + NUM_SIGNAL_CHOICES
             + NUM_SIGNAL_STRENGTH_CHOICES
             + recurrent_size;
         let output = Tensor::cat(
             vec![
-                output.policy_logits,
+                output.action_kind_logits,
+                output.target_logits,
+                output.effort_logits,
                 output.amount_logits,
                 output.signal_logits,
                 output.signal_strength_logits,
@@ -108,14 +116,25 @@ where
             .enumerate()
             .map(|(index, (input, observation))| {
                 let start = index * width;
-                let action = greedy_action(&output[start..start + NUM_ACTIONS], observation);
-                let amount_start = start + NUM_ACTIONS;
+                let target_start = start + NUM_POLICY_ACTION_KINDS;
+                let effort_start = target_start + NUM_POLICY_TARGET_LOGITS;
+                let amount_start = effort_start + NUM_POLICY_EFFORT_LOGITS;
+                let action = greedy_policy_action(
+                    &output[start..target_start],
+                    &output[target_start..effort_start],
+                    &output[effort_start..amount_start],
+                    observation,
+                );
+                let kind = decompose_policy_action(action)
+                    .expect("greedy action is in the policy catalog")
+                    .kind;
                 let amount = greedy_amount(
-                    &output[amount_start..amount_start + NUM_AMOUNT_CHOICES],
+                    &output[amount_start + kind * NUM_AMOUNT_CHOICES
+                        ..amount_start + (kind + 1) * NUM_AMOUNT_CHOICES],
                     observation,
                     action,
                 );
-                let signal_start = amount_start + NUM_AMOUNT_CHOICES;
+                let signal_start = amount_start + NUM_POLICY_AMOUNT_LOGITS;
                 let signal = greedy_signal(
                     &output[signal_start..signal_start + NUM_SIGNAL_CHOICES],
                     observation,
@@ -190,14 +209,18 @@ where
             tensor,
             Tensor::<B, 2>::from_data(TensorData::new(memory, [1, recurrent_size]), &self.device),
         );
-        let width = NUM_ACTIONS
-            + NUM_AMOUNT_CHOICES
+        let width = NUM_POLICY_ACTION_KINDS
+            + NUM_POLICY_TARGET_LOGITS
+            + NUM_POLICY_EFFORT_LOGITS
+            + NUM_POLICY_AMOUNT_LOGITS
             + NUM_SIGNAL_CHOICES
             + NUM_SIGNAL_STRENGTH_CHOICES
             + recurrent_size;
         let output = Tensor::cat(
             vec![
-                output.policy_logits,
+                output.action_kind_logits,
+                output.target_logits,
+                output.effort_logits,
                 output.amount_logits,
                 output.signal_logits,
                 output.signal_strength_logits,
@@ -211,13 +234,25 @@ where
         .into_iter()
         .map(f32::from)
         .collect::<Vec<_>>();
-        let action = greedy_action(&output[..NUM_ACTIONS], &observation);
+        let target_start = NUM_POLICY_ACTION_KINDS;
+        let effort_start = target_start + NUM_POLICY_TARGET_LOGITS;
+        let amount_start = effort_start + NUM_POLICY_EFFORT_LOGITS;
+        let action = greedy_policy_action(
+            &output[..target_start],
+            &output[target_start..effort_start],
+            &output[effort_start..amount_start],
+            &observation,
+        );
+        let kind = decompose_policy_action(action)
+            .expect("greedy action is in the policy catalog")
+            .kind;
         let amount = greedy_amount(
-            &output[NUM_ACTIONS..NUM_ACTIONS + NUM_AMOUNT_CHOICES],
+            &output[amount_start + kind * NUM_AMOUNT_CHOICES
+                ..amount_start + (kind + 1) * NUM_AMOUNT_CHOICES],
             &observation,
             action,
         );
-        let signal_start = NUM_ACTIONS + NUM_AMOUNT_CHOICES;
+        let signal_start = amount_start + NUM_POLICY_AMOUNT_LOGITS;
         let signal = greedy_signal(
             &output[signal_start..signal_start + NUM_SIGNAL_CHOICES],
             &observation,

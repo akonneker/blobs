@@ -1,0 +1,21 @@
+# Pre-training geometry gates for resource-layout controls. These thresholds
+# are exploratory seams, not permanent balance targets. The intentionally
+# favored treatment remains subject to reachability and endurance checks but
+# is explicitly exempted from symmetry checks.
+schema_version = 2
+
+[absolute]
+# The maintained forager is the minimum useful feeding proxy. Random controls
+# are intentionally not required to survive or feed.
+min_forager_plant_occupancy_rate = 0.005
+min_forager_consumed_energy_per_episode = 10.0
+
+[geometry]
+asymmetry_allowed_variants = ["favored-team-zero-plants"]
+require_all_starting_cells_can_reach_plants = true
+require_team_p90_within_best_travel_endurance = true
+max_team_mean_plant_distance_gap = 4.0
+max_team_p90_plant_distance_gap = 6.0
+max_exclusive_plant_share_gap = 0.35
+max_exclusive_major_food_share_gap = 0.25
+max_starting_plant_occupancy_rate_gap = 0.10

@@ -1,0 +1,11 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "1c6363391289d0f630be8344963bb876c8715dab0dea323470295633bfbc6a95",
+  "execution_contract_sha256": "547c04631d188793373cce8c6868b1c56795afcabbf37783d39d07fa3e32f286",
+  "trainer_sha256": "d46e1ea527560331ad689f0271112c31e2c1172924b4c9dc87a54e8e4f3fd6aa",
+  "total_runs": 9,
+  "succeeded": 9,
+  "failed": 0,
+  "still_running": 0,
+  "aggregate_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/aggregate.json"
+}

@@ -1,0 +1,9 @@
+schema_version = 1
+
+# Ecological qualification is normally required for scale advancement, but a
+# failed behavioral requirement may be accepted with an explicit recorded
+# override. This never changes whether the checkpoint itself is valid.
+qualification = "required"
+require_held_out_evaluation = true
+require_feeding_competency = true
+require_rollout_pool_acceptance = false

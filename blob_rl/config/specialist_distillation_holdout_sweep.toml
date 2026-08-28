@@ -1,0 +1,19 @@
+# Paired confirmation on seeds not used to select the specialist coefficient.
+# Only stage-local distillation differs; the qualified initial policy,
+# curriculum, evaluation suite, and world-time budget remain identical.
+
+base_config = "competitive_transfer_large_skirmish_frequent.toml"
+output_dir = "../../sweeps/specialist-distillation-holdout-v1"
+seeds = [45, 46, 47, 48, 49]
+
+[[variants]]
+name = "control"
+description = "Verified initial-policy anchor without specialist distillation"
+
+[[variants]]
+name = "coefficient-005"
+description = "Stage-local ecology and combat teachers at coefficient 0.05"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.05
+combat_coeff = 0.05

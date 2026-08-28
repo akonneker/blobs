@@ -33,6 +33,10 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     max_parallel: usize,
 
+    /// Safety cap for each variant's canonical micro-characterization.
+    #[arg(long, default_value_t = 1_000_000)]
+    max_micro_actions: usize,
+
     /// Immutable aggregate JSON destination.
     #[arg(long)]
     output: PathBuf,
@@ -47,6 +51,7 @@ fn main() {
             opponents: args.opponents,
             baseline_variant: args.baseline_variant,
             max_parallel: args.max_parallel,
+            max_micro_actions: args.max_micro_actions,
         },
     )
     .unwrap_or_else(|error| panic!("viability matrix failed: {error}"));

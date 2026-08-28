@@ -1,0 +1,23 @@
+# Isolate rollout cadence while fixing the stage-episode horizons shared by
+# rollout environments and held-out evaluation. Both variants use the
+# four-cycle profile's retention/contact/skirmish limits; only cycle length and
+# per-cycle rollout exposure change. Total stage exposure remains fixed over
+# 524,288 quanta per environment.
+
+base_config = "competitive_transfer_large_skirmish_frequent.toml"
+output_dir = "../../sweeps/combat-curriculum-cadence-isolated-v1"
+seeds = [45, 46, 47, 48, 49]
+
+[[variants]]
+name = "four-cycle-balanced"
+description = "Four 131,072-quanta cycles with common held-out horizons"
+
+[[variants]]
+name = "two-cycle-balanced"
+description = "Two 262,144-quanta cycles with common held-out horizons"
+[variants.combat_curriculum]
+cycle_sim_time_quanta_per_env = 262_144
+on_food_sim_time_quanta_per_cycle = 32_768
+adjacent_food_sim_time_quanta_per_cycle = 32_768
+contact_sim_time_quanta_per_cycle = 65_536
+skirmish_sim_time_quanta_per_cycle = 65_536

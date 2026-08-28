@@ -1,0 +1,680 @@
+{
+  "schema_version": 2,
+  "package_version": "0.1.0",
+  "code_revision": "6a161c47d9ea6b2a21c5f121bb5283b704406685+dirty",
+  "matrix_file_sha256": "cac91dfc77a9ff3e8e3139f02ab57c28d2020780e75caceeec35ab7a994b8687",
+  "matrix_package_version": "0.1.0",
+  "matrix_code_revision": "6a161c47d9ea6b2a21c5f121bb5283b704406685+dirty",
+  "matrix_config_hash": "336329e33c6eab70e8a3d545425b5bcb616cb9459936b75e617569678f609235",
+  "manifest_sha256": "745665bc8fac03736cbc517cd553fd59f726ad5abc95b09b7bd16c0f3883f401",
+  "gate_spec_sha256": "2a7003308bf8479d1447e0a026ebb6974ea0573497b4cb75306946a8a5636587",
+  "gate_config_hash": "339f40f844e5e03e620997e5ccceff945b522a8d688004cadd41b5178bedb708",
+  "decision": "passed",
+  "total_checks": 51,
+  "failed_checks": 0,
+  "checks": [
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 35.7578125,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.218505859375,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.4140625,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.046875,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.05555555555555558,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "uniform-control",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 31.171875,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.53515625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 5.171875,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.15625,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.07812500000000006,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "plant-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.015625,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 29.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.9478759765625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.7578125,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.234375,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.06597222222222221,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "plant-islands",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.03125,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 35.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.47119140625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 3.5859375,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.078125,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.024305555555555525,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "loose-patches",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.015625,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 35.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.47119140625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 3.5859375,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.078125,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.2326388888888889,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "loose-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.015625,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 41.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.101318359375,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.017361111111111105,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "balanced-plant-territories",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.1,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "favored-team-zero-plants",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 26.859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "starting_cell_unreachable_plant_rate",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.0,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_travel_endurance_margin",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_least",
+      "observed": 29.5859375,
+      "threshold": 0.0,
+      "passed": true
+    },
+    {
+      "metric": "team_mean_plant_distance_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 1.9478759765625,
+      "threshold": 4.0,
+      "passed": true
+    },
+    {
+      "metric": "team_p90_plant_distance_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 2.7578125,
+      "threshold": 6.0,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_plant_share_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.234375,
+      "threshold": 0.35,
+      "passed": true
+    },
+    {
+      "metric": "exclusive_major_food_share_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.234375,
+      "threshold": 0.25,
+      "passed": true
+    },
+    {
+      "metric": "starting_plant_occupancy_rate_gap",
+      "subject": {
+        "variant": "islands-and-corridors",
+        "baseline_variant": null,
+        "candidate_profile": null,
+        "opponent_profile": null
+      },
+      "comparator": "at_most",
+      "observed": 0.03125,
+      "threshold": 0.1,
+      "passed": true
+    }
+  ]
+}

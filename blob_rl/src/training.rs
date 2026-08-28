@@ -13,7 +13,11 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::action::{
-    PolicyChoice, NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    compose_policy_action, policy_action_kind_mask, policy_effort_mask, policy_target_mask,
+    policy_wait_action, HierarchicalActionChoice, PolicyChoice, NUM_AMOUNT_CHOICES,
+    NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS,
+    NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
+    NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::artifact::{
     load_checkpoint, load_policy_snapshot, load_rollout_snapshot, publish_best_pointer,
@@ -22,14 +26,21 @@ use crate::artifact::{
     TRAINING_ARTIFACT_SCHEMA_VERSION,
 };
 use crate::behavior_cloning::verify_behavior_clone_artifact;
-use crate::config::{OpponentProfile, SelfPlayConfig, TrainingConfig};
+use crate::competency_frontier::{
+    publish_competency_frontier, CompetencyCheckpointIdentity, CompetencyFrontier,
+    CompetencyFrontierEntry, CompetencyMetrics, SpecialistTeacherSelection,
+};
+use crate::config::{FeedingCurriculumStage, OpponentProfile, SelfPlayConfig, TrainingConfig};
+use crate::contact_evaluation::{evaluate_contact, ContactEvaluationReport};
 use crate::env::{BlobEnv, EpisodeOutcome, PolicyObservation};
 use crate::evaluation::{evaluate_policy_suite, EvaluationMetrics, EvaluationOpponent};
+use crate::feeding_curriculum::{evaluate_feeding_promotion, FeedingPromotionReport};
+use crate::feeding_evaluation_artifact::verify_feeding_initial_policy;
 use crate::model::{
     decode_policy_memory, encode_policy_memory, PolicyValueNet, PolicyValueNetConfig,
 };
 use crate::observation::OBS_DIM;
-use crate::ppo::{ppo_update, RolloutBuffer, Transition};
+use crate::ppo::{ppo_update_anchored, PolicyAnchorTarget, RolloutBuffer, Transition};
 use crate::telemetry::{
     publish_episode_record, publish_training_summary, TelemetryEpisodeOutcome,
     TrainingTelemetryState,
@@ -40,6 +51,174 @@ use blob_interface::types::CellId;
 struct PendingTransition {
     rollout_index: usize,
     started_at: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RolloutCurriculumAssignment {
+    stage: FeedingCurriculumStage,
+    simulation_time_quanta: u64,
+}
+
+struct SpecialistTeachers<B: Backend> {
+    ecology: Option<PolicySnapshot<B>>,
+    combat: Option<PolicySnapshot<B>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnchorTeacher {
+    Initial,
+    Ecology,
+    Combat,
+}
+
+fn anchor_teacher_for_stage(
+    config: &TrainingConfig,
+    stage: FeedingCurriculumStage,
+    has_initial: bool,
+    has_ecology: bool,
+    has_combat: bool,
+) -> Option<(AnchorTeacher, f32)> {
+    if config.specialist_distillation.enabled {
+        match stage {
+            FeedingCurriculumStage::OnFood | FeedingCurriculumStage::AdjacentFood
+                if has_ecology && config.specialist_distillation.ecology_coeff > 0.0 =>
+            {
+                return Some((
+                    AnchorTeacher::Ecology,
+                    config.specialist_distillation.ecology_coeff,
+                ));
+            }
+            FeedingCurriculumStage::Contact | FeedingCurriculumStage::Skirmish
+                if has_combat && config.specialist_distillation.combat_coeff > 0.0 =>
+            {
+                return Some((
+                    AnchorTeacher::Combat,
+                    config.specialist_distillation.combat_coeff,
+                ));
+            }
+            _ => {}
+        }
+    }
+    has_initial.then(|| {
+        (
+            AnchorTeacher::Initial,
+            config.rollout_initial_policy_anchor_coeff(stage),
+        )
+    })
+}
+
+fn infer_anchor_targets<B: Backend>(
+    model: &PolicyValueNet<B>,
+    observations: &[f32],
+    memory: &[f32],
+    rows: &[usize],
+    recurrent_size: usize,
+    device: &B::Device,
+) -> Vec<PolicyAnchorTarget>
+where
+    f32: From<B::FloatElem>,
+{
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let mut selected_observations = Vec::with_capacity(rows.len() * OBS_DIM);
+    let mut selected_memory = Vec::with_capacity(rows.len() * recurrent_size);
+    for &row in rows {
+        let observation_start = row * OBS_DIM;
+        let memory_start = row * recurrent_size;
+        selected_observations
+            .extend_from_slice(&observations[observation_start..observation_start + OBS_DIM]);
+        selected_memory.extend_from_slice(&memory[memory_start..memory_start + recurrent_size]);
+    }
+    let output = model.forward_with_memory(
+        Tensor::<B, 2>::from_data(
+            TensorData::new(selected_observations, [rows.len(), OBS_DIM]),
+            device,
+        ),
+        Tensor::<B, 2>::from_data(
+            TensorData::new(selected_memory, [rows.len(), recurrent_size]),
+            device,
+        ),
+    );
+    let width = NUM_POLICY_ACTION_KINDS
+        + NUM_POLICY_TARGET_LOGITS
+        + NUM_POLICY_EFFORT_LOGITS
+        + NUM_POLICY_AMOUNT_LOGITS
+        + NUM_SIGNAL_CHOICES
+        + NUM_SIGNAL_STRENGTH_CHOICES
+        + recurrent_size;
+    let data: Vec<f32> = Tensor::cat(
+        vec![
+            output.action_kind_logits,
+            output.target_logits,
+            output.effort_logits,
+            output.amount_logits,
+            output.signal_logits,
+            output.signal_strength_logits,
+            output.next_memory,
+        ],
+        1,
+    )
+    .into_data()
+    .to_vec()
+    .unwrap();
+    data.chunks_exact(width)
+        .map(|row| {
+            let target = NUM_POLICY_ACTION_KINDS;
+            let effort = target + NUM_POLICY_TARGET_LOGITS;
+            let amount = effort + NUM_POLICY_EFFORT_LOGITS;
+            let signal = amount + NUM_POLICY_AMOUNT_LOGITS;
+            let strength = signal + NUM_SIGNAL_CHOICES;
+            let memory = strength + NUM_SIGNAL_STRENGTH_CHOICES;
+            PolicyAnchorTarget {
+                action_kind_logits: row[..target].to_vec(),
+                target_logits: row[target..effort].to_vec(),
+                effort_logits: row[effort..amount].to_vec(),
+                amount_logits: row[amount..signal].to_vec(),
+                signal_logits: row[signal..strength].to_vec(),
+                signal_strength_logits: row[strength..memory].to_vec(),
+                next_memory: row[memory..].to_vec(),
+            }
+        })
+        .collect()
+}
+
+fn load_specialist_teacher<B: Backend>(
+    identity: &CompetencyCheckpointIdentity,
+    frontier: &CompetencyFrontier,
+    device: &B::Device,
+) -> Result<PolicySnapshot<B>, String> {
+    if !frontier.contains_identity(identity) {
+        return Err("specialist teacher is not a member of the competency frontier".into());
+    }
+    let checkpoint = Path::new(&identity.checkpoint_directory).join(&identity.checkpoint);
+    let snapshot = load_policy_snapshot(&checkpoint, device)?;
+    if snapshot.checkpoint != identity.checkpoint
+        || snapshot.update != identity.update
+        || snapshot.actions != identity.actions
+    {
+        return Err("specialist teacher identity does not match its checkpoint".into());
+    }
+    Ok(snapshot)
+}
+
+fn load_specialist_teachers<B: Backend>(
+    selection: &SpecialistTeacherSelection,
+    frontier: &CompetencyFrontier,
+    device: &B::Device,
+) -> Result<SpecialistTeachers<B>, String> {
+    Ok(SpecialistTeachers {
+        ecology: selection
+            .ecology
+            .as_ref()
+            .map(|identity| load_specialist_teacher(identity, frontier, device))
+            .transpose()?,
+        combat: selection
+            .combat
+            .as_ref()
+            .map(|identity| load_specialist_teacher(identity, frontier, device))
+            .transpose()?,
+    })
 }
 
 fn trim_rollout_pool<B: Backend>(
@@ -116,6 +295,23 @@ fn choose_rollout_opponent(
     }
 }
 
+fn choose_curriculum_rollout_opponent(
+    stage: FeedingCurriculumStage,
+    stage_baseline: OpponentProfile,
+    league: &mut [RolloutLeagueMember],
+    baseline: OpponentProfile,
+    config: &SelfPlayConfig,
+    rng: &mut impl Rng,
+) -> RolloutOpponentAssignment {
+    if stage == FeedingCurriculumStage::Competitive {
+        choose_rollout_opponent(league, baseline, config, rng)
+    } else {
+        RolloutOpponentAssignment::Baseline {
+            profile: stage_baseline,
+        }
+    }
+}
+
 fn update_league_ratings(
     league: &mut [RolloutLeagueMember],
     evaluation: Option<&EvaluationMetrics>,
@@ -164,15 +360,17 @@ fn new_rollout_env<B: Backend>(
     pool: &[PolicySnapshot<B>],
     retired: &[PolicySnapshot<B>],
     config: &TrainingConfig,
+    curriculum: RolloutCurriculumAssignment,
     seed: u64,
     device: &B::Device,
 ) -> Result<BlobEnv, String>
 where
     f32: From<B::FloatElem>,
 {
+    let stage_env = config.rollout_environment(curriculum.stage, curriculum.simulation_time_quanta);
     let mut env = match assignment {
         RolloutOpponentAssignment::Baseline { profile } => {
-            let mut env_config = config.env.clone();
+            let mut env_config = stage_env;
             env_config.opponent = *profile;
             BlobEnv::new(env_config, config.reward.clone(), seed)
         }
@@ -183,7 +381,7 @@ where
                 .find(|snapshot| snapshot.model_sha256 == *model_sha256)
                 .ok_or_else(|| "rollout opponent is absent from the snapshot pool".to_string())?;
             BlobEnv::new_with_snapshot(
-                config.env.clone(),
+                stage_env,
                 config.reward.clone(),
                 seed,
                 snapshot.model.clone(),
@@ -200,15 +398,17 @@ fn restore_rollout_env<B: Backend>(
     pool: &[PolicySnapshot<B>],
     retired: &[PolicySnapshot<B>],
     config: &TrainingConfig,
+    curriculum: RolloutCurriculumAssignment,
     checkpoint: crate::env::BlobEnvCheckpoint,
     device: &B::Device,
 ) -> Result<BlobEnv, String>
 where
     f32: From<B::FloatElem>,
 {
+    let stage_env = config.rollout_environment(curriculum.stage, curriculum.simulation_time_quanta);
     let mut env = match assignment {
         RolloutOpponentAssignment::Baseline { profile } => {
-            let mut env_config = config.env.clone();
+            let mut env_config = stage_env;
             env_config.opponent = *profile;
             BlobEnv::from_checkpoint(env_config, config.reward.clone(), checkpoint)
         }
@@ -219,7 +419,7 @@ where
                 .find(|snapshot| snapshot.model_sha256 == *model_sha256)
                 .ok_or_else(|| "restored rollout opponent is absent from the pool".to_string())?;
             BlobEnv::from_checkpoint_with_snapshot(
-                config.env.clone(),
+                stage_env,
                 config.reward.clone(),
                 snapshot.model.clone(),
                 device.clone(),
@@ -296,15 +496,70 @@ impl EpisodeStats {
     }
 }
 
-fn evaluation_is_better(candidate: &EvaluationMetrics, incumbent: &EvaluationMetrics) -> bool {
+fn contact_wins(report: &ContactEvaluationReport) -> usize {
+    report.variants.iter().map(|variant| variant.wins).sum()
+}
+
+fn contact_is_better(
+    candidate: Option<&ContactEvaluationReport>,
+    incumbent: Option<&ContactEvaluationReport>,
+) -> bool {
+    match (candidate, incumbent) {
+        (Some(candidate), Some(incumbent)) => {
+            // Local opponents can exhaust themselves while attacking, so a
+            // scenario win is not necessarily attributable to the learned
+            // policy. Resolver-attributed kills are the stronger tie-break.
+            candidate.kills > incumbent.kills
+                || (candidate.kills == incumbent.kills
+                    && contact_wins(candidate) > contact_wins(incumbent))
+                || (candidate.kills == incumbent.kills
+                    && contact_wins(candidate) == contact_wins(incumbent)
+                    && candidate.damage_dealt > incumbent.damage_dealt)
+                || (candidate.kills == incumbent.kills
+                    && contact_wins(candidate) == contact_wins(incumbent)
+                    && candidate.damage_dealt == incumbent.damage_dealt
+                    && candidate.damaging_episode_rate > incumbent.damaging_episode_rate)
+        }
+        (Some(_), None) => true,
+        (None, Some(_) | None) => false,
+    }
+}
+
+fn contact_is_equal(
+    candidate: Option<&ContactEvaluationReport>,
+    incumbent: Option<&ContactEvaluationReport>,
+) -> bool {
+    match (candidate, incumbent) {
+        (Some(candidate), Some(incumbent)) => {
+            contact_wins(candidate) == contact_wins(incumbent)
+                && candidate.kills == incumbent.kills
+                && candidate.damage_dealt == incumbent.damage_dealt
+                && candidate.damaging_episode_rate == incumbent.damaging_episode_rate
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn evaluation_is_better(
+    candidate: &EvaluationMetrics,
+    candidate_contact: Option<&ContactEvaluationReport>,
+    incumbent: &EvaluationMetrics,
+    incumbent_contact: Option<&ContactEvaluationReport>,
+) -> bool {
     candidate.worst_case_win_rate > incumbent.worst_case_win_rate
         || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
             && candidate.win_rate > incumbent.win_rate)
         || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
             && candidate.win_rate == incumbent.win_rate
+            && contact_is_better(candidate_contact, incumbent_contact))
+        || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
+            && candidate.win_rate == incumbent.win_rate
+            && contact_is_equal(candidate_contact, incumbent_contact)
             && candidate.average_reward > incumbent.average_reward)
         || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
             && candidate.win_rate == incumbent.win_rate
+            && contact_is_equal(candidate_contact, incumbent_contact)
             && candidate.average_reward == incumbent.average_reward
             && candidate.average_episode_len < incumbent.average_episode_len)
 }
@@ -332,6 +587,30 @@ fn training_budget_complete(
         || total_actions >= config.total_timesteps,
         |target| simulation_budget_complete(cumulative_sim_time_quanta, target),
     )
+}
+
+fn checkpoint_publication_due(
+    periodic_checkpoint: bool,
+    is_new_best: bool,
+    promote_to_rollout_pool: bool,
+    terminal_boundary: bool,
+    competency_frontier_changed: bool,
+) -> bool {
+    periodic_checkpoint
+        || is_new_best
+        || promote_to_rollout_pool
+        || terminal_boundary
+        || competency_frontier_changed
+}
+
+fn self_play_promotion_due(
+    config: &TrainingConfig,
+    minimum_sim_time_quanta: u64,
+    update_count: usize,
+) -> bool {
+    config.self_play.max_opponent_pool > 0
+        && minimum_sim_time_quanta >= config.self_play.start_after_sim_time_quanta_per_env
+        && update_count.is_multiple_of(config.self_play.opponent_update_interval)
 }
 
 fn open_metrics_file(path: &Path, resume: bool, header: &str) -> Result<File, String> {
@@ -395,6 +674,74 @@ fn write_fixed_evaluation_rows(
         .map_err(|error| format!("failed to flush evaluation metrics: {error}"))
 }
 
+fn write_feeding_evaluation_rows(
+    file: &mut File,
+    update: usize,
+    actions: u64,
+    suite: &str,
+    report: &FeedingPromotionReport,
+) -> Result<(), String> {
+    for stage in &report.stages {
+        writeln!(
+            file,
+            "{update},{actions},{suite},{},{},{},{},{:.6},{:.6},{:.6},{},{},{},{},{}",
+            report.passed,
+            stage.stage,
+            stage.episodes,
+            stage.successful_episodes,
+            stage.episode_success_rate,
+            stage.survival_rate,
+            stage.consumed_energy_per_initial_cell,
+            stage.movement_successes,
+            stage.consume_successes,
+            stage.consumed_energy,
+            stage.safety_aborts,
+            report.seeds.len(),
+        )
+        .map_err(|error| format!("failed to write feeding evaluation: {error}"))?;
+    }
+    file.flush()
+        .map_err(|error| format!("failed to flush feeding evaluation: {error}"))
+}
+
+fn write_contact_evaluation_rows(
+    file: &mut File,
+    update: usize,
+    actions: u64,
+    report: &ContactEvaluationReport,
+) -> Result<(), String> {
+    for variant in &report.variants {
+        writeln!(
+            file,
+            "{update},{actions},{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17:.6},{18:.6},{19:.6},{20}",
+            variant.stage,
+            variant.cells_per_team,
+            variant.initial_energy,
+            variant.opponent,
+            variant.episodes,
+            variant.wins,
+            variant.losses,
+            variant.timeouts,
+            variant.safety_aborts,
+            variant.attacking_episodes,
+            variant.damaging_episodes,
+            variant.attacks_committed,
+            variant.attacks_succeeded,
+            variant.damage_dealt,
+            variant.kills,
+            variant.attacks_frustrated,
+            variant.attacks_interrupted,
+            variant.attacking_episode_rate,
+            variant.damaging_episode_rate,
+            variant.attack_success_rate,
+            report.seeds.len(),
+        )
+        .map_err(|error| format!("failed to write contact evaluation: {error}"))?;
+    }
+    file.flush()
+        .map_err(|error| format!("failed to flush contact evaluation: {error}"))
+}
+
 /// Run the full training loop.
 ///
 /// - `load_model_path`: If Some, load weights from this path to continue training.
@@ -414,6 +761,14 @@ pub fn train<B: AutodiffBackend>(
         .validate()
         .expect("invalid RL training configuration");
     assert!(
+        !config.uses_initial_policy_anchor() || config.initial_policy.is_some(),
+        "functional policy anchoring requires a verified initial_policy at training startup"
+    );
+    assert!(
+        !config.specialist_distillation.enabled || config.initial_policy.is_some(),
+        "specialist distillation requires a verified initial_policy as its pre-frontier and competitive-stage fallback"
+    );
+    assert!(
         load_model_path.is_none() || resume_checkpoint.is_none(),
         "load_model_path and resume_checkpoint are mutually exclusive"
     );
@@ -421,6 +776,17 @@ pub fn train<B: AutodiffBackend>(
         load_model_path.is_none() || config.initial_policy.is_none(),
         "load_model_path and config.initial_policy are mutually exclusive"
     );
+    let initial_qualification = config.initial_policy.as_ref().and_then(|initial| {
+        initial.qualification.as_ref().map(|qualification| {
+            verify_feeding_initial_policy(
+                Path::new(&qualification.path),
+                &qualification.artifact_hash,
+                &initial.artifact_sha256,
+                &config,
+            )
+            .unwrap_or_else(|error| panic!("invalid initial-policy qualification: {error}"))
+        })
+    });
     let configured_initial_model = if resume_checkpoint.is_none() {
         config.initial_policy.as_ref().map(|initial| {
             verify_behavior_clone_artifact(
@@ -473,6 +839,34 @@ pub fn train<B: AutodiffBackend>(
         hidden2: config.model.hidden2,
         recurrent_size: config.model.recurrent_size,
     };
+    let reference_model: Option<PolicyValueNet<B::InnerBackend>> = (config
+        .uses_initial_policy_anchor()
+        || config.specialist_distillation.enabled)
+        .then(|| {
+            let initial = config
+                .initial_policy
+                .as_ref()
+                .expect("validated initial-policy anchoring has an initial policy");
+            let model_path = verify_behavior_clone_artifact(
+                Path::new(&initial.directory),
+                &initial.artifact_sha256,
+                &config.model,
+            )
+            .unwrap_or_else(|error| panic!("invalid initial-policy anchor: {error}"));
+            println!(
+                "  Anchoring policy to: {} (ordinary {}, contact {})",
+                initial.directory,
+                config.ppo.initial_policy_anchor_coeff,
+                config
+                    .combat_curriculum
+                    .contact_initial_policy_anchor_coeff
+                    .unwrap_or(config.ppo.initial_policy_anchor_coeff),
+            );
+            model_config
+                .init::<B::InnerBackend>(&device)
+                .load_file(model_path, &CompactRecorder::new(), &device)
+                .expect("failed to load initial-policy anchor")
+        });
     let initial_model: Option<PolicyValueNet<B>> = if resume_checkpoint.is_some() {
         None
     } else if let Some(path) = load_model_path.as_ref() {
@@ -503,10 +897,14 @@ pub fn train<B: AutodiffBackend>(
         mut cumulative_sim_time_quanta,
         mut update_count,
         mut best_evaluation,
+        mut best_contact_evaluation,
+        mut competency_frontier,
+        mut specialist_teacher_selection,
         mut rollout_pool,
         mut rollout_league,
         mut retired_rollout_snapshots,
         mut environment_opponents,
+        mut environment_curriculum_stages,
         mut training_telemetry,
     ) = if let Some(checkpoint) = resume_checkpoint {
         let (model, optimizer, state, metadata) =
@@ -559,6 +957,11 @@ pub fn train<B: AutodiffBackend>(
             config.num_envs,
             "checkpoint rollout-opponent assignment count mismatch"
         );
+        assert_eq!(
+            state.environment_curriculum_stages.len(),
+            config.num_envs,
+            "checkpoint curriculum-stage assignment count mismatch"
+        );
         let mut rollout_league = state.rollout_pool.clone();
         let mut rollout_pool = rollout_league
             .iter()
@@ -566,6 +969,7 @@ pub fn train<B: AutodiffBackend>(
             .collect::<Result<Vec<_>, _>>()
             .expect("failed to restore rollout-opponent pool");
         let environment_opponents = state.environment_opponents.clone();
+        let environment_curriculum_stages = state.environment_curriculum_stages.clone();
         let mut retired_rollout_snapshots = state
             .active_retired_snapshots
             .iter()
@@ -575,13 +979,17 @@ pub fn train<B: AutodiffBackend>(
         let envs = state
             .environments
             .into_iter()
-            .zip(&environment_opponents)
-            .map(|(environment, opponent)| {
+            .enumerate()
+            .map(|(index, environment)| {
                 restore_rollout_env(
-                    opponent,
+                    &environment_opponents[index],
                     &rollout_pool,
                     &retired_rollout_snapshots,
                     &config,
+                    RolloutCurriculumAssignment {
+                        stage: environment_curriculum_stages[index],
+                        simulation_time_quanta: state.cumulative_sim_time_quanta[index],
+                    },
                     environment,
                     &device,
                 )
@@ -625,17 +1033,26 @@ pub fn train<B: AutodiffBackend>(
             state.cumulative_sim_time_quanta,
             state.update_count,
             state.best_evaluation,
+            state.best_contact_evaluation,
+            state.competency_frontier,
+            state.specialist_teachers,
             rollout_pool,
             rollout_league,
             retired_rollout_snapshots,
             environment_opponents,
+            environment_curriculum_stages,
             state.telemetry,
         )
     } else {
+        let initial_stage = config.rollout_stage(0);
+        let initial_assignment = RolloutOpponentAssignment::Baseline {
+            profile: config.rollout_baseline_opponent(initial_stage, 0),
+        };
+        let initial_env_config = config.rollout_environment(initial_stage, 0);
         let envs = (0..config.num_envs)
             .map(|i| {
                 BlobEnv::new(
-                    config.env.clone(),
+                    initial_env_config.clone(),
                     config.reward.clone(),
                     config.seed.wrapping_add(i as u64),
                 )
@@ -654,17 +1071,30 @@ pub fn train<B: AutodiffBackend>(
             vec![0_u64; config.num_envs],
             0,
             None,
+            None,
+            CompetencyFrontier::default(),
+            SpecialistTeacherSelection::default(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            vec![
-                RolloutOpponentAssignment::Baseline {
-                    profile: config.env.opponent,
-                };
-                config.num_envs
-            ],
+            vec![initial_assignment; config.num_envs],
+            vec![initial_stage; config.num_envs],
             None,
         )
+    };
+
+    let mut specialist_teachers = if config.specialist_distillation.enabled {
+        load_specialist_teachers::<B::InnerBackend>(
+            &specialist_teacher_selection,
+            &competency_frontier,
+            &device,
+        )
+        .expect("failed to restore specialist distillation teachers")
+    } else {
+        SpecialistTeachers {
+            ecology: None,
+            combat: None,
+        }
     };
 
     for env in &mut envs {
@@ -682,6 +1112,9 @@ pub fn train<B: AutodiffBackend>(
                 .map(|(index, env)| {
                     (
                         config.seed.wrapping_add(index as u64),
+                        config
+                            .rollout_stage(cumulative_sim_time_quanta[index])
+                            .to_string(),
                         env.telemetry_sample()
                             .expect("enabled telemetry has an initial sample"),
                     )
@@ -703,11 +1136,19 @@ pub fn train<B: AutodiffBackend>(
     // Create metrics log file
     std::fs::create_dir_all(&config.checkpoint_dir).expect("failed to create checkpoint directory");
     let artifact_root = Path::new(&config.checkpoint_dir);
+    let frontier_checkpoint_directory = std::fs::canonicalize(artifact_root)
+        .expect("failed to resolve checkpoint directory")
+        .to_string_lossy()
+        .into_owned();
+    if !competency_frontier.entries.is_empty() {
+        publish_competency_frontier(artifact_root, &competency_frontier)
+            .expect("failed to restore competency-frontier pointer");
+    }
     let metrics_path = artifact_root.join("metrics.csv");
     let mut metrics_file = open_metrics_file(
         &metrics_path,
         resume_checkpoint.is_some(),
-        "update,actions,policy_loss,value_loss,entropy,approx_kl,clip_fraction,explained_variance,ppo_optimizer_steps,ppo_epochs_completed,kl_early_stop,ppo_recurrent_unroll_steps,ppo_recurrent_chunks,episodes,wins,losses,timeouts,win_rate,avg_ep_len,avg_reward,training_cells_alive,completed_transitions,discarded_tails,mean_elapsed_time,actions_per_second,min_sim_time_quanta,max_sim_time_quanta,total_sim_time_quanta,simulation_quanta_per_second",
+        "update,actions,policy_loss,value_loss,entropy,approx_kl,anchor_loss,clip_fraction,explained_variance,ppo_optimizer_steps,ppo_epochs_completed,kl_early_stop,ppo_recurrent_unroll_steps,ppo_recurrent_chunks,episodes,wins,losses,timeouts,win_rate,avg_ep_len,avg_reward,training_cells_alive,completed_transitions,discarded_tails,mean_elapsed_time,actions_per_second,min_sim_time_quanta,max_sim_time_quanta,total_sim_time_quanta,simulation_quanta_per_second,curriculum_stage",
     )
     .expect("failed to initialize training metrics");
     println!("  Logging metrics to: {}", metrics_path.display());
@@ -718,9 +1159,27 @@ pub fn train<B: AutodiffBackend>(
         "update,actions,opponent,episodes,wins,losses,timeouts,win_rate,worst_case_win_rate,avg_ep_len,avg_reward,evaluation_actions,seed_start,seed_count",
     )
     .expect("failed to initialize evaluation metrics");
+    let feeding_evaluation_path = artifact_root.join("feeding-evaluation.csv");
+    let mut feeding_evaluation_file = open_metrics_file(
+        &feeding_evaluation_path,
+        resume_checkpoint.is_some(),
+        "update,actions,suite,gate_passed,stage,episodes,successful_episodes,episode_success_rate,survival_rate,consumed_energy_per_initial_cell,movement_successes,consume_successes,consumed_energy,safety_aborts,seed_count",
+    )
+    .expect("failed to initialize feeding evaluation metrics");
+    let contact_evaluation_path = artifact_root.join("contact-evaluation.csv");
+    let mut contact_evaluation_file = open_metrics_file(
+        &contact_evaluation_path,
+        resume_checkpoint.is_some(),
+        "update,actions,stage,cells_per_team,initial_energy,opponent,episodes,wins,losses,timeouts,safety_aborts,attacking_episodes,damaging_episodes,attacks_committed,attacks_succeeded,damage_dealt,kills,attacks_frustrated,attacks_interrupted,attacking_episode_rate,damaging_episode_rate,attack_success_rate,seed_count",
+    )
+    .expect("failed to initialize contact evaluation metrics");
     let evaluation_seeds = (0..config.eval_episodes)
         .map(|index| config.evaluation_seed.wrapping_add(index as u64))
         .collect::<Vec<_>>();
+    let retention_evaluation_seeds = initial_qualification
+        .as_ref()
+        .map(|qualification| qualification.report.seeds.clone())
+        .filter(|seeds| config.feeding_curriculum.enabled && *seeds != evaluation_seeds);
     let compiled_ruleset_hash = envs
         .first()
         .map(BlobEnv::compiled_ruleset_hash)
@@ -747,11 +1206,21 @@ pub fn train<B: AutodiffBackend>(
         // across the complete environment set for each event frontier. This
         // keeps GPU dispatches large enough to amortize launch overhead and
         // preserves the stable env/cell action-sampling order used by exact
-        // continuation.
-        for _step in 0..config.rollout_length {
+        // continuation. Detached teachers use disjoint stage-routed
+        // sub-batches so no row pays for an inapplicable specialist.
+        let mut collection_steps = 0u64;
+        loop {
+            let draining_terminal_tails = config.total_simulation_quanta_per_env.is_some()
+                && training_budget_complete(&config, total_timesteps, &cumulative_sim_time_quanta)
+                && pending_transitions
+                    .iter()
+                    .any(|pending| !pending.is_empty());
+            if collection_steps >= config.rollout_length && !draining_terminal_tails {
+                break;
+            }
+            collection_steps = collection_steps.saturating_add(1);
             let mut inference_observations = Vec::new();
             let mut inference_memory = Vec::new();
-            let mut inference_mask_bias = Vec::new();
             let mut environment_rows = vec![None; config.num_envs];
             let mut inference_rows = 0usize;
 
@@ -759,6 +1228,7 @@ pub fn train<B: AutodiffBackend>(
                 if config
                     .total_simulation_quanta_per_env
                     .is_some_and(|target| cumulative_sim_time_quanta[env_idx] >= target)
+                    && pending_transitions[env_idx].is_empty()
                 {
                     continue;
                 }
@@ -776,17 +1246,85 @@ pub fn train<B: AutodiffBackend>(
                 inference_memory.extend(obs_list.iter().flat_map(|input| {
                     decode_policy_memory(&input.private_memory, config.model.recurrent_size)
                 }));
-                inference_mask_bias.extend(obs_list.iter().flat_map(|input| {
-                    input
-                        .observation
-                        .action_mask
-                        .iter()
-                        .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
-                }));
             }
 
             if inference_rows == 0 {
                 continue;
+            }
+
+            let mut initial_anchor_rows = Vec::new();
+            let mut ecology_anchor_rows = Vec::new();
+            let mut combat_anchor_rows = Vec::new();
+            for (env_idx, rows) in environment_rows.iter().enumerate() {
+                let Some(rows) = rows else { continue };
+                let route = anchor_teacher_for_stage(
+                    &config,
+                    environment_curriculum_stages[env_idx],
+                    reference_model.is_some(),
+                    specialist_teachers.ecology.is_some(),
+                    specialist_teachers.combat.is_some(),
+                );
+                match route.map(|(teacher, _)| teacher) {
+                    Some(AnchorTeacher::Initial) => initial_anchor_rows.extend(rows.clone()),
+                    Some(AnchorTeacher::Ecology) => ecology_anchor_rows.extend(rows.clone()),
+                    Some(AnchorTeacher::Combat) => combat_anchor_rows.extend(rows.clone()),
+                    None => {}
+                }
+            }
+            debug_assert_eq!(
+                initial_anchor_rows.len() + ecology_anchor_rows.len() + combat_anchor_rows.len(),
+                if reference_model.is_some() {
+                    inference_rows
+                } else {
+                    0
+                },
+                "every anchored inference row must route to exactly one teacher"
+            );
+            let mut anchor_targets = vec![None; inference_rows];
+            let mut scatter_targets = |rows: &[usize], targets: Vec<PolicyAnchorTarget>| {
+                assert_eq!(rows.len(), targets.len());
+                for (&row, target) in rows.iter().zip(targets) {
+                    assert!(anchor_targets[row].replace(target).is_none());
+                }
+            };
+            if let Some(reference) = reference_model.as_ref() {
+                scatter_targets(
+                    &initial_anchor_rows,
+                    infer_anchor_targets(
+                        reference,
+                        &inference_observations,
+                        &inference_memory,
+                        &initial_anchor_rows,
+                        config.model.recurrent_size,
+                        &device,
+                    ),
+                );
+            }
+            if let Some(teacher) = specialist_teachers.ecology.as_ref() {
+                scatter_targets(
+                    &ecology_anchor_rows,
+                    infer_anchor_targets(
+                        &teacher.model,
+                        &inference_observations,
+                        &inference_memory,
+                        &ecology_anchor_rows,
+                        config.model.recurrent_size,
+                        &device,
+                    ),
+                );
+            }
+            if let Some(teacher) = specialist_teachers.combat.as_ref() {
+                scatter_targets(
+                    &combat_anchor_rows,
+                    infer_anchor_targets(
+                        &teacher.model,
+                        &inference_observations,
+                        &inference_memory,
+                        &combat_anchor_rows,
+                        config.model.recurrent_size,
+                        &device,
+                    ),
+                );
             }
 
             let obs_tensor = Tensor::<B, 2>::from_data(
@@ -800,28 +1338,26 @@ pub fn train<B: AutodiffBackend>(
                 ),
                 &device,
             );
+            let inner_observations = obs_tensor.inner();
             let output = model
                 .valid()
-                .forward_with_memory(obs_tensor.inner(), memory_tensor);
-            let mask_bias = Tensor::<B::InnerBackend, 2>::from_data(
-                TensorData::new(inference_mask_bias, [inference_rows, NUM_ACTIONS]),
-                &device,
-            );
-            let log_probs =
-                burn::tensor::activation::log_softmax(output.policy_logits + mask_bias, 1);
-            let probabilities = log_probs.clone().exp();
-            // Signal masking depends on the sampled physical action, so signal
-            // logits are transferred once and masked row-wise on the host.
-            let inference_width = NUM_ACTIONS * 2
-                + NUM_AMOUNT_CHOICES
+                .forward_with_memory(inner_observations, memory_tensor);
+            // Target, effort, amount, and signal masks depend on earlier
+            // sampled heads, so logits are transferred once and normalized
+            // row-wise on the host.
+            let inference_width = NUM_POLICY_ACTION_KINDS
+                + NUM_POLICY_TARGET_LOGITS
+                + NUM_POLICY_EFFORT_LOGITS
+                + NUM_POLICY_AMOUNT_LOGITS
                 + NUM_SIGNAL_CHOICES
                 + NUM_SIGNAL_STRENGTH_CHOICES
                 + 1
                 + config.model.recurrent_size;
             let inference_data: Vec<f32> = Tensor::cat(
                 vec![
-                    probabilities,
-                    log_probs,
+                    output.action_kind_logits,
+                    output.target_logits,
+                    output.effort_logits,
                     output.amount_logits,
                     output.signal_logits,
                     output.signal_strength_logits,
@@ -833,7 +1369,6 @@ pub fn train<B: AutodiffBackend>(
             .into_data()
             .to_vec()
             .unwrap();
-
             for (env_idx, env) in envs.iter_mut().enumerate() {
                 let Some(rows) = environment_rows[env_idx].clone() else {
                     continue;
@@ -841,10 +1376,24 @@ pub fn train<B: AutodiffBackend>(
                 let obs_list = &env_observations[env_idx];
                 let n_cells = obs_list.len();
                 debug_assert_eq!(rows.len(), n_cells);
+                let collect_new_transitions = config
+                    .total_simulation_quanta_per_env
+                    .is_none_or(|target| cumulative_sim_time_quanta[env_idx] < target);
 
                 let mut actions: Vec<(CellId, PolicyChoice, Option<Vec<u8>>)> =
                     Vec::with_capacity(n_cells);
                 let decision_time = env.sim_time_quanta();
+                let action_kind_exploration_floor = config
+                    .rollout_action_kind_exploration_floor(environment_curriculum_stages[env_idx]);
+                let stage = environment_curriculum_stages[env_idx];
+                let initial_policy_anchor_coeff = anchor_teacher_for_stage(
+                    &config,
+                    stage,
+                    reference_model.is_some(),
+                    specialist_teachers.ecology.is_some(),
+                    specialist_teachers.combat.is_some(),
+                )
+                .map_or(0.0, |(_, coefficient)| coefficient);
 
                 for (cell_idx, input) in obs_list.iter().enumerate() {
                     let cell_id = input.cell_id;
@@ -852,23 +1401,49 @@ pub fn train<B: AutodiffBackend>(
                     let inference_row = rows.start + cell_idx;
                     let row_start = inference_row * inference_width;
                     let row = &inference_data[row_start..row_start + inference_width];
-                    let cell_probs = &row[..NUM_ACTIONS];
-                    let cell_log_probs = &row[NUM_ACTIONS..NUM_ACTIONS * 2];
-
-                    // Sample action
-                    let action = sample_action(cell_probs, &mut action_rng);
+                    let target_logits_start = NUM_POLICY_ACTION_KINDS;
+                    let effort_logits_start = target_logits_start + NUM_POLICY_TARGET_LOGITS;
+                    let amount_logits_start = effort_logits_start + NUM_POLICY_EFFORT_LOGITS;
+                    let signal_start = amount_logits_start + NUM_POLICY_AMOUNT_LOGITS;
+                    let (kind_probs, kind_log_probs) = masked_distribution(
+                        &row[..target_logits_start],
+                        &policy_action_kind_mask(&obs.action_mask),
+                        action_kind_exploration_floor,
+                    );
+                    let kind = sample_action(&kind_probs, &mut action_rng);
+                    let target_start = target_logits_start + kind * NUM_POLICY_TARGETS;
+                    let (target_probs, target_log_probs) = masked_distribution(
+                        &row[target_start..target_start + NUM_POLICY_TARGETS],
+                        &policy_target_mask(&obs.action_mask, kind),
+                        0.0,
+                    );
+                    let target = sample_action(&target_probs, &mut action_rng);
+                    let effort_start = effort_logits_start + kind * NUM_POLICY_EFFORTS;
+                    let (effort_probs, effort_log_probs) = masked_distribution(
+                        &row[effort_start..effort_start + NUM_POLICY_EFFORTS],
+                        &policy_effort_mask(&obs.action_mask, kind, target),
+                        0.0,
+                    );
+                    let effort = sample_action(&effort_probs, &mut action_rng);
+                    let action = compose_policy_action(HierarchicalActionChoice {
+                        kind,
+                        target,
+                        effort,
+                    })
+                    .expect("projected hierarchical masks must compose to a flat action");
                     let amount_mask = obs.amount_mask(action);
-                    let amount_start = NUM_ACTIONS * 2;
+                    let amount_start = amount_logits_start + kind * NUM_AMOUNT_CHOICES;
                     let (amount_probs, amount_log_probs) = masked_distribution(
                         &row[amount_start..amount_start + NUM_AMOUNT_CHOICES],
                         &amount_mask,
+                        0.0,
                     );
                     let amount = sample_action(&amount_probs, &mut action_rng);
                     let signal_mask = obs.signal_mask(action, amount);
-                    let signal_start = amount_start + NUM_AMOUNT_CHOICES;
                     let (signal_probs, signal_log_probs) = masked_distribution(
                         &row[signal_start..signal_start + NUM_SIGNAL_CHOICES],
                         &signal_mask,
+                        0.0,
                     );
                     let signal = sample_action(&signal_probs, &mut action_rng);
                     let signal_strength_mask = obs.signal_strength_mask(action, amount, signal);
@@ -877,9 +1452,12 @@ pub fn train<B: AutodiffBackend>(
                         &row[signal_strength_start
                             ..signal_strength_start + NUM_SIGNAL_STRENGTH_CHOICES],
                         &signal_strength_mask,
+                        0.0,
                     );
                     let signal_strength = sample_action(&signal_strength_probs, &mut action_rng);
-                    let log_prob = cell_log_probs[action]
+                    let log_prob = kind_log_probs[kind]
+                        + target_log_probs[target]
+                        + effort_log_probs[effort]
                         + amount_log_probs[amount]
                         + signal_log_probs[signal]
                         + signal_strength_log_probs[signal_strength];
@@ -893,55 +1471,77 @@ pub fn train<B: AutodiffBackend>(
                         transition.complete = true;
                     }
 
-                    let memory_start = NUM_ACTIONS * 2
-                        + NUM_AMOUNT_CHOICES
+                    let memory_start = NUM_POLICY_ACTION_KINDS
+                        + NUM_POLICY_TARGET_LOGITS
+                        + NUM_POLICY_EFFORT_LOGITS
+                        + NUM_POLICY_AMOUNT_LOGITS
                         + NUM_SIGNAL_CHOICES
                         + NUM_SIGNAL_STRENGTH_CHOICES
                         + 1;
-                    actions.push((
-                        cell_id,
+                    // Once this environment has crossed the scientific
+                    // frontier, advance only far enough to close actions that
+                    // were already part of the rollout. Deterministic waits
+                    // cannot inject new combat/resource effects into those
+                    // pending rewards and are not added as training samples.
+                    let submitted_choice = if collect_new_transitions {
                         PolicyChoice {
                             action,
                             amount,
                             signal,
                             signal_strength,
-                        },
+                        }
+                    } else {
+                        PolicyChoice {
+                            action: policy_wait_action(),
+                            amount: 0,
+                            signal: 0,
+                            signal_strength: 0,
+                        }
+                    };
+                    actions.push((
+                        cell_id,
+                        submitted_choice,
                         Some(encode_policy_memory(
                             &row[memory_start..memory_start + config.model.recurrent_size],
                         )),
                     ));
 
-                    let rollout_index = rollout.len();
-                    rollout.push(Transition {
-                        observation: obs.to_vec(),
-                        policy_memory: decode_policy_memory(
-                            &input.private_memory,
-                            config.model.recurrent_size,
-                        ),
-                        action_mask: obs.action_mask.to_vec(),
-                        action,
-                        amount_mask: amount_mask.to_vec(),
-                        amount,
-                        signal_mask: signal_mask.to_vec(),
-                        signal,
-                        signal_strength_mask: signal_strength_mask.to_vec(),
-                        signal_strength,
-                        reward: 0.0,
-                        value,
-                        next_value: 0.0,
-                        log_prob,
-                        done: false,
-                        elapsed_time: 0.0,
-                        complete: false,
-                        trajectory_id: (env_idx, cell_id.0),
-                    });
-                    pending_transitions[env_idx].insert(
-                        cell_id,
-                        PendingTransition {
-                            rollout_index,
-                            started_at: decision_time,
-                        },
-                    );
+                    if collect_new_transitions {
+                        let rollout_index = rollout.len();
+                        rollout.push(Transition {
+                            observation: obs.to_vec(),
+                            policy_memory: decode_policy_memory(
+                                &input.private_memory,
+                                config.model.recurrent_size,
+                            ),
+                            action_mask: obs.action_mask.to_vec(),
+                            action,
+                            amount_mask: amount_mask.to_vec(),
+                            amount,
+                            signal_mask: signal_mask.to_vec(),
+                            signal,
+                            signal_strength_mask: signal_strength_mask.to_vec(),
+                            signal_strength,
+                            action_kind_exploration_floor,
+                            reward: 0.0,
+                            value,
+                            next_value: 0.0,
+                            log_prob,
+                            anchor: anchor_targets[inference_row].take(),
+                            initial_policy_anchor_coeff,
+                            done: false,
+                            elapsed_time: 0.0,
+                            complete: false,
+                            trajectory_id: (env_idx, cell_id.0),
+                        });
+                        pending_transitions[env_idx].insert(
+                            cell_id,
+                            PendingTransition {
+                                rollout_index,
+                                started_at: decision_time,
+                            },
+                        );
+                    }
                 }
 
                 // Step environment
@@ -1052,7 +1652,11 @@ pub fn train<B: AutodiffBackend>(
                     let reset_seed = config.seed
                         ^ (env_idx as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
                         ^ env_episode_ids[env_idx].wrapping_mul(0xbf58_476d_1ce4_e5b9);
-                    let assignment = choose_rollout_opponent(
+                    let curriculum_time = cumulative_sim_time_quanta[env_idx];
+                    let curriculum_stage = config.rollout_stage(curriculum_time);
+                    let assignment = choose_curriculum_rollout_opponent(
+                        curriculum_stage,
+                        config.rollout_baseline_opponent(curriculum_stage, curriculum_time),
                         &mut rollout_league,
                         config.env.opponent,
                         &config.self_play,
@@ -1063,17 +1667,23 @@ pub fn train<B: AutodiffBackend>(
                         &rollout_pool,
                         &retired_rollout_snapshots,
                         &config,
+                        RolloutCurriculumAssignment {
+                            stage: curriculum_stage,
+                            simulation_time_quanta: curriculum_time,
+                        },
                         reset_seed,
                         &device,
                     )
                     .expect("failed to rotate rollout opponent");
                     environment_opponents[env_idx] = assignment;
+                    environment_curriculum_stages[env_idx] = curriculum_stage;
                     prune_retired_snapshots(&mut retired_rollout_snapshots, &environment_opponents);
                     if let Some(state) = training_telemetry.as_mut() {
                         state.start_episode(
                             env_idx,
                             env_episode_ids[env_idx],
                             reset_seed,
+                            curriculum_stage.to_string(),
                             env.telemetry_sample()
                                 .expect("enabled telemetry has a reset sample"),
                         );
@@ -1085,6 +1695,7 @@ pub fn train<B: AutodiffBackend>(
             }
             if config.total_simulation_quanta_per_env.is_some()
                 && training_budget_complete(&config, total_timesteps, &cumulative_sim_time_quanta)
+                && pending_transitions.iter().all(HashMap::is_empty)
             {
                 break;
             }
@@ -1133,7 +1744,7 @@ pub fn train<B: AutodiffBackend>(
                 );
             }
 
-            let (updated_model, ppo_metrics) = ppo_update(
+            let (updated_model, ppo_metrics) = ppo_update_anchored(
                 model,
                 &mut optimizer,
                 &rollout,
@@ -1181,13 +1792,14 @@ pub fn train<B: AutodiffBackend>(
             // Write metrics CSV row
             writeln!(
                 metrics_file,
-                "{},{},{:.6},{:.6},{:.4},{:.6},{:.4},{:.4},{},{},{},{},{},{},{},{},{},{:.4},{:.1},{:.4},{},{},{},{:.4},{:.1},{},{},{},{:.1}",
+                "{},{},{:.6},{:.6},{:.4},{:.6},{:.6},{:.4},{:.4},{},{},{},{},{},{},{},{},{},{:.4},{:.1},{:.4},{},{},{},{:.4},{:.1},{},{},{},{:.1},{}",
                 update_count,
                 total_timesteps,
                 ppo_metrics.policy_loss,
                 ppo_metrics.value_loss,
                 ppo_metrics.entropy,
                 ppo_metrics.approx_kl,
+                ppo_metrics.anchor_loss,
                 ppo_metrics.clip_fraction,
                 ppo_metrics.explained_variance,
                 ppo_metrics.optimizer_steps,
@@ -1211,39 +1823,42 @@ pub fn train<B: AutodiffBackend>(
                 maximum_sim_time_quanta,
                 total_sim_time_quanta,
                 simulation_quanta_per_second,
+                config.rollout_stage(minimum_sim_time_quanta),
             )
             .unwrap();
             metrics_file
                 .flush()
                 .expect("failed to flush training metrics");
 
-            let promotion_due = config.self_play.max_opponent_pool > 0
-                && total_timesteps >= config.self_play.start_after_timesteps
-                && update_count.is_multiple_of(config.self_play.opponent_update_interval);
-            let regular_evaluation_due =
-                config.eval_interval > 0 && update_count.is_multiple_of(config.eval_interval);
-            let evaluation = if regular_evaluation_due || promotion_due {
-                let valid_model = model.valid();
-                let evaluation = evaluate_policy_suite(
-                    &valid_model,
-                    &config.env,
-                    &config.reward,
-                    &config.evaluation_opponents,
-                    &evaluation_snapshots,
-                    &evaluation_seeds,
-                    &device,
-                );
-                write_fixed_evaluation_rows(
-                    &mut evaluation_file,
-                    update_count,
-                    total_timesteps,
-                    &evaluation,
-                    config.evaluation_seed,
-                    evaluation_seeds.len(),
-                )
-                .expect("failed to publish fixed evaluation metrics");
-                last_fixed_evaluation_actions = Some(total_timesteps);
-                println!(
+            let promotion_due =
+                self_play_promotion_due(&config, minimum_sim_time_quanta, update_count);
+            let terminal_boundary =
+                training_budget_complete(&config, total_timesteps, &cumulative_sim_time_quanta);
+            let regular_evaluation_due = config.eval_interval > 0
+                && (update_count.is_multiple_of(config.eval_interval) || terminal_boundary);
+            let (evaluation, feeding_evaluation, retention_feeding_evaluation, contact_evaluation) =
+                if regular_evaluation_due || promotion_due {
+                    let valid_model = model.valid();
+                    let evaluation = evaluate_policy_suite(
+                        &valid_model,
+                        &config.env,
+                        &config.reward,
+                        &config.evaluation_opponents,
+                        &evaluation_snapshots,
+                        &evaluation_seeds,
+                        &device,
+                    );
+                    write_fixed_evaluation_rows(
+                        &mut evaluation_file,
+                        update_count,
+                        total_timesteps,
+                        &evaluation,
+                        config.evaluation_seed,
+                        evaluation_seeds.len(),
+                    )
+                    .expect("failed to publish fixed evaluation metrics");
+                    last_fixed_evaluation_actions = Some(total_timesteps);
+                    println!(
                     "  eval {:>5} │ suite win {:>6.1}% │ worst {:>6.1}% │ reward {:>9.3} │ W/L/T {}/{}/{}",
                     update_count,
                     evaluation.win_rate * 100.0,
@@ -1253,18 +1868,133 @@ pub fn train<B: AutodiffBackend>(
                     evaluation.losses,
                     evaluation.timeouts,
                 );
-                for opponent in &evaluation.opponents {
-                    println!(
-                        "             │ {:>10} {:>6.1}% │ reward {:>9.3} │ len {:>7.1}",
-                        opponent.opponent,
-                        opponent.win_rate * 100.0,
-                        opponent.average_reward,
-                        opponent.average_episode_len,
+                    for opponent in &evaluation.opponents {
+                        println!(
+                            "             │ {:>10} {:>6.1}% │ reward {:>9.3} │ len {:>7.1}",
+                            opponent.opponent,
+                            opponent.win_rate * 100.0,
+                            opponent.average_reward,
+                            opponent.average_episode_len,
+                        );
+                    }
+                    let feeding_evaluation = config.feeding_curriculum.enabled.then(|| {
+                        let report = evaluate_feeding_promotion(
+                            &valid_model,
+                            &config.env,
+                            &config.reward,
+                            &config.feeding_curriculum,
+                            &evaluation_seeds,
+                            &device,
+                        );
+                        write_feeding_evaluation_rows(
+                            &mut feeding_evaluation_file,
+                            update_count,
+                            total_timesteps,
+                            "configured",
+                            &report,
+                        )
+                        .expect("failed to publish feeding evaluation metrics");
+                        println!(
+                            "  feed gate   │ {} │ on-food {:>6.1}% │ adjacent {:>6.1}%",
+                            if report.passed { "passed" } else { "failed" },
+                            report.stages[0].episode_success_rate * 100.0,
+                            report.stages[1].episode_success_rate * 100.0,
+                        );
+                        report
+                    });
+                    let retention_feeding_evaluation =
+                        retention_evaluation_seeds.as_ref().map(|seeds| {
+                            let report = evaluate_feeding_promotion(
+                                &valid_model,
+                                &config.env,
+                                &config.reward,
+                                &config.feeding_curriculum,
+                                seeds,
+                                &device,
+                            );
+                            write_feeding_evaluation_rows(
+                                &mut feeding_evaluation_file,
+                                update_count,
+                                total_timesteps,
+                                "initial_qualification",
+                                &report,
+                            )
+                            .expect("failed to publish retention feeding evaluation metrics");
+                            println!(
+                        "  retain gate │ {} │ on-food survival {:>6.1}% │ adjacent {:>6.1}%",
+                        if report.passed { "passed" } else { "failed" },
+                        report.stages[0].survival_rate * 100.0,
+                        report.stages[1].survival_rate * 100.0,
                     );
-                }
-                Some(evaluation)
+                            report
+                        });
+                    let contact_evaluation = config.combat_curriculum.enabled.then(|| {
+                        let report = evaluate_contact(
+                            &valid_model,
+                            &config.env,
+                            &config.reward,
+                            &config.feeding_curriculum,
+                            &config.combat_curriculum,
+                            &evaluation_seeds,
+                            &device,
+                        );
+                        write_contact_evaluation_rows(
+                            &mut contact_evaluation_file,
+                            update_count,
+                            total_timesteps,
+                            &report,
+                        )
+                        .expect("failed to publish contact evaluation metrics");
+                        println!(
+                            "  combat      │ {} wins │ {} damage │ {} kills (contact {}/{}, skirmish {}/{}) │ damaging {:>6.1}%",
+                            contact_wins(&report),
+                            report.damage_dealt,
+                            report.kills,
+                            report.kills_for_stage(FeedingCurriculumStage::Contact),
+                            config.combat_curriculum.min_contact_kills_for_promotion,
+                            report.kills_for_stage(FeedingCurriculumStage::Skirmish),
+                            config.combat_curriculum.min_skirmish_kills_for_promotion,
+                            report.damaging_episode_rate * 100.0,
+                        );
+                        report
+                    });
+                    (
+                        Some(evaluation),
+                        feeding_evaluation,
+                        retention_feeding_evaluation,
+                        contact_evaluation,
+                    )
+                } else {
+                    (None, None, None, None)
+                };
+
+            let competency_candidate = evaluation.as_ref().and_then(|evaluation| {
+                CompetencyMetrics::from_reports(
+                    evaluation,
+                    feeding_evaluation.as_ref()?,
+                    retention_feeding_evaluation.as_ref(),
+                    contact_evaluation.as_ref()?,
+                    &config.combat_curriculum,
+                )
+                .map(|metrics| CompetencyFrontierEntry {
+                    checkpoint_directory: frontier_checkpoint_directory.clone(),
+                    checkpoint: format!("checkpoint-{update_count:08}"),
+                    update: update_count,
+                    actions: total_timesteps,
+                    metrics,
+                })
+            });
+            let mut next_competency_frontier = competency_frontier.clone();
+            let competency_frontier_changed = competency_candidate
+                .is_some_and(|candidate| next_competency_frontier.insert(candidate));
+            let next_specialist_teacher_selection = if config.specialist_distillation.enabled {
+                next_competency_frontier.specialist_teachers(
+                    config
+                        .specialist_distillation
+                        .combat_precursor_min_skirmish_damage,
+                )
             } else {
-                None
+                SpecialistTeacherSelection::default()
             };
 
             let pool_evaluation = if promotion_due && !rollout_pool.is_empty() {
@@ -1323,6 +2053,15 @@ pub fn train<B: AutodiffBackend>(
                 evaluation_file.flush().unwrap();
             }
             let promote_to_rollout_pool = promotion_due
+                && feeding_evaluation
+                    .as_ref()
+                    .is_none_or(|report| report.passed)
+                && retention_feeding_evaluation
+                    .as_ref()
+                    .is_none_or(|report| report.passed)
+                && contact_evaluation.as_ref().is_none_or(|report| {
+                    report.meets_promotion_thresholds(&config.combat_curriculum)
+                })
                 && evaluation.as_ref().is_some_and(|candidate| {
                     rollout_pool.is_empty()
                         || (best_evaluation.as_ref().is_none_or(|incumbent| {
@@ -1371,21 +2110,42 @@ pub fn train<B: AutodiffBackend>(
             }
 
             let is_new_best = evaluation.as_ref().is_some_and(|candidate| {
-                best_evaluation
+                feeding_evaluation
                     .as_ref()
-                    .is_none_or(|incumbent| evaluation_is_better(candidate, incumbent))
+                    .is_none_or(|report| report.passed)
+                    && retention_feeding_evaluation
+                        .as_ref()
+                        .is_none_or(|report| report.passed)
+                    && contact_evaluation.as_ref().is_none_or(|report| {
+                        report.meets_promotion_thresholds(&config.combat_curriculum)
+                    })
+                    && best_evaluation.as_ref().is_none_or(|incumbent| {
+                        evaluation_is_better(
+                            candidate,
+                            contact_evaluation.as_ref(),
+                            incumbent,
+                            best_contact_evaluation.as_ref(),
+                        )
+                    })
             });
             let periodic_checkpoint = config.checkpoint_interval > 0
                 && update_count.is_multiple_of(config.checkpoint_interval);
             if is_new_best {
                 best_evaluation = evaluation.clone();
+                best_contact_evaluation = contact_evaluation.clone();
             }
 
             // A published state always describes the clean boundary between
             // updates. Per-update metrics have already been emitted and are
             // intentionally not carried into the next update.
             episode_stats.reset();
-            if periodic_checkpoint || is_new_best || promote_to_rollout_pool {
+            if checkpoint_publication_due(
+                periodic_checkpoint,
+                is_new_best,
+                promote_to_rollout_pool,
+                terminal_boundary,
+                competency_frontier_changed,
+            ) {
                 let resume_state = TrainingResumeState {
                     schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
                     total_timesteps,
@@ -1402,12 +2162,16 @@ pub fn train<B: AutodiffBackend>(
                         .collect::<Result<Vec<_>, _>>()
                         .expect("failed to checkpoint RL environments"),
                     best_evaluation: best_evaluation.clone(),
+                    best_contact_evaluation: best_contact_evaluation.clone(),
+                    competency_frontier: next_competency_frontier.clone(),
+                    specialist_teachers: next_specialist_teacher_selection.clone(),
                     rollout_pool: rollout_league.clone(),
                     active_retired_snapshots: retired_rollout_snapshots
                         .iter()
                         .map(PolicySnapshot::descriptor)
                         .collect(),
                     environment_opponents: environment_opponents.clone(),
+                    environment_curriculum_stages: environment_curriculum_stages.clone(),
                     telemetry: training_telemetry.clone(),
                 };
                 let checkpoint = publish_checkpoint(
@@ -1419,23 +2183,58 @@ pub fn train<B: AutodiffBackend>(
                     total_timesteps,
                     &compiled_ruleset_hash,
                     evaluation.as_ref(),
+                    feeding_evaluation.as_ref(),
+                    retention_feeding_evaluation.as_ref(),
+                    contact_evaluation.as_ref(),
                     accepted_promotion.as_ref(),
                     &resume_state,
                 )
                 .expect("failed to publish immutable training artifact");
                 println!("  Checkpoint published: {}", checkpoint.display());
-                if is_new_best {
-                    let evaluation = evaluation
-                        .as_ref()
-                        .expect("a best checkpoint always has evaluation metrics");
-                    publish_best_pointer(
-                        artifact_root,
-                        &checkpoint,
-                        update_count,
-                        total_timesteps,
-                        evaluation,
+                if competency_frontier_changed {
+                    competency_frontier = next_competency_frontier;
+                    let frontier_path =
+                        publish_competency_frontier(artifact_root, &competency_frontier)
+                            .expect("failed to publish competency frontier");
+                    println!(
+                        "  Frontier    │ {} nondominated checkpoints ({})",
+                        competency_frontier.entries.len(),
+                        frontier_path.display(),
+                    );
+                }
+                if specialist_teacher_selection != next_specialist_teacher_selection {
+                    specialist_teachers = load_specialist_teachers::<B::InnerBackend>(
+                        &next_specialist_teacher_selection,
+                        &competency_frontier,
+                        &device,
                     )
-                    .expect("failed to publish best checkpoint pointer");
+                    .expect("failed to activate specialist distillation teachers");
+                    specialist_teacher_selection = next_specialist_teacher_selection;
+                    let combat_teacher = specialist_teacher_selection.combat.as_ref().map_or(
+                        "none".to_string(),
+                        |teacher| {
+                            let precursor = competency_frontier.entries.iter().any(|entry| {
+                                entry.identity() == *teacher && !entry.metrics.combat_passed
+                            });
+                            if precursor {
+                                format!("{} (precursor)", teacher.checkpoint)
+                            } else {
+                                teacher.checkpoint.clone()
+                            }
+                        },
+                    );
+                    println!(
+                        "  Teachers    │ ecology {} │ combat {}",
+                        specialist_teacher_selection
+                            .ecology
+                            .as_ref()
+                            .map_or("none".to_string(), |teacher| teacher.checkpoint.clone()),
+                        combat_teacher,
+                    );
+                }
+                if is_new_best {
+                    publish_best_pointer(artifact_root, &checkpoint)
+                        .expect("failed to publish best checkpoint pointer");
                 }
                 if promote_to_rollout_pool {
                     let snapshot = load_policy_snapshot::<B::InnerBackend>(&checkpoint, &device)
@@ -1462,6 +2261,9 @@ pub fn train<B: AutodiffBackend>(
                         total_timesteps,
                         &compiled_ruleset_hash,
                         &config.self_play,
+                        feeding_evaluation.as_ref(),
+                        retention_feeding_evaluation.as_ref(),
+                        contact_evaluation.as_ref(),
                         &rollout_league,
                     )
                     .expect("failed to publish immutable rollout-pool manifest");
@@ -1476,8 +2278,9 @@ pub fn train<B: AutodiffBackend>(
     }
 
     if config.eval_interval > 0 && last_fixed_evaluation_actions != Some(total_timesteps) {
+        let valid_model = model.valid();
         let evaluation = evaluate_policy_suite(
-            &model.valid(),
+            &valid_model,
             &config.env,
             &config.reward,
             &config.evaluation_opponents,
@@ -1500,6 +2303,83 @@ pub fn train<B: AutodiffBackend>(
             evaluation.worst_case_win_rate * 100.0,
             evaluation.average_reward,
         );
+        if config.feeding_curriculum.enabled {
+            let report = evaluate_feeding_promotion(
+                &valid_model,
+                &config.env,
+                &config.reward,
+                &config.feeding_curriculum,
+                &evaluation_seeds,
+                &device,
+            );
+            write_feeding_evaluation_rows(
+                &mut feeding_evaluation_file,
+                update_count,
+                total_timesteps,
+                "configured",
+                &report,
+            )
+            .expect("failed to publish terminal feeding evaluation metrics");
+            println!(
+                "  final feed  │ {} │ on-food {:>6.1}% │ adjacent {:>6.1}%",
+                if report.passed { "passed" } else { "failed" },
+                report.stages[0].episode_success_rate * 100.0,
+                report.stages[1].episode_success_rate * 100.0,
+            );
+            if let Some(seeds) = &retention_evaluation_seeds {
+                let report = evaluate_feeding_promotion(
+                    &valid_model,
+                    &config.env,
+                    &config.reward,
+                    &config.feeding_curriculum,
+                    seeds,
+                    &device,
+                );
+                write_feeding_evaluation_rows(
+                    &mut feeding_evaluation_file,
+                    update_count,
+                    total_timesteps,
+                    "initial_qualification",
+                    &report,
+                )
+                .expect("failed to publish terminal retention feeding evaluation metrics");
+                println!(
+                    "  final retain │ {} │ on-food survival {:>6.1}% │ adjacent {:>6.1}%",
+                    if report.passed { "passed" } else { "failed" },
+                    report.stages[0].survival_rate * 100.0,
+                    report.stages[1].survival_rate * 100.0,
+                );
+            }
+        }
+        if config.combat_curriculum.enabled {
+            let report = evaluate_contact(
+                &valid_model,
+                &config.env,
+                &config.reward,
+                &config.feeding_curriculum,
+                &config.combat_curriculum,
+                &evaluation_seeds,
+                &device,
+            );
+            write_contact_evaluation_rows(
+                &mut contact_evaluation_file,
+                update_count,
+                total_timesteps,
+                &report,
+            )
+            .expect("failed to publish terminal contact evaluation metrics");
+            println!(
+                "  final combat │ {} wins │ {} damage │ {} kills (contact {}/{}, skirmish {}/{}) │ damaging {:>6.1}%",
+                contact_wins(&report),
+                report.damage_dealt,
+                report.kills,
+                report.kills_for_stage(FeedingCurriculumStage::Contact),
+                config.combat_curriculum.min_contact_kills_for_promotion,
+                report.kills_for_stage(FeedingCurriculumStage::Skirmish),
+                config.combat_curriculum.min_skirmish_kills_for_promotion,
+                report.damaging_episode_rate * 100.0,
+            );
+        }
     }
 
     if let Some(telemetry) = training_telemetry.as_mut() {
@@ -1540,7 +2420,11 @@ pub fn train<B: AutodiffBackend>(
     }
 }
 
-fn masked_distribution<const N: usize>(logits: &[f32], mask: &[bool; N]) -> (Vec<f32>, Vec<f32>) {
+fn masked_distribution<const N: usize>(
+    logits: &[f32],
+    mask: &[bool; N],
+    exploration_floor: f32,
+) -> (Vec<f32>, Vec<f32>) {
     debug_assert_eq!(logits.len(), N);
     let maximum = logits
         .iter()
@@ -1568,6 +2452,17 @@ fn masked_distribution<const N: usize>(logits: &[f32], mask: &[bool; N]) -> (Vec
     } else {
         for weight in &mut weights {
             *weight /= denominator;
+        }
+    }
+    let legal = mask.iter().filter(|allowed| **allowed).count();
+    if exploration_floor > 0.0 && legal > 0 {
+        let uniform = exploration_floor / legal as f32;
+        for (weight, allowed) in weights.iter_mut().zip(mask) {
+            *weight = if *allowed {
+                (1.0 - exploration_floor) * *weight + uniform
+            } else {
+                0.0
+            };
         }
     }
     let log_probs = weights
@@ -1617,6 +2512,118 @@ mod tests {
             rating,
             evaluation_games: 0,
             rollout_selections: selections,
+        }
+    }
+
+    #[test]
+    fn specialist_anchor_routes_are_stage_local_and_fall_back_to_initial() {
+        let mut config = TrainingConfig::default();
+        config.feeding_curriculum.enabled = true;
+        config.combat_curriculum.enabled = true;
+        config.specialist_distillation.enabled = true;
+        config.ppo.initial_policy_anchor_coeff = 0.25;
+
+        assert_eq!(
+            anchor_teacher_for_stage(&config, FeedingCurriculumStage::OnFood, true, false, true),
+            Some((AnchorTeacher::Initial, 0.25))
+        );
+        assert_eq!(
+            anchor_teacher_for_stage(
+                &config,
+                FeedingCurriculumStage::AdjacentFood,
+                true,
+                true,
+                true
+            ),
+            Some((AnchorTeacher::Ecology, 0.1))
+        );
+        assert_eq!(
+            anchor_teacher_for_stage(&config, FeedingCurriculumStage::Skirmish, true, true, true),
+            Some((AnchorTeacher::Combat, 0.1))
+        );
+        assert_eq!(
+            anchor_teacher_for_stage(
+                &config,
+                FeedingCurriculumStage::Competitive,
+                true,
+                true,
+                true
+            ),
+            Some((AnchorTeacher::Initial, 0.25))
+        );
+    }
+
+    #[test]
+    fn compact_anchor_subbatches_match_full_batch_outputs() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        NdArray::<f32>::seed(&device, 71);
+        let model = crate::model::PolicyValueNetConfig::new().init::<NdArray<f32>>(&device);
+        let recurrent_size = model.recurrent_size();
+        let observations = (0..4 * OBS_DIM)
+            .map(|index| (index as f32 * 0.013).sin())
+            .collect::<Vec<_>>();
+        let memory = (0..4 * recurrent_size)
+            .map(|index| (index as f32 * 0.017).cos())
+            .collect::<Vec<_>>();
+        let full = infer_anchor_targets(
+            &model,
+            &observations,
+            &memory,
+            &[0, 1, 2, 3],
+            recurrent_size,
+            &device,
+        );
+        let even = infer_anchor_targets(
+            &model,
+            &observations,
+            &memory,
+            &[0, 2],
+            recurrent_size,
+            &device,
+        );
+        let odd = infer_anchor_targets(
+            &model,
+            &observations,
+            &memory,
+            &[1, 3],
+            recurrent_size,
+            &device,
+        );
+        let compare = |left: &PolicyAnchorTarget, right: &PolicyAnchorTarget| {
+            for (left, right) in [
+                (&left.action_kind_logits, &right.action_kind_logits),
+                (&left.target_logits, &right.target_logits),
+                (&left.effort_logits, &right.effort_logits),
+                (&left.amount_logits, &right.amount_logits),
+                (&left.signal_logits, &right.signal_logits),
+                (&left.signal_strength_logits, &right.signal_strength_logits),
+                (&left.next_memory, &right.next_memory),
+            ] {
+                assert_eq!(left.len(), right.len());
+                assert!(left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| (left - right).abs() < 1.0e-5));
+            }
+        };
+        compare(&full[0], &even[0]);
+        compare(&full[2], &even[1]);
+        compare(&full[1], &odd[0]);
+        compare(&full[3], &odd[1]);
+    }
+
+    #[test]
+    fn action_kind_exploration_floor_only_spreads_probability_over_legal_kinds() {
+        let (probabilities, log_probabilities) =
+            masked_distribution(&[20.0, -20.0, 4.0, 0.0], &[true, true, false, true], 0.3);
+
+        assert!((probabilities.iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+        assert_eq!(probabilities[2], 0.0);
+        assert_eq!(log_probabilities[2], -1.0e9);
+        for index in [0, 1, 3] {
+            assert!(probabilities[index] >= 0.1 - 1.0e-6);
+            assert!((log_probabilities[index].exp() - probabilities[index]).abs() < 1.0e-6);
         }
     }
 
@@ -1719,6 +2726,66 @@ mod tests {
     }
 
     #[test]
+    fn noncompetitive_curriculum_uses_its_baseline_without_exposing_pool_members() {
+        let mut league = vec![league_member("snapshot", 1_000.0, 7)];
+        let mut rng = ChaCha12Rng::seed_from_u64(91);
+        for stage in [
+            FeedingCurriculumStage::OnFood,
+            FeedingCurriculumStage::AdjacentFood,
+        ] {
+            assert_eq!(
+                choose_curriculum_rollout_opponent(
+                    stage,
+                    OpponentProfile::Wait,
+                    &mut league,
+                    OpponentProfile::Aggressive,
+                    &SelfPlayConfig {
+                        baseline_probability: 0.0,
+                        ..SelfPlayConfig::default()
+                    },
+                    &mut rng,
+                ),
+                RolloutOpponentAssignment::Baseline {
+                    profile: OpponentProfile::Wait,
+                }
+            );
+        }
+        assert_eq!(
+            choose_curriculum_rollout_opponent(
+                FeedingCurriculumStage::Contact,
+                OpponentProfile::Defensive,
+                &mut league,
+                OpponentProfile::Aggressive,
+                &SelfPlayConfig {
+                    baseline_probability: 0.0,
+                    ..SelfPlayConfig::default()
+                },
+                &mut rng,
+            ),
+            RolloutOpponentAssignment::Baseline {
+                profile: OpponentProfile::Defensive,
+            }
+        );
+        assert_eq!(
+            choose_curriculum_rollout_opponent(
+                FeedingCurriculumStage::Skirmish,
+                OpponentProfile::Aggressive,
+                &mut league,
+                OpponentProfile::Defensive,
+                &SelfPlayConfig {
+                    baseline_probability: 0.0,
+                    ..SelfPlayConfig::default()
+                },
+                &mut rng,
+            ),
+            RolloutOpponentAssignment::Baseline {
+                profile: OpponentProfile::Aggressive,
+            }
+        );
+        assert_eq!(league[0].rollout_selections, 7);
+    }
+
+    #[test]
     #[ignore = "manual league-selection overhead diagnostic"]
     fn benchmark_league_opponent_selection() {
         let config = SelfPlayConfig::default();
@@ -1761,22 +2828,81 @@ mod tests {
         };
         let mut candidate = baseline.clone();
         candidate.average_reward = -1.0;
-        assert!(evaluation_is_better(&candidate, &baseline));
+        assert!(evaluation_is_better(&candidate, None, &baseline, None));
         candidate.average_reward = -2.0;
         candidate.average_episode_len = 9.0;
-        assert!(evaluation_is_better(&candidate, &baseline));
+        assert!(evaluation_is_better(&candidate, None, &baseline, None));
         candidate.win_rate = 1.0;
         candidate.average_reward = -100.0;
-        assert!(evaluation_is_better(&candidate, &baseline));
+        assert!(evaluation_is_better(&candidate, None, &baseline, None));
 
         let mut robust = baseline.clone();
         robust.worst_case_win_rate = 0.5;
         robust.win_rate = 0.1;
-        let mut brittle = baseline;
+        let mut brittle = baseline.clone();
         brittle.worst_case_win_rate = 0.25;
         brittle.win_rate = 1.0;
         brittle.average_reward = 1_000.0;
-        assert!(evaluation_is_better(&robust, &brittle));
+        assert!(evaluation_is_better(&robust, None, &brittle, None));
+
+        let contact = |damage, kills| ContactEvaluationReport {
+            schema_version: crate::contact_evaluation::CONTACT_EVALUATION_SCHEMA_VERSION,
+            ruleset_hash: "rules".into(),
+            seeds: vec![1],
+            contact_sim_time_limit_quanta: 32_768,
+            skirmish_sim_time_limit_quanta: 65_536,
+            variants: Vec::new(),
+            episodes: 1,
+            attacking_episodes: 1,
+            damaging_episodes: 1,
+            attacks_committed: 1,
+            attacks_succeeded: 1,
+            damage_dealt: damage,
+            kills,
+            attacking_episode_rate: 1.0,
+            damaging_episode_rate: 1.0,
+            attack_success_rate: 1.0,
+        };
+        let combat_candidate = contact(20, 1);
+        let combat_incumbent = contact(100, 0);
+        let mut self_exhaustion_winner = contact(100, 0);
+        self_exhaustion_winner
+            .variants
+            .push(crate::contact_evaluation::ContactVariantMetrics {
+                stage: FeedingCurriculumStage::Skirmish,
+                cells_per_team: 4,
+                initial_energy: 60,
+                opponent: OpponentProfile::Aggressive,
+                episodes: 8,
+                wins: 8,
+                losses: 0,
+                timeouts: 0,
+                safety_aborts: 0,
+                attacking_episodes: 0,
+                damaging_episodes: 0,
+                attacks_committed: 0,
+                attacks_succeeded: 0,
+                attacks_frustrated: 0,
+                attacks_interrupted: 0,
+                damage_dealt: 0,
+                kills: 0,
+                attacking_episode_rate: 0.0,
+                damaging_episode_rate: 0.0,
+                attack_success_rate: 0.0,
+            });
+        assert!(contact_is_better(
+            Some(&combat_candidate),
+            Some(&self_exhaustion_winner)
+        ));
+        let mut lower_reward = candidate.clone();
+        lower_reward.win_rate = baseline.win_rate;
+        lower_reward.average_reward = baseline.average_reward - 100.0;
+        assert!(evaluation_is_better(
+            &lower_reward,
+            Some(&combat_candidate),
+            &baseline,
+            Some(&combat_incumbent),
+        ));
     }
 
     #[test]
@@ -1791,6 +2917,28 @@ mod tests {
         config.total_simulation_quanta_per_env = None;
         assert!(!training_budget_complete(&config, 99, &[u64::MAX]));
         assert!(training_budget_complete(&config, 100, &[0]));
+    }
+
+    #[test]
+    fn terminal_boundary_is_checkpointed_even_when_not_periodic_best_or_promoted() {
+        assert!(checkpoint_publication_due(false, false, false, true, false));
+        assert!(checkpoint_publication_due(false, false, false, false, true));
+        assert!(!checkpoint_publication_due(
+            false, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn self_play_activation_uses_world_time_not_population_actions() {
+        let mut config = TrainingConfig::default();
+        config.self_play.start_after_sim_time_quanta_per_env = 10_000;
+        config.self_play.opponent_update_interval = 5;
+        assert!(!self_play_promotion_due(&config, 9_999, 10));
+        assert!(!self_play_promotion_due(&config, 10_000, 9));
+        assert!(self_play_promotion_due(&config, 10_000, 10));
+
+        config.self_play.max_opponent_pool = 0;
+        assert!(!self_play_promotion_due(&config, u64::MAX, 10));
     }
 
     #[test]
@@ -1841,6 +2989,16 @@ mod tests {
             assert!(row["min_sim_time_quanta"].parse::<u64>().unwrap() >= 256);
             assert!(row["actions"].parse::<u64>().unwrap() <= 128);
             assert!(row["total_sim_time_quanta"].parse::<u128>().unwrap() >= 512);
+            assert_eq!(row["discarded_tails"], "0");
+            let update = row["update"].parse::<usize>().unwrap();
+            let checkpoint = artifact_root.join(format!("checkpoint-{update:08}"));
+            let metadata = crate::artifact::verify_checkpoint_metadata(&checkpoint).unwrap();
+            assert!(metadata
+                .config
+                .total_simulation_quanta_per_env
+                .is_some_and(|target| {
+                    metadata.actions == row["actions"].parse::<u64>().unwrap() && target == 256
+                }));
         }
     }
 
@@ -1872,7 +3030,7 @@ mod tests {
         config.env.num_plants = 1;
         config.self_play.max_opponent_pool = 0;
 
-        train::<TestBackend>(config, Default::default(), None, None, None);
+        train::<TestBackend>(config.clone(), Default::default(), None, None, None);
 
         let evaluations = std::fs::read_to_string(temporary.path().join("evaluation.csv")).unwrap();
         let suites = evaluations
@@ -1883,6 +3041,10 @@ mod tests {
         let training = std::fs::read_to_string(temporary.path().join("metrics.csv")).unwrap();
         let final_actions = training.lines().last().unwrap().split(',').nth(1).unwrap();
         assert_eq!(suites[0].split(',').nth(1).unwrap(), final_actions);
+        let checkpoint = temporary.path().join("checkpoint-00000001");
+        let metadata = crate::artifact::verify_checkpoint_metadata(&checkpoint).unwrap();
+        assert!(metadata.evaluation.is_some());
+        assert!(temporary.path().join("best.json").is_file());
         let telemetry: crate::telemetry::TrainingTelemetrySummary = serde_json::from_slice(
             &std::fs::read(temporary.path().join("telemetry/summary.json")).unwrap(),
         )
@@ -1906,6 +3068,173 @@ mod tests {
     }
 
     #[test]
+    fn feeding_curriculum_publishes_gate_metrics_and_blocks_best_label() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let mut config = TrainingConfig {
+            seed: 75,
+            num_envs: 1,
+            rollout_length: 4,
+            total_timesteps: 4,
+            eval_interval: 1,
+            eval_episodes: 1,
+            evaluation_opponents: vec![crate::config::OpponentProfile::Wait],
+            checkpoint_interval: 1,
+            checkpoint_dir: temporary.path().to_string_lossy().into_owned(),
+            ..TrainingConfig::default()
+        };
+        config.model.hidden1 = 8;
+        config.model.hidden2 = 8;
+        config.ppo.epochs_per_update = 1;
+        config.ppo.minibatch_size = 32;
+        config.env.world_size = 4;
+        config.env.cells_per_team = 1;
+        config.env.max_episode_len = 16;
+        config.env.victory.sim_time_limit_quanta = 1_024;
+        config.env.num_scattered_energy = 0;
+        config.env.num_plants = 0;
+        config.self_play.max_opponent_pool = 0;
+        config.feeding_curriculum.enabled = true;
+        config
+            .feeding_curriculum
+            .on_food_until_sim_time_quanta_per_env = 10_000;
+        config
+            .feeding_curriculum
+            .adjacent_food_until_sim_time_quanta_per_env = 20_000;
+        config
+            .feeding_curriculum
+            .promotion
+            .evaluation_max_episode_len = 8;
+        config
+            .feeding_curriculum
+            .promotion
+            .evaluation_sim_time_limit_quanta = 1_024;
+        config
+            .feeding_curriculum
+            .promotion
+            .min_consumed_energy_per_initial_cell = 1_000_000.0;
+
+        train::<TestBackend>(config.clone(), Default::default(), None, None, None);
+
+        let feeding =
+            std::fs::read_to_string(temporary.path().join("feeding-evaluation.csv")).unwrap();
+        let rows = feeding.lines().skip(1).collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| row.contains(",false,")));
+        assert!(rows.iter().any(|row| row.contains(",on_food,")));
+        assert!(rows.iter().any(|row| row.contains(",adjacent_food,")));
+        assert!(!temporary.path().join("best.json").exists());
+        let checkpoint = temporary.path().join("checkpoint-00000001");
+        let checkpoint_metadata = crate::artifact::verify_checkpoint_metadata(&checkpoint).unwrap();
+        assert_eq!(
+            checkpoint_metadata
+                .feeding_evaluation
+                .as_ref()
+                .map(|report| report.passed),
+            Some(false)
+        );
+
+        let metrics = std::fs::read_to_string(temporary.path().join("metrics.csv")).unwrap();
+        assert_eq!(
+            metrics.lines().next().unwrap().split(',').next_back(),
+            Some("curriculum_stage")
+        );
+        assert_eq!(
+            metrics.lines().last().unwrap().split(',').next_back(),
+            Some("on_food")
+        );
+
+        let resumed_root = temporary.path().join("resumed");
+        config.total_timesteps = 8;
+        config.checkpoint_dir = resumed_root.to_string_lossy().into_owned();
+        train::<TestBackend>(config, Default::default(), None, Some(&checkpoint), None);
+        let resumed =
+            crate::artifact::verify_checkpoint_metadata(&resumed_root.join("checkpoint-00000002"))
+                .unwrap();
+        assert_eq!(resumed.actions, 8);
+        assert!(resumed.feeding_evaluation.is_some());
+    }
+
+    #[test]
+    fn combat_curriculum_publishes_contact_metrics_and_checkpoint_evidence() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let mut config = TrainingConfig {
+            seed: 76,
+            num_envs: 1,
+            rollout_length: 4,
+            total_timesteps: 4,
+            eval_interval: 1,
+            eval_episodes: 1,
+            evaluation_opponents: vec![crate::config::OpponentProfile::Wait],
+            checkpoint_interval: 0,
+            checkpoint_dir: temporary.path().to_string_lossy().into_owned(),
+            ..TrainingConfig::default()
+        };
+        config.model.hidden1 = 8;
+        config.model.hidden2 = 8;
+        config.ppo.epochs_per_update = 1;
+        config.ppo.minibatch_size = 32;
+        config.env.world_size = 4;
+        config.env.cells_per_team = 1;
+        config.env.max_episode_len = 16;
+        config.env.victory.sim_time_limit_quanta = 1_024;
+        config.env.num_scattered_energy = 0;
+        config.env.num_plants = 0;
+        config.self_play.max_opponent_pool = 0;
+        config.feeding_curriculum.enabled = true;
+        config.combat_curriculum.enabled = true;
+        config
+            .combat_curriculum
+            .retention_episode_sim_time_limit_quanta = 1_024;
+        config
+            .combat_curriculum
+            .contact_episode_sim_time_limit_quanta = 1_024;
+        config
+            .combat_curriculum
+            .skirmish_episode_sim_time_limit_quanta = 1_024;
+
+        let evaluation_seed = config.evaluation_seed;
+        train::<TestBackend>(config, Default::default(), None, None, None);
+
+        let csv = std::fs::read_to_string(temporary.path().join("contact-evaluation.csv"))
+            .expect("contact metrics should be published");
+        assert_eq!(
+            csv.lines().skip(1).count(),
+            2 * 3 * 2,
+            "every stage/energy/opponent variant needs its own evidence row"
+        );
+        let checkpoint = temporary.path().join("checkpoint-00000001");
+        let metadata = crate::artifact::verify_checkpoint_metadata(&checkpoint).unwrap();
+        let report = metadata
+            .contact_evaluation
+            .expect("evaluated combat checkpoint must embed contact evidence");
+        assert_eq!(report.seeds, vec![evaluation_seed]);
+        assert_eq!(report.variants.len(), 12);
+        assert!(!report.is_active());
+        assert!(!temporary.path().join("best.json").exists());
+        let frontier = crate::competency_frontier::load_competency_frontier(
+            &temporary.path().join("competency-frontier.json"),
+        )
+        .unwrap();
+        assert_eq!(frontier.entries.len(), 1);
+        assert_eq!(frontier.entries[0].checkpoint, "checkpoint-00000001");
+        assert!(!frontier.entries[0].metrics.joint_qualified());
+        let mut tampered = frontier;
+        tampered.entries[0].metrics.skirmish_damage += 1;
+        std::fs::write(
+            temporary.path().join("competency-frontier.json"),
+            serde_json::to_vec_pretty(&tampered).unwrap(),
+        )
+        .unwrap();
+        assert!(crate::competency_frontier::load_competency_frontier(
+            &temporary.path().join("competency-frontier.json"),
+        )
+        .unwrap_err()
+        .contains("does not match its immutable checkpoint"));
+    }
+
+    #[test]
     fn update_boundary_resume_matches_uninterrupted_training() {
         let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
         let temporary = tempfile::tempdir().unwrap();
@@ -1915,9 +3244,10 @@ mod tests {
             seed: 73,
             num_envs: 1,
             rollout_length: 8,
-            // This fixture produces eight actions in its first update, so 9
-            // reaches exactly the two boundaries needed by this regression.
-            total_timesteps: 9,
+            // Keep the target one action beyond the first update's current
+            // nine-action frontier so this regression reaches two boundaries
+            // without depending on the old flat head's sampled population.
+            total_timesteps: 10,
             eval_interval: 1,
             eval_episodes: 1,
             evaluation_opponents: vec![crate::config::OpponentProfile::Wait],
@@ -1938,7 +3268,7 @@ mod tests {
         config.env.max_episode_len = 64;
         config.env.num_scattered_energy = 4;
         config.env.num_plants = 2;
-        config.self_play.start_after_timesteps = 0;
+        config.self_play.start_after_sim_time_quanta_per_env = 0;
         config.self_play.opponent_update_interval = 1;
         config.self_play.max_opponent_pool = 2;
         config.self_play.baseline_probability = 0.0;

@@ -1,0 +1,62 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/specialist_distillation_partitioned_inference_sweep.toml",
+  "spec_sha256": "5b0969a4810b921fa65da640bc54d909db5264150cfe5c3df6f95241128526c8",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_specialist_distillation.toml",
+  "base_config_sha256": "c168c6e7c4457e341a8a618b2f994fa00fdc93cc3b861238706de0e49044fd55",
+  "output_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "variants": [
+    {
+      "name": "partitioned-teacher-inference",
+      "description": "Each rollout row is evaluated by exactly one applicable teacher",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "partitioned-teacher-inference",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "787107cbcdd8fd01a63d94b7f30519e1a6470dda7eff9ef38538bebebd5ec581",
+      "config_file_sha256": "1988a28e7751eba534d1d3efdebd1d90c11cc7c59c1db74d34d8bcf61f3ccd3b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/partitioned-teacher-inference/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/partitioned-teacher-inference/seed-42/config.toml"
+    },
+    {
+      "variant": "partitioned-teacher-inference",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a225b01a74faf19280826e92992f41ac501beb6a62f0eda78ef6480434294c9e",
+      "config_file_sha256": "53bce416a7668bc9084e35e15fa6fed4212885737967976167d769b6da3a637b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/partitioned-teacher-inference/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/partitioned-teacher-inference/seed-43/config.toml"
+    },
+    {
+      "variant": "partitioned-teacher-inference",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "f0126bb340c3042a925708731658fde85fcb1608b27840ffa291782d49778bfd",
+      "config_file_sha256": "8596afdd45a146fc7dbcd1b9d1f07da69f5b856d4405ba8f281e5aaa39ecb12e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/partitioned-teacher-inference/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-partitioned-inference-v1/partitioned-teacher-inference/seed-44/config.toml"
+    }
+  ]
+}

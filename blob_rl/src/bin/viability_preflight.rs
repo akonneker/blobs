@@ -37,6 +37,10 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     matrix_max_parallel: usize,
 
+    /// Safety cap for each variant's canonical micro-characterization.
+    #[arg(long, default_value_t = 1_000_000)]
+    matrix_max_micro_actions: usize,
+
     /// Continue into bounded training only when the gate passes.
     #[arg(long)]
     execute_training: bool,
@@ -101,6 +105,7 @@ fn main() {
             opponents: args.opponents,
             baseline_variant: args.baseline_variant,
             matrix_max_parallel: args.matrix_max_parallel,
+            matrix_max_micro_actions: args.matrix_max_micro_actions,
             gate_spec_file: args.gates,
             execute_training,
         },

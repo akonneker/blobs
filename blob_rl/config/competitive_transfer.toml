@@ -1,0 +1,125 @@
+# Bounded small-world PPO transfer from a feeding-qualified behavior clone.
+# Rollouts cycle through feeding retention, direct contact, and ordinary
+# competition while held-out feeding remains a mandatory promotion gate.
+
+seed = 42
+num_envs = 4
+rollout_length = 64
+total_timesteps = 100_000
+total_simulation_quanta_per_env = 262_144
+eval_interval = 1000
+eval_episodes = 8
+evaluation_opponents = ["wait", "random", "aggressive"]
+evaluation_snapshots = []
+evaluation_seed = 1_000_000_000
+checkpoint_interval = 1
+checkpoint_dir = "./checkpoints/competitive-transfer"
+
+[feeding_curriculum]
+enabled = true
+rollout_stages_enabled = false
+on_food_until_sim_time_quanta_per_env = 524_288
+adjacent_food_until_sim_time_quanta_per_env = 1_572_864
+
+[feeding_curriculum.promotion]
+min_on_food_episode_success_rate = 0.95
+min_adjacent_episode_success_rate = 0.80
+min_survival_rate = 0.80
+min_consumed_energy_per_initial_cell = 1.0
+evaluation_max_episode_len = 4096
+evaluation_sim_time_limit_quanta = 65_536
+
+[combat_curriculum]
+enabled = true
+cycle_sim_time_quanta_per_env = 262_144
+on_food_sim_time_quanta_per_cycle = 32_768
+adjacent_food_sim_time_quanta_per_cycle = 32_768
+contact_sim_time_quanta_per_cycle = 65_536
+skirmish_sim_time_quanta_per_cycle = 65_536
+retention_episode_sim_time_limit_quanta = 32_768
+contact_episode_sim_time_limit_quanta = 32_768
+skirmish_episode_sim_time_limit_quanta = 65_536
+contact_evaluation_sim_time_limit_quanta = 32_768
+skirmish_evaluation_sim_time_limit_quanta = 65_536
+contact_action_kind_exploration_floor = 0.50
+skirmish_action_kind_exploration_floor = 0.25
+contact_cells_per_team = 1
+skirmish_cells_per_team = 4
+contact_initial_energies = [60, 100, 180]
+contact_opponents = ["aggressive", "defensive"]
+min_contact_kills_for_promotion = 0
+min_skirmish_kills_for_promotion = 1
+
+[telemetry]
+enabled = true
+state_sample_interval_steps = 32
+max_state_samples_per_episode = 64
+episode_log_stride = 1
+
+[ppo]
+clip_epsilon = 0.2
+value_clip_epsilon = 0.2
+gamma = 0.99
+gae_lambda = 0.95
+epochs_per_update = 4
+minibatch_size = 128
+recurrent_unroll_steps = 16
+learning_rate = 1e-5
+entropy_coeff = 0.01
+action_kind_exploration_floor = 0.10
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+target_kl = 0.03
+
+[model]
+hidden1 = 128
+hidden2 = 64
+recurrent_size = 64
+
+[env]
+world_size = 64
+cells_per_team = 12
+starting_cell_layout = "loose_random"
+max_episode_len = 4096
+victory = { immediate = "extermination", deadline = "draw", sim_time_limit_quanta = 131_072 }
+num_teams = 2
+opponent = "aggressive"
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+min_attack_power = 5
+max_attack_power = 50
+max_energy_for_attack_scaling = 200
+num_scattered_energy = 500
+scattered_energy_layout = { mode = "uniform" }
+scattered_energy_amount = 25
+num_plants = 200
+plant_layout = { mode = "uniform" }
+plant_rate = 3
+plant_max_energy = 100
+resource_placement = "random"
+
+[reward]
+survive_tick = 0.01
+eat_energy = 0.005
+damage_enemy = 0.02
+kill_enemy = 2.0
+cell_died = -1.0
+split_success = 3.0
+team_wins = 10.0
+team_loses = -10.0
+move_toward_food = 0.05
+move_toward_enemy = 0.02
+proximity_search_radius = 10
+
+[self_play]
+start_after_sim_time_quanta_per_env = 2_097_152
+opponent_update_interval = 50
+max_opponent_pool = 0
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

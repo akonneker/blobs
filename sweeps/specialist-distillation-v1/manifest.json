@@ -1,0 +1,110 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/specialist_distillation_sweep.toml",
+  "spec_sha256": "5c1447afb8390664b40aa3391c2be661d0397be1b5b7f7f36b6cee665ef9a4d9",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_skirmish_frequent.toml",
+  "base_config_sha256": "8b2d5ea5771126ba27c89502c95bcba52a3332cc904e8fe061e43762326cd6eb",
+  "output_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "variants": [
+    {
+      "name": "control",
+      "description": "Frequent curriculum with only the verified initial-policy anchor",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {}
+    },
+    {
+      "name": "specialist-distillation",
+      "description": "Qualified ecology/combat frontier teachers at coefficient 0.10",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {
+        "combat_coeff": 0.1,
+        "ecology_coeff": 0.1,
+        "enabled": true
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "control",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "79ca8e91131bc79145e0bd4df014be5ff062437eb77c45025628c12989b2bdd4",
+      "config_file_sha256": "ff7dcec9afe525cf03bfea50c4dffe30e98342d3d98bc50634a3ae362d4c73d0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/control/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/control/seed-42/config.toml"
+    },
+    {
+      "variant": "control",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "305a36ce8ee4c635ac60283cb48622bea0675d4f501829279cfe642500cdd77b",
+      "config_file_sha256": "4321cec309fad75c002ca65a8930b2a341be7a05cc91d282a72a3e2478f5a794",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/control/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/control/seed-43/config.toml"
+    },
+    {
+      "variant": "control",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "eb8ef69587c1806abd2edd6b6b2f5936613dd6184e96c625c3478716a05f3ac9",
+      "config_file_sha256": "9ca74d53e1e2b654e919f0986b9dc331f4f4f2b6d2f861794b53cd8d4036e581",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/control/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/control/seed-44/config.toml"
+    },
+    {
+      "variant": "specialist-distillation",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "787107cbcdd8fd01a63d94b7f30519e1a6470dda7eff9ef38538bebebd5ec581",
+      "config_file_sha256": "fbfb9757d2baf0d1ea841cca94b3f49f03204daf632aa4364d1ac1640ae44c40",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/specialist-distillation/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/specialist-distillation/seed-42/config.toml"
+    },
+    {
+      "variant": "specialist-distillation",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a225b01a74faf19280826e92992f41ac501beb6a62f0eda78ef6480434294c9e",
+      "config_file_sha256": "57888ce6ef98be88bbdd9346ef9e0bcefcf8180063ae434cd9591e01c588b4f2",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/specialist-distillation/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/specialist-distillation/seed-43/config.toml"
+    },
+    {
+      "variant": "specialist-distillation",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "f0126bb340c3042a925708731658fde85fcb1608b27840ffa291782d49778bfd",
+      "config_file_sha256": "a5d4d0a8d77a28fcd610ab0540ed1648253434e503de17fb1444f7aa1ccc204d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/specialist-distillation/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-v1/specialist-distillation/seed-44/config.toml"
+    }
+  ]
+}

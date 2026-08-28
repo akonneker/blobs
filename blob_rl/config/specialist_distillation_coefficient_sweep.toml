@@ -1,0 +1,31 @@
+# Paired sensitivity sweep for the strength of stage-local frontier
+# distillation. Both ecology and combat coefficients move together; all other
+# scientific and execution settings are inherited unchanged.
+
+base_config = "competitive_transfer_large_specialist_distillation.toml"
+output_dir = "../../sweeps/specialist-distillation-coefficient-v1"
+seeds = [42, 43, 44]
+
+[[variants]]
+name = "coefficient-005"
+description = "Ecology and combat specialist coefficient 0.05"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.05
+combat_coeff = 0.05
+
+[[variants]]
+name = "coefficient-010"
+description = "Ecology and combat specialist coefficient 0.10"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.10
+combat_coeff = 0.10
+
+[[variants]]
+name = "coefficient-020"
+description = "Ecology and combat specialist coefficient 0.20"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.20
+combat_coeff = 0.20

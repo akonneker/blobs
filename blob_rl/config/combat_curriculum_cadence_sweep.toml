@@ -1,0 +1,43 @@
+# Paired replicated comparison of local-combat rehearsal cadence and mixture.
+# Every variant inherits the same qualified parent contract, PPO, rules,
+# rewards, environment, held-out evaluation seeds, total 524,288-quanta clock
+# budget, and 25% combined feeding-retention exposure. Only the host-side
+# combat curriculum schedule changes; no stage label enters the Mind ABI.
+
+base_config = "competitive_transfer_large_skirmish.toml"
+output_dir = "../../sweeps/combat-curriculum-cadence-v1"
+seeds = [42, 43, 44]
+
+[[variants]]
+name = "two-cycle-balanced"
+description = "Two 262,144-quanta cycles with equal contact and skirmish exposure"
+
+[[variants]]
+name = "four-cycle-balanced"
+description = "Four 131,072-quanta cycles with the baseline stage proportions"
+[variants.combat_curriculum]
+cycle_sim_time_quanta_per_env = 131_072
+on_food_sim_time_quanta_per_cycle = 16_384
+adjacent_food_sim_time_quanta_per_cycle = 16_384
+contact_sim_time_quanta_per_cycle = 32_768
+skirmish_sim_time_quanta_per_cycle = 32_768
+retention_episode_sim_time_limit_quanta = 16_384
+contact_episode_sim_time_limit_quanta = 16_384
+skirmish_episode_sim_time_limit_quanta = 32_768
+contact_evaluation_sim_time_limit_quanta = 16_384
+skirmish_evaluation_sim_time_limit_quanta = 32_768
+
+[[variants]]
+name = "four-cycle-skirmish-heavy"
+description = "Four cycles shifting half of contact exposure into 4v4 skirmishes"
+[variants.combat_curriculum]
+cycle_sim_time_quanta_per_env = 131_072
+on_food_sim_time_quanta_per_cycle = 16_384
+adjacent_food_sim_time_quanta_per_cycle = 16_384
+contact_sim_time_quanta_per_cycle = 16_384
+skirmish_sim_time_quanta_per_cycle = 49_152
+retention_episode_sim_time_limit_quanta = 16_384
+contact_episode_sim_time_limit_quanta = 16_384
+skirmish_episode_sim_time_limit_quanta = 49_152
+contact_evaluation_sim_time_limit_quanta = 16_384
+skirmish_evaluation_sim_time_limit_quanta = 49_152

@@ -18,7 +18,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::action::{
-    NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    decompose_policy_action, policy_action_family, policy_action_kind_mask, policy_effort_mask,
+    policy_target_mask, PolicyActionFamily, NUM_ACTIONS, NUM_AMOUNT_CHOICES,
+    NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS,
+    NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
+    NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::artifact::training_backend_id;
 use crate::config::ModelConfig;
@@ -28,7 +32,7 @@ use crate::model::{
 };
 use crate::observation::OBS_DIM;
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 8;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 14;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,10 +45,26 @@ pub enum DatasetSamplingStrategy {
     Balanced,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ActionBalancingStrategy {
+    None,
+    /// Equalize aggregate loss across coarse physical families.
+    Family,
+    /// Equalize every represented flat catalog label. This is useful for a
+    /// targeted warm start where direction/slot labels would otherwise be
+    /// overwhelmed by a single non-targeted action such as Consume.
+    Label,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct BehaviorCloningConfig {
     pub seed: u64,
+    /// Hash of the verified behavior-cloning artifact used to initialize this
+    /// stage, or `None` for a fresh model. The path is deliberately excluded
+    /// so artifact identity remains machine-independent.
+    pub initial_artifact_sha256: Option<String>,
     pub epochs: usize,
     pub minibatch_size: usize,
     pub learning_rate: f64,
@@ -53,27 +73,54 @@ pub struct BehaviorCloningConfig {
     /// seed suite.
     pub validation_fraction: f64,
     pub dataset_sampling: DatasetSamplingStrategy,
+    /// Optional explicit sampling mass for each dataset, in CLI order. When
+    /// present this overrides `dataset_sampling` while preserving the same
+    /// total presentations per epoch.
+    #[serde(default)]
+    pub dataset_sampling_weights: Vec<f64>,
     /// Maximum number of consecutive decisions from one cell kept in a single
     /// recurrent autodiff graph.
     pub recurrent_unroll_steps: usize,
     /// Restrict training to decisions exactly reproduced by the current
     /// decoder. This normally excludes stateful colony demonstrations.
     pub exact_round_trip_only: bool,
+    pub action_balancing: ActionBalancingStrategy,
+    /// Exponent applied to inverse-frequency action weights. Zero disables
+    /// their effect and one applies full balancing.
+    pub action_balance_exponent: f64,
+    /// Optional upper bound on the ratio between the largest and smallest
+    /// represented per-sample action weights. This prevents a newly introduced
+    /// rare family from overwhelming established behavior while retaining
+    /// useful balancing among common families.
+    pub action_balance_max_ratio: Option<f64>,
 }
 
 impl BehaviorCloningConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.epochs == 0
+        let valid_initial_artifact = self.initial_artifact_sha256.as_ref().is_none_or(|hash| {
+            hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        });
+        if !valid_initial_artifact
+            || self.epochs == 0
             || self.minibatch_size == 0
             || !self.learning_rate.is_finite()
             || self.learning_rate <= 0.0
             || !self.validation_fraction.is_finite()
             || !(0.0..1.0).contains(&self.validation_fraction)
+            || self
+                .dataset_sampling_weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
             || self.recurrent_unroll_steps == 0
             || self.recurrent_unroll_steps > 256
+            || !self.action_balance_exponent.is_finite()
+            || !(0.0..=1.0).contains(&self.action_balance_exponent)
+            || self
+                .action_balance_max_ratio
+                .is_some_and(|ratio| !ratio.is_finite() || ratio < 1.0)
         {
             return Err(
-                "behavior-cloning epochs, batch size, and learning rate must be positive, validation fraction must be in [0, 1), and recurrent unroll steps must be in 1..=256".into(),
+                "behavior-cloning initial artifact must be a SHA-256 hash, epochs, batch size, learning rate, and explicit dataset weights must be positive, validation fraction and action-balance exponent must be in [0, 1], action-balance max ratio must be finite and at least 1, and recurrent unroll steps must be in 1..=256".into(),
             );
         }
         Ok(())
@@ -84,13 +131,18 @@ impl Default for BehaviorCloningConfig {
     fn default() -> Self {
         Self {
             seed: 42,
+            initial_artifact_sha256: None,
             epochs: 10,
             minibatch_size: 256,
             learning_rate: 3e-4,
             validation_fraction: 0.1,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
+            dataset_sampling_weights: Vec::new(),
             recurrent_unroll_steps: 16,
             exact_round_trip_only: false,
+            action_balancing: ActionBalancingStrategy::None,
+            action_balance_exponent: 1.0,
+            action_balance_max_ratio: None,
         }
     }
 }
@@ -133,6 +185,12 @@ pub struct BehaviorCloningDatasetPartition {
     pub validation_trajectories: usize,
     pub samples_per_epoch: usize,
     pub held_out_seeds: Vec<u64>,
+    /// Exact policy-catalog label counts, indexed by action ID. These make
+    /// target-slot fragmentation and dominant fallback actions visible before
+    /// a warm start is trusted.
+    pub eligible_action_histogram: Vec<usize>,
+    pub training_action_histogram: Vec<usize>,
+    pub validation_action_histogram: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -164,6 +222,99 @@ struct DatasetPartition<'a> {
     training: Vec<&'a DemonstrationSample>,
     validation: Vec<&'a DemonstrationSample>,
     held_out_seeds: Vec<u64>,
+}
+
+fn action_histogram<'a>(samples: impl IntoIterator<Item = &'a DemonstrationSample>) -> Vec<usize> {
+    let mut counts = vec![0; NUM_ACTIONS];
+    for sample in samples {
+        counts[usize::from(sample.action)] += 1;
+    }
+    counts
+}
+
+fn cap_weight_ratio(weights: &mut [f32], represented: &[bool], max_ratio: Option<f64>) {
+    let Some(max_ratio) = max_ratio else {
+        return;
+    };
+    let minimum = weights
+        .iter()
+        .zip(represented)
+        .filter_map(|(weight, represented)| represented.then_some(*weight))
+        .fold(f32::INFINITY, f32::min);
+    let maximum = minimum * max_ratio as f32;
+    for (weight, represented) in weights.iter_mut().zip(represented) {
+        if *represented {
+            *weight = weight.min(maximum);
+        }
+    }
+}
+
+fn action_weights(
+    partitions: &[DatasetPartition<'_>],
+    strategy: ActionBalancingStrategy,
+    exponent: f64,
+    max_ratio: Option<f64>,
+) -> Vec<f32> {
+    if strategy == ActionBalancingStrategy::None {
+        return vec![1.0; NUM_ACTIONS];
+    }
+    let mut action_counts = vec![0usize; NUM_ACTIONS];
+    for sample in partitions.iter().flat_map(|partition| &partition.training) {
+        action_counts[usize::from(sample.action)] += 1;
+    }
+    let mut represented_actions = vec![false; NUM_ACTIONS];
+    let mut weights: Vec<f32> = match strategy {
+        ActionBalancingStrategy::None => unreachable!(),
+        ActionBalancingStrategy::Label => {
+            let represented = action_counts.iter().filter(|count| **count > 0).count();
+            let total = action_counts.iter().sum::<usize>();
+            represented_actions
+                .iter_mut()
+                .zip(&action_counts)
+                .for_each(|(represented, count)| *represented = *count > 0);
+            action_counts
+                .into_iter()
+                .map(|count| {
+                    if count == 0 {
+                        1.0
+                    } else {
+                        (total as f64 / (represented * count) as f64).powf(exponent) as f32
+                    }
+                })
+                .collect()
+        }
+        ActionBalancingStrategy::Family => {
+            let mut family_counts = [0usize; PolicyActionFamily::COUNT];
+            for (action, count) in action_counts.iter().copied().enumerate() {
+                if count > 0 {
+                    let family = policy_action_family(action)
+                        .expect("policy action histogram index is in the catalog");
+                    family_counts[family.index()] += count;
+                }
+            }
+            let represented = family_counts.iter().filter(|count| **count > 0).count();
+            let total = family_counts.iter().sum::<usize>();
+            for (action, represented_action) in represented_actions.iter_mut().enumerate() {
+                let family =
+                    policy_action_family(action).expect("policy action index is in the catalog");
+                *represented_action = family_counts[family.index()] > 0;
+            }
+            (0..NUM_ACTIONS)
+                .map(|action| {
+                    let family = policy_action_family(action)
+                        .expect("policy action index is in the catalog");
+                    let count = family_counts[family.index()];
+                    if count == 0 {
+                        1.0
+                    } else {
+                        (total as f64 / (represented * count) as f64).powf(exponent) as f32
+                    }
+                })
+                .collect()
+        }
+    };
+    cap_weight_ratio(&mut weights, &represented_actions, max_ratio);
+    weights
 }
 
 fn seed_rank(split_seed: u64, source_seed: u64) -> [u8; 32] {
@@ -244,8 +395,47 @@ fn partition_datasets<'a>(
 fn samples_per_dataset_per_epoch(
     partitions: &[DatasetPartition<'_>],
     strategy: DatasetSamplingStrategy,
-) -> Vec<usize> {
-    match strategy {
+    explicit_weights: &[f64],
+) -> Result<Vec<usize>, String> {
+    if !explicit_weights.is_empty() {
+        if explicit_weights.len() != partitions.len() {
+            return Err(format!(
+                "received {} dataset sampling weights for {} datasets",
+                explicit_weights.len(),
+                partitions.len()
+            ));
+        }
+        let total = partitions
+            .iter()
+            .map(|partition| partition.training.len())
+            .sum::<usize>();
+        let weight_total = explicit_weights.iter().sum::<f64>();
+        let raw = explicit_weights
+            .iter()
+            .map(|weight| total as f64 * weight / weight_total)
+            .collect::<Vec<_>>();
+        let mut samples = raw
+            .iter()
+            .map(|value| value.floor() as usize)
+            .collect::<Vec<_>>();
+        let remainder = total.saturating_sub(samples.iter().sum());
+        let mut fractional_order = raw
+            .iter()
+            .enumerate()
+            .map(|(index, value)| (index, value.fract()))
+            .collect::<Vec<_>>();
+        fractional_order.sort_by(|left, right| {
+            right
+                .1
+                .total_cmp(&left.1)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        for (index, _) in fractional_order.into_iter().take(remainder) {
+            samples[index] += 1;
+        }
+        return Ok(samples);
+    }
+    Ok(match strategy {
         DatasetSamplingStrategy::Proportional => partitions
             .iter()
             .map(|partition| partition.training.len())
@@ -257,14 +447,45 @@ fn samples_per_dataset_per_epoch(
                 .sum::<usize>();
             vec![total / partitions.len(); partitions.len()]
         }
-    }
+    })
 }
 
-fn mask_bias(sample: &DemonstrationSample) -> impl Iterator<Item = f32> + '_ {
-    sample
-        .action_mask
-        .iter()
-        .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
+fn kind_mask_bias(sample: &DemonstrationSample) -> impl Iterator<Item = f32> {
+    policy_action_kind_mask(&sample.action_mask)
+        .into_iter()
+        .map(|allowed| if allowed { 0.0 } else { -1.0e9 })
+}
+
+fn target_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
+    let choice = decompose_policy_action(usize::from(sample.action))
+        .expect("validated demonstration action is in the policy catalog");
+    let mut bias = vec![-1.0e9; NUM_POLICY_TARGET_LOGITS];
+    let start = choice.kind * NUM_POLICY_TARGETS;
+    for (target, allowed) in policy_target_mask(&sample.action_mask, choice.kind)
+        .into_iter()
+        .enumerate()
+    {
+        if allowed {
+            bias[start + target] = 0.0;
+        }
+    }
+    bias
+}
+
+fn effort_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
+    let choice = decompose_policy_action(usize::from(sample.action))
+        .expect("validated demonstration action is in the policy catalog");
+    let mut bias = vec![-1.0e9; NUM_POLICY_EFFORT_LOGITS];
+    let start = choice.kind * NUM_POLICY_EFFORTS;
+    for (effort, allowed) in policy_effort_mask(&sample.action_mask, choice.kind, choice.target)
+        .into_iter()
+        .enumerate()
+    {
+        if allowed {
+            bias[start + effort] = 0.0;
+        }
+    }
+    bias
 }
 
 fn signal_mask_bias(sample: &DemonstrationSample) -> impl Iterator<Item = f32> + '_ {
@@ -281,11 +502,17 @@ fn signal_strength_mask_bias(sample: &DemonstrationSample) -> impl Iterator<Item
         .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
 }
 
-fn amount_mask_bias(sample: &DemonstrationSample) -> impl Iterator<Item = f32> + '_ {
-    sample
-        .amount_mask
-        .iter()
-        .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
+fn amount_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
+    let choice = decompose_policy_action(usize::from(sample.action))
+        .expect("validated demonstration action is in the policy catalog");
+    let mut bias = vec![-1.0e9; NUM_POLICY_AMOUNT_LOGITS];
+    let start = choice.kind * NUM_AMOUNT_CHOICES;
+    for (amount, allowed) in sample.amount_mask.iter().enumerate() {
+        if *allowed {
+            bias[start + amount] = 0.0;
+        }
+    }
+    bias
 }
 
 type DemonstrationSequence<'a> = Vec<&'a DemonstrationSample>;
@@ -455,9 +682,17 @@ where
                 .iter()
                 .flat_map(|sample| sample.observation.iter().copied())
                 .collect::<Vec<_>>();
-            let masks = samples
+            let kind_masks = samples
                 .iter()
-                .flat_map(|sample| mask_bias(sample))
+                .flat_map(|sample| kind_mask_bias(sample))
+                .collect::<Vec<_>>();
+            let target_masks = samples
+                .iter()
+                .flat_map(|sample| target_mask_bias(sample))
+                .collect::<Vec<_>>();
+            let effort_masks = samples
+                .iter()
+                .flat_map(|sample| effort_mask_bias(sample))
                 .collect::<Vec<_>>();
             let signal_masks = samples
                 .iter()
@@ -485,9 +720,19 @@ where
                     device,
                 ),
             );
-            let logits = output.policy_logits
+            let kind_logits = output.action_kind_logits
                 + Tensor::<B, 2>::from_data(
-                    TensorData::new(masks, [active.len(), NUM_ACTIONS]),
+                    TensorData::new(kind_masks, [active.len(), NUM_POLICY_ACTION_KINDS]),
+                    device,
+                );
+            let target_logits = output.target_logits
+                + Tensor::<B, 2>::from_data(
+                    TensorData::new(target_masks, [active.len(), NUM_POLICY_TARGET_LOGITS]),
+                    device,
+                );
+            let effort_logits = output.effort_logits
+                + Tensor::<B, 2>::from_data(
+                    TensorData::new(effort_masks, [active.len(), NUM_POLICY_EFFORT_LOGITS]),
                     device,
                 );
             let signal_logits = output.signal_logits
@@ -505,17 +750,21 @@ where
                 );
             let amount_logits = output.amount_logits
                 + Tensor::<B, 2>::from_data(
-                    TensorData::new(amount_masks, [active.len(), NUM_AMOUNT_CHOICES]),
+                    TensorData::new(amount_masks, [active.len(), NUM_POLICY_AMOUNT_LOGITS]),
                     device,
                 );
-            let width = NUM_ACTIONS
-                + NUM_AMOUNT_CHOICES
+            let width = NUM_POLICY_ACTION_KINDS
+                + NUM_POLICY_TARGET_LOGITS
+                + NUM_POLICY_EFFORT_LOGITS
+                + NUM_POLICY_AMOUNT_LOGITS
                 + NUM_SIGNAL_CHOICES
                 + NUM_SIGNAL_STRENGTH_CHOICES
                 + recurrent_size;
             let data = Tensor::cat(
                 vec![
-                    burn::tensor::activation::log_softmax(logits, 1),
+                    burn::tensor::activation::log_softmax(kind_logits, 1),
+                    burn::tensor::activation::log_softmax(target_logits, 1),
+                    burn::tensor::activation::log_softmax(effort_logits, 1),
                     burn::tensor::activation::log_softmax(amount_logits, 1),
                     burn::tensor::activation::log_softmax(signal_logits, 1),
                     burn::tensor::activation::log_softmax(signal_strength_logits, 1),
@@ -529,22 +778,53 @@ where
             for (row, (index, sample)) in active.into_iter().zip(samples).enumerate() {
                 let start = row * width;
                 let action = usize::from(sample.action);
+                let hierarchical = decompose_policy_action(action)
+                    .expect("validated demonstration action is in the policy catalog");
                 let amount = usize::from(sample.amount);
                 let signal = usize::from(sample.signal);
                 let signal_strength = usize::from(sample.signal_strength);
-                let amount_start = start + NUM_ACTIONS;
-                let signal_start = amount_start + NUM_AMOUNT_CHOICES;
+                let target_logits_start = start + NUM_POLICY_ACTION_KINDS;
+                let effort_logits_start = target_logits_start + NUM_POLICY_TARGET_LOGITS;
+                let amount_logits_start = effort_logits_start + NUM_POLICY_EFFORT_LOGITS;
+                let signal_start = amount_logits_start + NUM_POLICY_AMOUNT_LOGITS;
                 let signal_strength_start = signal_start + NUM_SIGNAL_CHOICES;
+                let target_index = hierarchical.kind * NUM_POLICY_TARGETS + hierarchical.target;
+                let effort_index = hierarchical.kind * NUM_POLICY_EFFORTS + hierarchical.effort;
+                let amount_index = hierarchical.kind * NUM_AMOUNT_CHOICES + amount;
                 total_loss -= f64::from(
-                    data[start + action]
-                        + data[amount_start + amount]
+                    data[start + hierarchical.kind]
+                        + data[target_logits_start + target_index]
+                        + data[effort_logits_start + effort_index]
+                        + data[amount_logits_start + amount_index]
                         + data[signal_start + signal]
                         + data[signal_strength_start + signal_strength],
                 );
-                let predicted = (0..NUM_ACTIONS)
+                let predicted_kind = (0..NUM_POLICY_ACTION_KINDS)
                     .max_by(|left, right| {
                         data[start + *left]
                             .total_cmp(&data[start + *right])
+                            .then_with(|| right.cmp(left))
+                    })
+                    .unwrap_or(0);
+                let predicted_target = (0..NUM_POLICY_TARGETS)
+                    .max_by(|left, right| {
+                        data[target_logits_start + hierarchical.kind * NUM_POLICY_TARGETS + *left]
+                            .total_cmp(
+                                &data[target_logits_start
+                                    + hierarchical.kind * NUM_POLICY_TARGETS
+                                    + *right],
+                            )
+                            .then_with(|| right.cmp(left))
+                    })
+                    .unwrap_or(0);
+                let predicted_effort = (0..NUM_POLICY_EFFORTS)
+                    .max_by(|left, right| {
+                        data[effort_logits_start + hierarchical.kind * NUM_POLICY_EFFORTS + *left]
+                            .total_cmp(
+                                &data[effort_logits_start
+                                    + hierarchical.kind * NUM_POLICY_EFFORTS
+                                    + *right],
+                            )
                             .then_with(|| right.cmp(left))
                     })
                     .unwrap_or(0);
@@ -557,8 +837,12 @@ where
                     .unwrap_or(0);
                 let predicted_amount = (0..NUM_AMOUNT_CHOICES)
                     .max_by(|left, right| {
-                        data[amount_start + *left]
-                            .total_cmp(&data[amount_start + *right])
+                        data[amount_logits_start + hierarchical.kind * NUM_AMOUNT_CHOICES + *left]
+                            .total_cmp(
+                                &data[amount_logits_start
+                                    + hierarchical.kind * NUM_AMOUNT_CHOICES
+                                    + *right],
+                            )
                             .then_with(|| right.cmp(left))
                     })
                     .unwrap_or(0);
@@ -570,7 +854,9 @@ where
                     })
                     .unwrap_or(0);
                 correct += usize::from(
-                    predicted == action
+                    predicted_kind == hierarchical.kind
+                        && predicted_target == hierarchical.target
+                        && predicted_effort == hierarchical.effort
                         && predicted_amount == amount
                         && predicted_signal == signal
                         && predicted_signal_strength == signal_strength,
@@ -599,6 +885,7 @@ fn train_chunk_batch<B: AutodiffBackend>(
     mut model: PolicyValueNet<B>,
     optimizer: &mut impl Optimizer<PolicyValueNet<B>, B>,
     chunks: &[SequenceChunk<'_>],
+    action_weights: &[f32],
     learning_rate: f64,
     device: &B::Device,
 ) -> PolicyValueNet<B> {
@@ -625,9 +912,17 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .iter()
             .flat_map(|sample| sample.observation.iter().copied())
             .collect::<Vec<_>>();
-        let masks = samples
+        let kind_masks = samples
             .iter()
-            .flat_map(|sample| mask_bias(sample))
+            .flat_map(|sample| kind_mask_bias(sample))
+            .collect::<Vec<_>>();
+        let target_masks = samples
+            .iter()
+            .flat_map(|sample| target_mask_bias(sample))
+            .collect::<Vec<_>>();
+        let effort_masks = samples
+            .iter()
+            .flat_map(|sample| effort_mask_bias(sample))
             .collect::<Vec<_>>();
         let signal_masks = samples
             .iter()
@@ -641,9 +936,28 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .iter()
             .flat_map(|sample| amount_mask_bias(sample))
             .collect::<Vec<_>>();
-        let actions = samples
+        let hierarchical = samples
             .iter()
-            .map(|sample| i32::from(sample.action))
+            .map(|sample| {
+                decompose_policy_action(usize::from(sample.action))
+                    .expect("validated demonstration action is in the policy catalog")
+            })
+            .collect::<Vec<_>>();
+        let kinds = hierarchical
+            .iter()
+            .map(|choice| choice.kind as i32)
+            .collect::<Vec<_>>();
+        let targets = hierarchical
+            .iter()
+            .map(|choice| (choice.kind * NUM_POLICY_TARGETS + choice.target) as i32)
+            .collect::<Vec<_>>();
+        let efforts = hierarchical
+            .iter()
+            .map(|choice| (choice.kind * NUM_POLICY_EFFORTS + choice.effort) as i32)
+            .collect::<Vec<_>>();
+        let sample_weights = samples
+            .iter()
+            .map(|sample| action_weights[usize::from(sample.action)])
             .collect::<Vec<_>>();
         let signals = samples
             .iter()
@@ -655,7 +969,10 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .collect::<Vec<_>>();
         let amounts = samples
             .iter()
-            .map(|sample| i32::from(sample.amount))
+            .zip(&hierarchical)
+            .map(|(sample, choice)| {
+                (choice.kind * NUM_AMOUNT_CHOICES + usize::from(sample.amount)) as i32
+            })
             .collect::<Vec<_>>();
         let output = model.forward_with_memory(
             Tensor::<B, 2>::from_data(
@@ -664,9 +981,19 @@ fn train_chunk_batch<B: AutodiffBackend>(
             ),
             memory,
         );
-        let logits = output.policy_logits
+        let kind_logits = output.action_kind_logits
             + Tensor::<B, 2>::from_data(
-                TensorData::new(masks, [chunks.len(), NUM_ACTIONS]),
+                TensorData::new(kind_masks, [chunks.len(), NUM_POLICY_ACTION_KINDS]),
+                device,
+            );
+        let target_logits = output.target_logits
+            + Tensor::<B, 2>::from_data(
+                TensorData::new(target_masks, [chunks.len(), NUM_POLICY_TARGET_LOGITS]),
+                device,
+            );
+        let effort_logits = output.effort_logits
+            + Tensor::<B, 2>::from_data(
+                TensorData::new(effort_masks, [chunks.len(), NUM_POLICY_EFFORT_LOGITS]),
                 device,
             );
         let signal_logits = output.signal_logits
@@ -684,11 +1011,15 @@ fn train_chunk_batch<B: AutodiffBackend>(
             );
         let amount_logits = output.amount_logits
             + Tensor::<B, 2>::from_data(
-                TensorData::new(amount_masks, [chunks.len(), NUM_AMOUNT_CHOICES]),
+                TensorData::new(amount_masks, [chunks.len(), NUM_POLICY_AMOUNT_LOGITS]),
                 device,
             );
-        let action_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(actions, [chunks.len()]), device);
+        let kind_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(kinds, [chunks.len()]), device);
+        let target_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(targets, [chunks.len()]), device);
+        let effort_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(efforts, [chunks.len()]), device);
         let signal_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::new(signals, [chunks.len()]), device);
         let signal_strength_tensor = Tensor::<B, 1, Int>::from_data(
@@ -697,16 +1028,23 @@ fn train_chunk_batch<B: AutodiffBackend>(
         );
         let amount_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::new(amounts, [chunks.len()]), device);
-        let step_loss = (burn::tensor::activation::log_softmax(logits, 1)
-            .gather(1, action_tensor.unsqueeze_dim(1))
+        let sample_weight_tensor =
+            Tensor::<B, 2>::from_data(TensorData::new(sample_weights, [chunks.len(), 1]), device);
+        let step_loss = ((burn::tensor::activation::log_softmax(kind_logits, 1)
+            .gather(1, kind_tensor.unsqueeze_dim(1))
+            + burn::tensor::activation::log_softmax(target_logits, 1)
+                .gather(1, target_tensor.unsqueeze_dim(1))
+            + burn::tensor::activation::log_softmax(effort_logits, 1)
+                .gather(1, effort_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(amount_logits, 1)
                 .gather(1, amount_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(signal_logits, 1)
                 .gather(1, signal_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(signal_strength_logits, 1)
                 .gather(1, signal_strength_tensor.unsqueeze_dim(1)))
-        .mean()
-        .neg();
+            * sample_weight_tensor)
+            .mean()
+            .neg();
         loss = Some(match loss {
             Some(loss) => loss + step_loss,
             None => step_loss,
@@ -728,7 +1066,29 @@ pub fn behavior_clone<B: AutodiffBackend>(
 where
     f32: From<B::FloatElem>,
 {
+    behavior_clone_from_model(datasets, model_config, config, None, device)
+}
+
+/// Train a behavior-cloning stage from either a fresh model or a verified
+/// parent model. Callers must put the parent's artifact hash in `config` when
+/// `initial_model` is present so the published lineage is self-authenticating.
+pub fn behavior_clone_from_model<B: AutodiffBackend>(
+    datasets: &[LoadedDemonstrations],
+    model_config: &ModelConfig,
+    config: &BehaviorCloningConfig,
+    initial_model: Option<PolicyValueNet<B>>,
+    device: B::Device,
+) -> Result<(PolicyValueNet<B>, BehaviorCloningMetrics), String>
+where
+    f32: From<B::FloatElem>,
+{
     config.validate()?;
+    if initial_model.is_some() != config.initial_artifact_sha256.is_some() {
+        return Err(
+            "initial model and initial behavior-cloning artifact hash must be supplied together"
+                .into(),
+        );
+    }
     if datasets.is_empty() {
         return Err("behavior cloning requires at least one dataset".into());
     }
@@ -742,6 +1102,12 @@ where
         .filter(|sample| sample.exact_round_trip)
         .count();
     let partitions = partition_datasets(datasets, config)?;
+    let action_weights = action_weights(
+        &partitions,
+        config.action_balancing,
+        config.action_balance_exponent,
+        config.action_balance_max_ratio,
+    );
     let training_sequences_by_dataset = partitions
         .iter()
         .map(|partition| build_sequences(&partition.training))
@@ -767,7 +1133,11 @@ where
         .map(|partition| partition.validation.len())
         .sum::<usize>();
     let eligible_samples = training_samples + validation_samples;
-    let per_dataset = samples_per_dataset_per_epoch(&partitions, config.dataset_sampling);
+    let per_dataset = samples_per_dataset_per_epoch(
+        &partitions,
+        config.dataset_sampling,
+        &config.dataset_sampling_weights,
+    )?;
     let samples_per_epoch = per_dataset.iter().sum::<usize>();
     let sample_presentations = samples_per_epoch
         .checked_mul(config.epochs)
@@ -786,17 +1156,28 @@ where
                 validation_trajectories: validation_sequences_by_dataset[index].len(),
                 samples_per_epoch: *samples_per_epoch,
                 held_out_seeds: partition.held_out_seeds.clone(),
+                eligible_action_histogram: action_histogram(
+                    partition
+                        .training
+                        .iter()
+                        .chain(&partition.validation)
+                        .copied(),
+                ),
+                training_action_histogram: action_histogram(partition.training.iter().copied()),
+                validation_action_histogram: action_histogram(partition.validation.iter().copied()),
             },
         )
         .collect::<Vec<_>>();
 
     B::seed(&device, config.seed);
-    let mut model = PolicyValueNetConfig {
-        hidden1: model_config.hidden1,
-        hidden2: model_config.hidden2,
-        recurrent_size: model_config.recurrent_size,
-    }
-    .init::<B>(&device);
+    let mut model = initial_model.unwrap_or_else(|| {
+        PolicyValueNetConfig {
+            hidden1: model_config.hidden1,
+            hidden2: model_config.hidden2,
+            recurrent_size: model_config.recurrent_size,
+        }
+        .init::<B>(&device)
+    });
     let mut optimizer = AdamWConfig::new()
         .init()
         .with_grad_clipping(GradientClipping::Norm(1.0));
@@ -845,7 +1226,14 @@ where
         }
         chunk_batches.shuffle(&mut rng);
         for batch in chunk_batches {
-            model = train_chunk_batch(model, &mut optimizer, &batch, config.learning_rate, &device);
+            model = train_chunk_batch(
+                model,
+                &mut optimizer,
+                &batch,
+                &action_weights,
+                config.learning_rate,
+                &device,
+            );
             optimizer_steps += 1;
         }
     }
@@ -1125,6 +1513,65 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
         assert!(oversized.validate().is_err());
+        let invalid_balance = BehaviorCloningConfig {
+            action_balance_exponent: 1.01,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(invalid_balance.validate().is_err());
+        let invalid_balance_ratio = BehaviorCloningConfig {
+            action_balance_max_ratio: Some(0.99),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(invalid_balance_ratio.validate().is_err());
+        let invalid_initial_artifact = BehaviorCloningConfig {
+            initial_artifact_sha256: Some("not-a-hash".into()),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(invalid_initial_artifact.validate().is_err());
+    }
+
+    #[test]
+    fn initial_model_and_artifact_identity_must_be_paired() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let model_config = ModelConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        };
+        let config_with_identity = BehaviorCloningConfig {
+            initial_artifact_sha256: Some("a".repeat(64)),
+            ..BehaviorCloningConfig::default()
+        };
+        let missing_model = behavior_clone::<TestBackend>(
+            &[],
+            &model_config,
+            &config_with_identity,
+            Default::default(),
+        );
+        assert!(missing_model.is_err());
+
+        let device = Default::default();
+        let initial_model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let missing_identity = behavior_clone_from_model::<TestBackend>(
+            &[],
+            &model_config,
+            &BehaviorCloningConfig::default(),
+            Some(initial_model),
+            device,
+        );
+        assert!(missing_identity.is_err());
+    }
+
+    #[test]
+    fn action_weight_cap_only_limits_represented_labels() {
+        let mut weights = vec![0.5, 4.0, 7.0];
+        cap_weight_ratio(&mut weights, &[true, true, false], Some(2.0));
+        assert_eq!(weights, vec![0.5, 1.0, 7.0]);
     }
 
     #[test]
@@ -1176,13 +1623,18 @@ mod tests {
         };
         let config = BehaviorCloningConfig {
             seed: 9,
+            initial_artifact_sha256: None,
             epochs: 20,
             minibatch_size: 16,
             learning_rate: 1e-2,
             validation_fraction: 0.5,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
+            dataset_sampling_weights: Vec::new(),
             recurrent_unroll_steps: 4,
             exact_round_trip_only: false,
+            action_balancing: ActionBalancingStrategy::None,
+            action_balance_exponent: 1.0,
+            action_balance_max_ratio: None,
         };
         let (trained, metrics) = behavior_clone::<TestBackend>(
             std::slice::from_ref(&dataset),
@@ -1220,7 +1672,7 @@ mod tests {
                 TensorData::new(observations.clone(), shape),
                 &device,
             ))
-            .policy_logits
+            .action_kind_logits
             .into_data()
             .to_vec::<f32>()
             .unwrap();
@@ -1229,7 +1681,7 @@ mod tests {
                 TensorData::new(observations, shape),
                 &device,
             ))
-            .policy_logits
+            .action_kind_logits
             .into_data()
             .to_vec::<f32>()
             .unwrap();
@@ -1318,12 +1770,61 @@ mod tests {
                 .all(|sample| held_out.contains(&sample.source_seed)));
         }
         let presentations =
-            samples_per_dataset_per_epoch(&partitions, DatasetSamplingStrategy::Balanced);
+            samples_per_dataset_per_epoch(&partitions, DatasetSamplingStrategy::Balanced, &[])
+                .unwrap();
         assert_eq!(presentations[0], presentations[1]);
         assert!(partitions[0].training.len() < partitions[1].training.len());
 
         let mut invalid = config;
         invalid.validation_fraction = 1.0;
         assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn explicit_dataset_weights_preserve_budget_and_order() {
+        let training = small_training_config();
+        let (manifest, payload) = generate_demonstrations(
+            &training,
+            "config".into(),
+            &DemonstrationOptions {
+                teacher: MaintainedMindProfile::Simple,
+                seeds: vec![40, 41, 42, 43],
+                max_samples: 32,
+            },
+        )
+        .unwrap();
+        let datasets = vec![
+            LoadedDemonstrations {
+                directory: PathBuf::from("first"),
+                manifest_sha256: "weighted-first".into(),
+                manifest: manifest.clone(),
+                payload: payload.clone(),
+            },
+            LoadedDemonstrations {
+                directory: PathBuf::from("second"),
+                manifest_sha256: "weighted-second".into(),
+                manifest,
+                payload,
+            },
+        ];
+        let config = BehaviorCloningConfig {
+            validation_fraction: 0.25,
+            ..BehaviorCloningConfig::default()
+        };
+        let partitions = partition_datasets(&datasets, &config).unwrap();
+        let presentations = samples_per_dataset_per_epoch(
+            &partitions,
+            DatasetSamplingStrategy::Proportional,
+            &[3.0, 1.0],
+        )
+        .unwrap();
+        assert_eq!(presentations.iter().sum::<usize>(), 48);
+        assert_eq!(presentations, vec![36, 12]);
+        assert!(samples_per_dataset_per_epoch(
+            &partitions,
+            DatasetSamplingStrategy::Proportional,
+            &[1.0],
+        )
+        .is_err());
     }
 }

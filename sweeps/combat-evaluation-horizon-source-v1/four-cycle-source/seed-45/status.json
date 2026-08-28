@@ -1,0 +1,17 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "70b10a6a20bd0fff019d93880fa4878040bfcf0af47d6941bfc0605adab5c2ea",
+  "execution_contract_sha256": "21da73fa2f994ddf2a4040a6d69020fabd95442c1a5080d8aeacfb2677fae506",
+  "trainer_sha256": "b869fb24d26322862ec8d43b564e6d5b9b4dc2634d7950594159e88cc30fc5e3",
+  "variant": "four-cycle-source",
+  "replicate": 0,
+  "training_seed": 45,
+  "experiment_config_sha256": "65a51a6b43c47efc9f411b93cf9be494ade8f2ed171828bfbc02099868a9c69a",
+  "state": "failed",
+  "attempts": 1,
+  "started_unix_millis": 1787932225917,
+  "finished_unix_millis": 1787932226220,
+  "resume_checkpoint": null,
+  "exit_code": 101,
+  "error": "trainer exited with exit status: 101"
+}

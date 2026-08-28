@@ -1,0 +1,514 @@
+{
+  "schema_version": 5,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/resource_layout_sweep.toml",
+  "spec_sha256": "8a3246858e469857b5e70c5128a184f4a0a9c0ebbad28392b46c164ae8047716",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/objective_large_draw_smoke.toml",
+  "base_config_sha256": "b054331fdb7fd4971578f02dd34a23cb150bfd5fda600d38776fcc8a5706d680",
+  "output_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2",
+  "seeds": [
+    7101,
+    7201,
+    7301,
+    7401
+  ],
+  "variants": [
+    {
+      "name": "uniform-control",
+      "description": "Historical uniform plant and loose-energy scattering",
+      "rules": {},
+      "scenario": {
+        "plant_layout": {
+          "mode": "uniform"
+        },
+        "scattered_energy_layout": {
+          "mode": "uniform"
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "plant-patches",
+      "description": "Plants cluster in four overlapping local patches",
+      "rules": {},
+      "scenario": {
+        "plant_layout": {
+          "mode": "patches",
+          "patch_count": 4,
+          "radius": 3
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "plant-islands",
+      "description": "Plants occupy four separated islands",
+      "rules": {},
+      "scenario": {
+        "plant_layout": {
+          "island_count": 4,
+          "minimum_separation": 7,
+          "mode": "islands",
+          "radius": 2
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "loose-patches",
+      "description": "Loose energy clusters while plants remain uniform",
+      "rules": {},
+      "scenario": {
+        "scattered_energy_layout": {
+          "mode": "patches",
+          "patch_count": 6,
+          "radius": 5
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "loose-corridors",
+      "description": "Loose energy follows three seeded axis-aligned corridors",
+      "rules": {},
+      "scenario": {
+        "scattered_energy_layout": {
+          "corridor_count": 3,
+          "half_width": 1,
+          "mode": "corridors"
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "balanced-plant-territories",
+      "description": "Equal plant quotas lie near each team's starting assembly",
+      "rules": {},
+      "scenario": {
+        "plant_layout": {
+          "mode": "territories",
+          "radius": 4
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "favored-team-zero-plants",
+      "description": "Plants favor team zero to measure sensitivity to ecological asymmetry",
+      "rules": {},
+      "scenario": {
+        "plant_layout": {
+          "mode": "favored_territory",
+          "radius": 4,
+          "team": 0
+        },
+        "starting_cell_layout": "block"
+      }
+    },
+    {
+      "name": "islands-and-corridors",
+      "description": "Cross separated plant islands with loose-energy corridors",
+      "rules": {},
+      "scenario": {
+        "plant_layout": {
+          "island_count": 4,
+          "minimum_separation": 7,
+          "mode": "islands",
+          "radius": 2
+        },
+        "scattered_energy_layout": {
+          "corridor_count": 3,
+          "half_width": 1,
+          "mode": "corridors"
+        },
+        "starting_cell_layout": "block"
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "uniform-control",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "bd10a88141c894b15c76dfeed6cc123ca0567b729b2d10e4bb745b45d9ea2cd6",
+      "experiment_config_sha256": "a11ec8f41ea6d88e49217f25fc3afe99fb78bb35a8344ae73c29cab7722ed6cc",
+      "config_file_sha256": "ad8faa355e0dd2e73332cd029eb63908cec8e41435d3129ed4ed0f589f35af5a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7101/config.toml"
+    },
+    {
+      "variant": "uniform-control",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "bd10a88141c894b15c76dfeed6cc123ca0567b729b2d10e4bb745b45d9ea2cd6",
+      "experiment_config_sha256": "6ba701c3d64ac9d6c9302199c42c6dcf85df04c6e2c53e8cb73a80b3313ae4a9",
+      "config_file_sha256": "d6c6f3ecd3ae1a395df6e4a44c591d9d7c871a618df7a7077a371495a3996b7e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7201/config.toml"
+    },
+    {
+      "variant": "uniform-control",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "bd10a88141c894b15c76dfeed6cc123ca0567b729b2d10e4bb745b45d9ea2cd6",
+      "experiment_config_sha256": "61b2fe4b5e9f032321e3e622f623999a767b67c6166a4cda3449c1921b3421a2",
+      "config_file_sha256": "9f81173c59d79cf5881208ce83f275eab8bc58c10370d9c8f6e41ae9fe7f72b3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7301/config.toml"
+    },
+    {
+      "variant": "uniform-control",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "bd10a88141c894b15c76dfeed6cc123ca0567b729b2d10e4bb745b45d9ea2cd6",
+      "experiment_config_sha256": "12c3d2dc05cab499d28b2dabb4d805d4db83a01c57b633b24be319062c90c9ac",
+      "config_file_sha256": "83ed49b15c21f1b764e511f1ab1f6bd09db28810e13c1fb708850e8b5c86f704",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/uniform-control/seed-7401/config.toml"
+    },
+    {
+      "variant": "plant-patches",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "de5f204f90adfd7254c7c6692410e8eceedf7bc29d7b01a5cd199aa70f13a71f",
+      "experiment_config_sha256": "9a4808f56124b1334de7f467ba31a5d684af5ff1100ba3c23b2357874e8f33e2",
+      "config_file_sha256": "96ddd9d3a12089d69d9206c177db91cc8537b7327d85c2beef3ff1146ba41bb1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7101/config.toml"
+    },
+    {
+      "variant": "plant-patches",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "de5f204f90adfd7254c7c6692410e8eceedf7bc29d7b01a5cd199aa70f13a71f",
+      "experiment_config_sha256": "e986ac0cb1bac38455662af0abb3c0d1a13c506207aa3d67f16c31a582434fa9",
+      "config_file_sha256": "47427f6bba0f1b698f3c163acb1782d50d09f19c0058a552e854e7c40af70404",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7201/config.toml"
+    },
+    {
+      "variant": "plant-patches",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "de5f204f90adfd7254c7c6692410e8eceedf7bc29d7b01a5cd199aa70f13a71f",
+      "experiment_config_sha256": "828a71c304d7e2fd7db953c75ac1f0a5b258a6c1c2b201fac331ade927faea9f",
+      "config_file_sha256": "b6a9273ba90ea624c11db55b30c30ba4a7101a09de6218436155002f43d09062",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7301/config.toml"
+    },
+    {
+      "variant": "plant-patches",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "de5f204f90adfd7254c7c6692410e8eceedf7bc29d7b01a5cd199aa70f13a71f",
+      "experiment_config_sha256": "c85628d520b5820c82044b1ad1961b543979577e7c4ddd822af89611c3327768",
+      "config_file_sha256": "eca3049c97544c566ddd6b10d5a90a9a3fd8537548c188256d2f4abb8aea0354",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-patches/seed-7401/config.toml"
+    },
+    {
+      "variant": "plant-islands",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "8e29b72a9753dea3acde0c2b67faefef35ff24dff158c933a6065e089965cc14",
+      "experiment_config_sha256": "0d6c39559f2386883437d9d3c8868b4f116326383e2fa219bc8c9ba4d3711902",
+      "config_file_sha256": "47c6bf7c0ce43cfe58a36d64c48c1d400c6a5f8049274dca228e1e4a60b25335",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7101/config.toml"
+    },
+    {
+      "variant": "plant-islands",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "8e29b72a9753dea3acde0c2b67faefef35ff24dff158c933a6065e089965cc14",
+      "experiment_config_sha256": "54a15c18500f6abfd8d20554678ef53d5d360acdff55f7b701a24a20be4375c1",
+      "config_file_sha256": "4c43f27d9b1fbb49e63ebe6d2461fdba6f72c81877f92fdbbace88740db8f15d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7201/config.toml"
+    },
+    {
+      "variant": "plant-islands",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "8e29b72a9753dea3acde0c2b67faefef35ff24dff158c933a6065e089965cc14",
+      "experiment_config_sha256": "d65260b5627923f14ee8da01104136f4a56247822db0df27244ca0637d3d922a",
+      "config_file_sha256": "6ff6c51af9a87090a51f4ca679d1d7fa3a757c2505b5fed231f2fd322bc2ec8b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7301/config.toml"
+    },
+    {
+      "variant": "plant-islands",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "8e29b72a9753dea3acde0c2b67faefef35ff24dff158c933a6065e089965cc14",
+      "experiment_config_sha256": "8a4f179bbd77153a6e15ef26b85cdad8eadb0b699db18a3d7f7cf64c2f7fbaa4",
+      "config_file_sha256": "6f036597325541176924f28862573c1441d87a23a7f9634c21c9401678092a7a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/plant-islands/seed-7401/config.toml"
+    },
+    {
+      "variant": "loose-patches",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7e30493e4e18ddd52f9fb8c502b97d890b18d83221ff9a3162583cf2b21a18ea",
+      "experiment_config_sha256": "78fe8c395f98bb2d158ee274a65135e89cbb14cfb3741f485fb27f43a562b218",
+      "config_file_sha256": "d81102f94e7e69f3ca8ffab65fee315ab94a911a9a9989cfed47c1affb5094a3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7101/config.toml"
+    },
+    {
+      "variant": "loose-patches",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7e30493e4e18ddd52f9fb8c502b97d890b18d83221ff9a3162583cf2b21a18ea",
+      "experiment_config_sha256": "5bc76606d481c4718e78036421efd02ee72a2032e8c32052e1c18cd8a4d23928",
+      "config_file_sha256": "e8257c10d4c60e2122739c6cf7c3293e859d6cc9182602149ee491176e7939a9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7201/config.toml"
+    },
+    {
+      "variant": "loose-patches",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7e30493e4e18ddd52f9fb8c502b97d890b18d83221ff9a3162583cf2b21a18ea",
+      "experiment_config_sha256": "08946e58f02b6d13fe35fc4e7f1a65cf6c627ff866742cc9cf3c0a2a1c90f0aa",
+      "config_file_sha256": "41fca8234bf2c9c85591a3f9f57a8605d6d21c021d59869dbbc7dc1eb8b1b163",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7301/config.toml"
+    },
+    {
+      "variant": "loose-patches",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7e30493e4e18ddd52f9fb8c502b97d890b18d83221ff9a3162583cf2b21a18ea",
+      "experiment_config_sha256": "11469036cbebe57253c9c40442e490f55ed06a015190d59d93005bd6be27eb69",
+      "config_file_sha256": "9ab9361fa0e67e0c1258b2a94309170b4bf9415dfb9740f208f15689b3803563",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-patches/seed-7401/config.toml"
+    },
+    {
+      "variant": "loose-corridors",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7ecd2162267dad1fe40cc7502a3a5637e3459591baf10ef97861d8d5f6dddfc8",
+      "experiment_config_sha256": "2b0572c2662cbe12c2df57a68197f2bde19c8d536e82a8ef012d24df314147d3",
+      "config_file_sha256": "333a09fc0199b4cf5be089b7b5602073091439692aec29b5c45b5eb1a829497d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7101/config.toml"
+    },
+    {
+      "variant": "loose-corridors",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7ecd2162267dad1fe40cc7502a3a5637e3459591baf10ef97861d8d5f6dddfc8",
+      "experiment_config_sha256": "a665e680fc47fa3444d8fc17b3a7491bc46c7a63725faf90ba622a5e4e8114fe",
+      "config_file_sha256": "830952ce5f77752b18ce4b9855396090d89e9e1a4a070ea3e4cbcef94ff83683",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7201/config.toml"
+    },
+    {
+      "variant": "loose-corridors",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7ecd2162267dad1fe40cc7502a3a5637e3459591baf10ef97861d8d5f6dddfc8",
+      "experiment_config_sha256": "a7c055eeb8367c6c942f77d899c97ea1269a0ebc86178d8b788fe3cd4bc71fd8",
+      "config_file_sha256": "cf16db37dabbf88cca732aeb32049eed66f4b3fddabeba97a6e0da3857536a35",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7301/config.toml"
+    },
+    {
+      "variant": "loose-corridors",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "7ecd2162267dad1fe40cc7502a3a5637e3459591baf10ef97861d8d5f6dddfc8",
+      "experiment_config_sha256": "965c7bbcfebbd9ce2ba46616c18140674c95a02f9c4331e42305932828cff00f",
+      "config_file_sha256": "484160ac2d97b03028a176898b8f4908733b48f9479efad213a41a631458981e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/loose-corridors/seed-7401/config.toml"
+    },
+    {
+      "variant": "balanced-plant-territories",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "315f6d1fe79d8c62ede5b00ceeec2b53c5aa98e0991a1b595cb613da97c15037",
+      "experiment_config_sha256": "5e2a17f10bbe16418e85cc23db4ad3481ae10520158a4430721cdc664d27d82d",
+      "config_file_sha256": "8fcd60117c48f9caca9e74c8d2ce90aa72674d07375cf32bc4abbf93e36dc40f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7101/config.toml"
+    },
+    {
+      "variant": "balanced-plant-territories",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "315f6d1fe79d8c62ede5b00ceeec2b53c5aa98e0991a1b595cb613da97c15037",
+      "experiment_config_sha256": "5949478b323a836dcb1dc32099b9403de95a9e0f97010afde8508f4d3edacab2",
+      "config_file_sha256": "f0d29266403c75760c37d2cc53239dc911f822ce0a77177c18afb24bc7383ae9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7201/config.toml"
+    },
+    {
+      "variant": "balanced-plant-territories",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "315f6d1fe79d8c62ede5b00ceeec2b53c5aa98e0991a1b595cb613da97c15037",
+      "experiment_config_sha256": "ca22560d47b4799a119a26754300b63a4858e004fe2b132695670545310a2d8a",
+      "config_file_sha256": "e6bba11efc7c646ae3f11d2ceff6aaf5ee77a47ee330c6e5269e1e5e8f384273",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7301/config.toml"
+    },
+    {
+      "variant": "balanced-plant-territories",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "315f6d1fe79d8c62ede5b00ceeec2b53c5aa98e0991a1b595cb613da97c15037",
+      "experiment_config_sha256": "8a1fb5d1cada6f394fcfcc047e0868b41d3ea3c2980b4de3e7c72d1edcae0b4e",
+      "config_file_sha256": "c339176bc6ab254fb21c22cbf1379a6b13cb611ae4d1e1760ba51d80ef008992",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/balanced-plant-territories/seed-7401/config.toml"
+    },
+    {
+      "variant": "favored-team-zero-plants",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1fe2f02adeb5f02907b3dd3611f15d352afe0b043de260cd63c6448f861a8a84",
+      "experiment_config_sha256": "44a4757d9b08c2aaf57087002677786af9959e3c396c109a21bd76b24629e723",
+      "config_file_sha256": "386498d8b25cae2b9df359614ce0ac63c63a2315aee3e740f1525761e1a3a81e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7101/config.toml"
+    },
+    {
+      "variant": "favored-team-zero-plants",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1fe2f02adeb5f02907b3dd3611f15d352afe0b043de260cd63c6448f861a8a84",
+      "experiment_config_sha256": "54b7989479e5a1f2c6ee2de99cabccb820ddedadfa147d96641c18e4e250cf95",
+      "config_file_sha256": "880c3bea2ae08aa38c034967748fd052794e506dcf243a049e1cfcf0cf74b62e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7201/config.toml"
+    },
+    {
+      "variant": "favored-team-zero-plants",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1fe2f02adeb5f02907b3dd3611f15d352afe0b043de260cd63c6448f861a8a84",
+      "experiment_config_sha256": "44f3cc9b24c236ff83ee3824bca015e5ae92bd6f38ab631387fb1d5233ea72cf",
+      "config_file_sha256": "94648569fe825e2181bb252eb7f77000c8eb32eae81a1b8d895dc2a20cfb3cca",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7301/config.toml"
+    },
+    {
+      "variant": "favored-team-zero-plants",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1fe2f02adeb5f02907b3dd3611f15d352afe0b043de260cd63c6448f861a8a84",
+      "experiment_config_sha256": "bee07561d53f8bfbfc695223e1ecf6c8ffb62f3c17153a6e6c85d697081b5874",
+      "config_file_sha256": "7e04eacf3568da35b8459b75e021e88fdca70839e05d5764a05e5f887476a961",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/favored-team-zero-plants/seed-7401/config.toml"
+    },
+    {
+      "variant": "islands-and-corridors",
+      "replicate": 0,
+      "training_seed": 7101,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1a2111080b8415e5c044677878de2d1bac5c7bcfd05b4322c653425e5759e56c",
+      "experiment_config_sha256": "2d357647c60d57af3a5701c266715a68b6653ecb0b6036dfa064a1212f050258",
+      "config_file_sha256": "687badea6f128081bace8bd02427c9c9727ccb809f9d977af4b2754cdcd6ae3b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7101",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7101/config.toml"
+    },
+    {
+      "variant": "islands-and-corridors",
+      "replicate": 1,
+      "training_seed": 7201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1a2111080b8415e5c044677878de2d1bac5c7bcfd05b4322c653425e5759e56c",
+      "experiment_config_sha256": "5494edb42e59ea30223024cd1b2202f0a43a4f01ac4c01d86d377486a07cfaef",
+      "config_file_sha256": "37ca5090556a11450b9880bb3b97bf149186df451f076869bb47a8e9ac8ca901",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7201",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7201/config.toml"
+    },
+    {
+      "variant": "islands-and-corridors",
+      "replicate": 2,
+      "training_seed": 7301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1a2111080b8415e5c044677878de2d1bac5c7bcfd05b4322c653425e5759e56c",
+      "experiment_config_sha256": "bcdb3147f5885c790bbe7e911c223735058925a491812e5cd22faef703c92b61",
+      "config_file_sha256": "797195350f536265615387b81c8ee03f88be8202f031ca5a6ecf1a284000eab5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7301",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7301/config.toml"
+    },
+    {
+      "variant": "islands-and-corridors",
+      "replicate": 3,
+      "training_seed": 7401,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "86625937a0a8c9b54d90eff475a6050249efd2727077395dcb0d34226979b95a",
+      "scenario_hash": "1a2111080b8415e5c044677878de2d1bac5c7bcfd05b4322c653425e5759e56c",
+      "experiment_config_sha256": "5b7b1578bbcc019950804f460a07c7ed2880f312215409e15b5eabfd7efab44c",
+      "config_file_sha256": "107bc28dcf26a56e72d992f0ecea6f071680f85373431f36b10c5ff15458f451",
+      "run_directory": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7401",
+      "config_file": "/Users/adam/code/blobs/sweeps/resource-layout-controls-v2/islands-and-corridors/seed-7401/config.toml"
+    }
+  ]
+}

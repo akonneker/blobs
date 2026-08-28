@@ -1,0 +1,17 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "a070bad671d7705c7db1d92a4be3f9e2c31f780372fbeb3797bfd89dedb5b79b",
+  "execution_contract_sha256": "c71b89b636dae7a4b18995c23819072d6c7570ae002579595b432181a3be8b8c",
+  "trainer_sha256": "d46e1ea527560331ad689f0271112c31e2c1172924b4c9dc87a54e8e4f3fd6aa",
+  "variant": "partitioned-teacher-inference",
+  "replicate": 0,
+  "training_seed": 42,
+  "experiment_config_sha256": "787107cbcdd8fd01a63d94b7f30519e1a6470dda7eff9ef38538bebebd5ec581",
+  "state": "succeeded",
+  "attempts": 1,
+  "started_unix_millis": 1787885291043,
+  "finished_unix_millis": 1787885505395,
+  "resume_checkpoint": null,
+  "exit_code": 0,
+  "error": null
+}

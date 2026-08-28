@@ -12,15 +12,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use blob_engine::resolution::ReferenceSimulation;
 use serde::{Deserialize, Serialize};
 
-use crate::artifact::verify_checkpoint_metadata;
-use crate::config::{ScenarioProfile, TrainingConfig};
+use crate::artifact::{verify_best_pointer, verify_checkpoint_metadata};
+use crate::config::{FeedingCurriculumStage, ScenarioProfile, TrainingConfig};
 use crate::sweep::{
     experiment_config_hash, sha256, RulesSweepManifest, RulesSweepRun, RULES_SWEEP_SCHEMA_VERSION,
 };
 use crate::telemetry::{ActionFamilyTelemetry, TrainingTelemetrySummary};
 use crate::viability_gate::{verify_viability_gate_requirement, ViabilityGateRequirement};
 
-pub const SWEEP_EXECUTION_SCHEMA_VERSION: u32 = 6;
+pub const SWEEP_EXECUTION_SCHEMA_VERSION: u32 = 8;
 const MAX_CONTROL_FILE_BYTES: u64 = 16 * 1024 * 1024;
 static EXECUTION_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -145,7 +145,24 @@ pub struct SweepRunResult {
     pub completed_unix_millis: u64,
     pub training: TrainingTailMetrics,
     pub evaluation: Option<EvaluationTailMetrics>,
+    pub competency: Option<CompetencyRunMetrics>,
     pub telemetry: Option<TelemetryRunMetrics>,
+}
+
+/// Independently verified best-checkpoint evidence for curricula that require
+/// ecology and combat to coexist at one held-out boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CompetencyRunMetrics {
+    /// Exactly 0.0 or 1.0 in persisted run results. Paired in-memory
+    /// differences may be -1.0, 0.0, or 1.0 before aggregation.
+    pub joint_qualified: f64,
+    pub best_update: Option<usize>,
+    pub best_actions: Option<u64>,
+    pub on_food_survival_rate: Option<f64>,
+    pub adjacent_food_survival_rate: Option<f64>,
+    pub skirmish_kills: Option<u64>,
+    pub skirmish_damage: Option<u128>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -177,6 +194,10 @@ pub struct TelemetryRunMetrics {
     pub action_contention_rate: f64,
     pub mean_training_cells: f64,
     pub mean_opponent_cells: f64,
+    pub training_plant_occupancy_rate: f64,
+    pub opponent_plant_occupancy_rate: f64,
+    pub training_major_food_occupancy_rate: f64,
+    pub opponent_major_food_occupancy_rate: f64,
     pub mean_training_assimilated_energy: f64,
     pub mean_environment_plant_energy: f64,
     pub mean_environment_loose_energy: f64,
@@ -225,6 +246,9 @@ pub struct SweepMetricSummaries {
     pub evaluation_worst_case_win_rate: Option<MetricSummary>,
     pub evaluation_average_reward: Option<MetricSummary>,
     pub evaluation_average_episode_len: Option<MetricSummary>,
+    /// Mean of exact 0/1 run outcomes, or candidate-minus-control for paired
+    /// comparisons.
+    pub joint_qualification_rate: Option<MetricSummary>,
     pub telemetry: Option<TelemetrySweepMetricSummaries>,
 }
 
@@ -257,6 +281,10 @@ pub struct TelemetrySweepMetricSummaries {
     pub action_contention_rate: MetricSummary,
     pub mean_training_cells: MetricSummary,
     pub mean_opponent_cells: MetricSummary,
+    pub training_plant_occupancy_rate: MetricSummary,
+    pub opponent_plant_occupancy_rate: MetricSummary,
+    pub training_major_food_occupancy_rate: MetricSummary,
+    pub opponent_major_food_occupancy_rate: MetricSummary,
     pub mean_training_assimilated_energy: MetricSummary,
     pub mean_environment_plant_energy: MetricSummary,
     pub mean_environment_loose_energy: MetricSummary,
@@ -785,6 +813,28 @@ impl From<&TrainingTelemetrySummary> for TelemetryRunMetrics {
             action_contention_rate: rate(total_status(actions, |a| a.contested), completed_actions),
             mean_training_cells: summary.sample_means.training_cells,
             mean_opponent_cells: summary.sample_means.opponent_cells,
+            training_plant_occupancy_rate: if summary.sample_means.training_cells == 0.0 {
+                0.0
+            } else {
+                summary.sample_means.training_cells_on_plants / summary.sample_means.training_cells
+            },
+            opponent_plant_occupancy_rate: if summary.sample_means.opponent_cells == 0.0 {
+                0.0
+            } else {
+                summary.sample_means.opponent_cells_on_plants / summary.sample_means.opponent_cells
+            },
+            training_major_food_occupancy_rate: if summary.sample_means.training_cells == 0.0 {
+                0.0
+            } else {
+                summary.sample_means.training_cells_on_major_food
+                    / summary.sample_means.training_cells
+            },
+            opponent_major_food_occupancy_rate: if summary.sample_means.opponent_cells == 0.0 {
+                0.0
+            } else {
+                summary.sample_means.opponent_cells_on_major_food
+                    / summary.sample_means.opponent_cells
+            },
             mean_training_assimilated_energy: summary.sample_means.training_assimilated_energy,
             mean_environment_plant_energy: summary.sample_means.environment_plant_energy,
             mean_environment_loose_energy: summary.sample_means.environment_loose_energy,
@@ -826,6 +876,7 @@ fn collect_result(
     } else {
         None
     };
+    let competency = collect_competency_metrics(artifact_root, config)?;
     let telemetry = if config.telemetry.enabled {
         let summary: TrainingTelemetrySummary =
             read_json(&artifact_root.join("telemetry/summary.json"))?;
@@ -859,8 +910,63 @@ fn collect_result(
         completed_unix_millis: unix_millis(),
         training,
         evaluation,
+        competency,
         telemetry,
     })
+}
+
+fn collect_competency_metrics(
+    artifact_root: &Path,
+    config: &TrainingConfig,
+) -> Result<Option<CompetencyRunMetrics>, String> {
+    if !config.feeding_curriculum.enabled || !config.combat_curriculum.enabled {
+        return Ok(None);
+    }
+    if !artifact_root.join("best.json").exists() {
+        return Ok(Some(CompetencyRunMetrics {
+            joint_qualified: 0.0,
+            best_update: None,
+            best_actions: None,
+            on_food_survival_rate: None,
+            adjacent_food_survival_rate: None,
+            skirmish_kills: None,
+            skirmish_damage: None,
+        }));
+    }
+    let best = verify_best_pointer(artifact_root)?;
+    let feeding = best
+        .retention_feeding_evaluation
+        .as_ref()
+        .or(best.feeding_evaluation.as_ref())
+        .ok_or("qualified checkpoint has no feeding report")?;
+    let stage = |wanted| {
+        feeding
+            .stages
+            .iter()
+            .find(|stage| stage.stage == wanted)
+            .ok_or("qualified checkpoint has an incomplete feeding report")
+    };
+    let on_food = stage(FeedingCurriculumStage::OnFood)?;
+    let adjacent_food = stage(FeedingCurriculumStage::AdjacentFood)?;
+    let contact = best
+        .contact_evaluation
+        .as_ref()
+        .ok_or("qualified checkpoint has no combat report")?;
+    let skirmish_damage = contact
+        .variants
+        .iter()
+        .filter(|variant| variant.stage == FeedingCurriculumStage::Skirmish)
+        .map(|variant| variant.damage_dealt)
+        .sum();
+    Ok(Some(CompetencyRunMetrics {
+        joint_qualified: 1.0,
+        best_update: Some(best.update),
+        best_actions: Some(best.actions),
+        on_food_survival_rate: Some(on_food.survival_rate),
+        adjacent_food_survival_rate: Some(adjacent_food.survival_rate),
+        skirmish_kills: Some(contact.kills_for_stage(FeedingCurriculumStage::Skirmish)),
+        skirmish_damage: Some(skirmish_damage),
+    }))
 }
 
 fn verify_training_completion(
@@ -908,6 +1014,26 @@ fn result_matches_run(
         && result.scenario_hash == run.scenario_hash
         && result.experiment_config_sha256 == run.experiment_config_sha256
         && result.config_file_sha256 == run.config_file_sha256
+        && result.competency.as_ref().is_none_or(|metrics| {
+            (metrics.joint_qualified == 0.0
+                && metrics.best_update.is_none()
+                && metrics.best_actions.is_none()
+                && metrics.on_food_survival_rate.is_none()
+                && metrics.adjacent_food_survival_rate.is_none()
+                && metrics.skirmish_kills.is_none()
+                && metrics.skirmish_damage.is_none())
+                || (metrics.joint_qualified == 1.0
+                    && metrics.best_update.is_some()
+                    && metrics.best_actions.is_some()
+                    && metrics
+                        .on_food_survival_rate
+                        .is_some_and(|value| (0.0..=1.0).contains(&value))
+                    && metrics
+                        .adjacent_food_survival_rate
+                        .is_some_and(|value| (0.0..=1.0).contains(&value))
+                    && metrics.skirmish_kills.is_some()
+                    && metrics.skirmish_damage.is_some())
+        })
 }
 
 fn publish_or_verify_result(path: &Path, result: &SweepRunResult) -> Result<(), String> {
@@ -1442,6 +1568,10 @@ fn summaries(results: &[&SweepRunResult]) -> SweepMetricSummaries {
             action_contention_rate: summarize(|m| m.action_contention_rate),
             mean_training_cells: summarize(|m| m.mean_training_cells),
             mean_opponent_cells: summarize(|m| m.mean_opponent_cells),
+            training_plant_occupancy_rate: summarize(|m| m.training_plant_occupancy_rate),
+            opponent_plant_occupancy_rate: summarize(|m| m.opponent_plant_occupancy_rate),
+            training_major_food_occupancy_rate: summarize(|m| m.training_major_food_occupancy_rate),
+            opponent_major_food_occupancy_rate: summarize(|m| m.opponent_major_food_occupancy_rate),
             mean_training_assimilated_energy: summarize(|m| m.mean_training_assimilated_energy),
             mean_environment_plant_energy: summarize(|m| m.mean_environment_plant_energy),
             mean_environment_loose_energy: summarize(|m| m.mean_environment_loose_energy),
@@ -1474,6 +1604,18 @@ fn summaries(results: &[&SweepRunResult]) -> SweepMetricSummaries {
         evaluation_average_episode_len: evaluation_summary(results, |metrics| {
             metrics.average_episode_len
         }),
+        joint_qualification_rate: {
+            let values = results
+                .iter()
+                .filter_map(|result| {
+                    result
+                        .competency
+                        .as_ref()
+                        .map(|metrics| metrics.joint_qualified)
+                })
+                .collect::<Vec<_>>();
+            (values.len() == results.len()).then(|| metric_summary(&values))
+        },
         telemetry: telemetry_summaries(results),
     }
 }
@@ -1522,6 +1664,14 @@ fn telemetry_difference(
         action_contention_rate: candidate.action_contention_rate - baseline.action_contention_rate,
         mean_training_cells: candidate.mean_training_cells - baseline.mean_training_cells,
         mean_opponent_cells: candidate.mean_opponent_cells - baseline.mean_opponent_cells,
+        training_plant_occupancy_rate: candidate.training_plant_occupancy_rate
+            - baseline.training_plant_occupancy_rate,
+        opponent_plant_occupancy_rate: candidate.opponent_plant_occupancy_rate
+            - baseline.opponent_plant_occupancy_rate,
+        training_major_food_occupancy_rate: candidate.training_major_food_occupancy_rate
+            - baseline.training_major_food_occupancy_rate,
+        opponent_major_food_occupancy_rate: candidate.opponent_major_food_occupancy_rate
+            - baseline.opponent_major_food_occupancy_rate,
         mean_training_assimilated_energy: candidate.mean_training_assimilated_energy
             - baseline.mean_training_assimilated_energy,
         mean_environment_plant_energy: candidate.mean_environment_plant_energy
@@ -1621,6 +1771,19 @@ fn paired_differences(
                 (None, None) => None,
                 _ => return Err("paired runs disagree on evaluation availability".into()),
             },
+            competency: match (&candidate.competency, &base.competency) {
+                (Some(candidate), Some(base)) => Some(CompetencyRunMetrics {
+                    joint_qualified: candidate.joint_qualified - base.joint_qualified,
+                    best_update: None,
+                    best_actions: None,
+                    on_food_survival_rate: None,
+                    adjacent_food_survival_rate: None,
+                    skirmish_kills: None,
+                    skirmish_damage: None,
+                }),
+                (None, None) => None,
+                _ => return Err("paired runs disagree on competency availability".into()),
+            },
             telemetry: match (&candidate.telemetry, &base.telemetry) {
                 (Some(candidate), Some(base)) => Some(telemetry_difference(candidate, base)),
                 (None, None) => None,
@@ -1668,6 +1831,16 @@ fn aggregate_validated_sweep(
             ));
         }
         verify_training_completion(&result.training, &sweep.configs[index])?;
+        let expected_competency = collect_competency_metrics(
+            Path::new(&sweep.configs[index].checkpoint_dir),
+            &sweep.configs[index],
+        )?;
+        if result.competency != expected_competency {
+            return Err(format!(
+                "run {} seed {} competency evidence mismatch",
+                run.variant, run.training_seed
+            ));
+        }
         results.push(result);
     }
 
@@ -1896,6 +2069,7 @@ mod tests {
                 opponents: vec![crate::config::OpponentProfile::Wait],
                 baseline_variant: None,
                 max_parallel: 2,
+                max_micro_actions: 1_000,
             },
         )
         .unwrap();
@@ -1922,7 +2096,7 @@ mod tests {
             &manifest_file,
             "failing",
             r#"
-            schema_version = 1
+            schema_version = 2
             [absolute]
             min_applied_damage_per_episode_for_combat_profiles = 1.0e300
             "#,
@@ -1954,7 +2128,7 @@ mod tests {
             &manifest_file,
             "passing",
             r#"
-            schema_version = 1
+            schema_version = 2
             [absolute]
             max_timeout_rate = 1.0
             min_candidate_survival_rate = 0.0
@@ -2087,6 +2261,80 @@ mod tests {
     }
 
     #[test]
+    fn paired_competency_summary_uses_exact_binary_run_outcomes() {
+        fn result(seed: u64, qualified: bool) -> SweepRunResult {
+            SweepRunResult {
+                schema_version: SWEEP_EXECUTION_SCHEMA_VERSION,
+                manifest_sha256: String::new(),
+                execution_contract_sha256: String::new(),
+                trainer_sha256: String::new(),
+                variant: String::new(),
+                replicate: 0,
+                training_seed: seed,
+                semantic_ruleset_hash: String::new(),
+                compiled_ruleset_hash: String::new(),
+                scenario_hash: String::new(),
+                experiment_config_sha256: String::new(),
+                config_file_sha256: String::new(),
+                completed_unix_millis: 0,
+                training: TrainingTailMetrics {
+                    update: 0,
+                    actions: 0,
+                    policy_loss: 0.0,
+                    value_loss: 0.0,
+                    entropy: 0.0,
+                    approximate_kl: 0.0,
+                    explained_variance: 0.0,
+                    episodes: 0,
+                    wins: 0,
+                    losses: 0,
+                    timeouts: 0,
+                    win_rate: 0.0,
+                    average_episode_len: 0.0,
+                    average_reward: 0.0,
+                    training_cells_alive: 0,
+                    completed_transitions: 0,
+                    discarded_tails: 0,
+                    mean_elapsed_time: 0.0,
+                    actions_per_second: 0.0,
+                    minimum_sim_time_quanta: 0,
+                    maximum_sim_time_quanta: 0,
+                    total_sim_time_quanta: 0,
+                    simulation_quanta_per_second: 0.0,
+                },
+                evaluation: None,
+                competency: Some(CompetencyRunMetrics {
+                    joint_qualified: if qualified { 1.0 } else { 0.0 },
+                    best_update: qualified.then_some(1),
+                    best_actions: qualified.then_some(1),
+                    on_food_survival_rate: qualified.then_some(1.0),
+                    adjacent_food_survival_rate: qualified.then_some(1.0),
+                    skirmish_kills: qualified.then_some(1),
+                    skirmish_damage: qualified.then_some(1),
+                }),
+                telemetry: None,
+            }
+        }
+
+        let controls = [result(42, true), result(43, true), result(44, false)];
+        let candidates = [result(42, true), result(43, true), result(44, true)];
+        let control_refs = controls.iter().collect::<Vec<_>>();
+        let candidate_refs = candidates.iter().collect::<Vec<_>>();
+        assert_eq!(
+            summaries(&control_refs)
+                .joint_qualification_rate
+                .unwrap()
+                .mean,
+            2.0 / 3.0
+        );
+        let (_, differences) = paired_differences(&control_refs, &candidate_refs).unwrap();
+        assert_eq!(
+            differences.joint_qualification_rate.unwrap().mean,
+            1.0 / 3.0
+        );
+    }
+
+    #[test]
     fn telemetry_run_metrics_include_damage_and_terrain_effects() {
         let mut summary = TrainingTelemetrySummary::default();
         summary.training.actions.wait.completed = 8;
@@ -2109,6 +2357,12 @@ mod tests {
         summary.sample_means.environment_signal_energy = 7.0;
         summary.sample_means.signal_active_channel_tiles = 3.0;
         summary.sample_means.signal_observation_total_variation = 12.0;
+        summary.sample_means.training_cells = 10.0;
+        summary.sample_means.opponent_cells = 8.0;
+        summary.sample_means.training_cells_on_plants = 4.0;
+        summary.sample_means.opponent_cells_on_plants = 2.0;
+        summary.sample_means.training_cells_on_major_food = 5.0;
+        summary.sample_means.opponent_cells_on_major_food = 4.0;
 
         let metrics = TelemetryRunMetrics::from(&summary);
         assert_eq!(metrics.raw_damage_per_successful_attack, 20.0);
@@ -2127,6 +2381,10 @@ mod tests {
         assert_eq!(metrics.mean_environment_signal_energy, 7.0);
         assert_eq!(metrics.mean_signal_active_channel_tiles, 3.0);
         assert_eq!(metrics.mean_signal_observation_total_variation, 12.0);
+        assert_eq!(metrics.training_plant_occupancy_rate, 0.4);
+        assert_eq!(metrics.opponent_plant_occupancy_rate, 0.25);
+        assert_eq!(metrics.training_major_food_occupancy_rate, 0.5);
+        assert_eq!(metrics.opponent_major_food_occupancy_rate, 0.5);
     }
 
     #[test]

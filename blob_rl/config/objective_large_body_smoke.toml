@@ -76,7 +76,7 @@ payload_escrow_basis_points = 0
 minimum_margin_mass_energy = 0
 
 [self_play]
-start_after_timesteps = 1000000
+start_after_sim_time_quanta_per_env = 2_097_152
 opponent_update_interval = 8
 max_opponent_pool = 0
 baseline_probability = 1.0

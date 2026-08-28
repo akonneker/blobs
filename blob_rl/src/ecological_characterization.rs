@@ -1,24 +1,23 @@
 //! Deterministic micro-characterizations of ecological and combat seams.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use blob_engine::resolution::{
-    ActionKind, ActionRequest, EffortTier, LocalSlot, OutcomeStatus, ReferenceCheckpoint,
-    ReferenceRuleset, ReferenceSimulation, SimTime, TargetingAction, TileIndex,
+    ActionKind, ActionRequest, EffortTier, LocalSlot, OutcomeStatus, ReferenceRuleset,
+    ReferenceSimulation, SimTime, TargetingAction, TileIndex,
 };
-use blob_interface::types::TeamId;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{EnvConfig, RewardConfig, ScenarioProfile};
 use crate::env::BlobEnv;
 use crate::viability::hash_json;
 
-pub const ECOLOGICAL_CHARACTERIZATION_SCHEMA_VERSION: u32 = 4;
+pub const ECOLOGICAL_CHARACTERIZATION_SCHEMA_VERSION: u32 = 7;
 static CHARACTERIZATION_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,6 +90,36 @@ pub struct FoodDistanceCharacterization {
     /// Shortest configured movement cost, with 1.0 equal to an orthogonal
     /// unit-cost step in the default neighborhood.
     pub weighted_distance_units: DistanceDistribution,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TeamResourceAccessCharacterization {
+    pub team: usize,
+    pub starting_cell_samples: usize,
+    pub starting_on_plant_samples: usize,
+    pub starting_on_major_food_samples: usize,
+    pub distance_to_plants: FoodDistanceCharacterization,
+    pub distance_to_major_food: FoodDistanceCharacterization,
+    /// Source tiles for which this team is the unique movement-distance
+    /// nearest starting population. Ties remain explicit at report level.
+    pub exclusively_nearest_plant_tiles: usize,
+    pub exclusively_nearest_major_food_tiles: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceAccessCharacterization {
+    pub teams: Vec<TeamResourceAccessCharacterization>,
+    pub tied_nearest_plant_tiles: usize,
+    pub unreachable_plant_tiles: usize,
+    pub tied_nearest_major_food_tiles: usize,
+    pub unreachable_major_food_tiles: usize,
+    pub maximum_team_mean_plant_distance_gap: Option<f64>,
+    pub maximum_team_p90_plant_distance_gap: Option<f64>,
+    pub maximum_exclusive_plant_share_gap: Option<f64>,
+    pub maximum_exclusive_major_food_share_gap: Option<f64>,
+    pub maximum_starting_plant_occupancy_rate_gap: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -272,6 +301,7 @@ pub struct CollapseIndicators {
     pub some_starting_cells_cannot_reach_a_plant: bool,
     pub median_plant_beyond_best_travel_endurance: bool,
     pub p90_plant_beyond_best_travel_endurance: bool,
+    pub some_team_p90_plant_beyond_best_travel_endurance: bool,
     pub full_strength_high_attack_fails_to_land: bool,
     pub initial_cell_cannot_establish_standard_guard: bool,
     pub unguarded_initial_cell_survives_maximum_local_high_volley: bool,
@@ -305,6 +335,7 @@ pub struct EcologicalCharacterizationReport {
     pub travel: Vec<TravelEndurance>,
     pub distance_to_plants: FoodDistanceCharacterization,
     pub distance_to_major_food: FoodDistanceCharacterization,
+    pub resource_access: ResourceAccessCharacterization,
     pub attack_volleys: Vec<AttackVolleyCharacterization>,
     pub feeding_cycle: FeedingCycleCharacterization,
     pub reproduction_break_even: ReproductionBreakEvenCharacterization,
@@ -328,6 +359,7 @@ struct CharacterizationResults<'a> {
     travel: &'a [TravelEndurance],
     distance_to_plants: &'a FoodDistanceCharacterization,
     distance_to_major_food: &'a FoodDistanceCharacterization,
+    resource_access: &'a ResourceAccessCharacterization,
     attack_volleys: &'a [AttackVolleyCharacterization],
     feeding_cycle: &'a FeedingCycleCharacterization,
     reproduction_break_even: &'a ReproductionBreakEvenCharacterization,
@@ -382,6 +414,7 @@ pub fn validate_ecological_characterization(
         travel: &report.travel,
         distance_to_plants: &report.distance_to_plants,
         distance_to_major_food: &report.distance_to_major_food,
+        resource_access: &report.resource_access,
         attack_volleys: &report.attack_volleys,
         feeding_cycle: &report.feeding_cycle,
         reproduction_break_even: &report.reproduction_break_even,
@@ -410,6 +443,47 @@ pub fn validate_ecological_characterization(
         {
             return Err("ecological characterization distance accounting mismatch".into());
         }
+    }
+    if report.resource_access.teams.len() != report.scenario.num_teams
+        || report
+            .resource_access
+            .teams
+            .iter()
+            .enumerate()
+            .any(|(team, access)| {
+                access.team != team
+                    || access.starting_cell_samples != expected_samples
+                    || access.starting_on_plant_samples > access.starting_cell_samples
+                    || access.starting_on_major_food_samples > access.starting_cell_samples
+                    || access.distance_to_plants.move_steps.samples != expected_samples
+                    || access.distance_to_plants.weighted_distance_units.samples != expected_samples
+                    || access.distance_to_major_food.move_steps.samples != expected_samples
+                    || access
+                        .distance_to_major_food
+                        .weighted_distance_units
+                        .samples
+                        != expected_samples
+            })
+    {
+        return Err("ecological characterization team resource access is inconsistent".into());
+    }
+    let access_gaps = [
+        report.resource_access.maximum_team_mean_plant_distance_gap,
+        report.resource_access.maximum_team_p90_plant_distance_gap,
+        report.resource_access.maximum_exclusive_plant_share_gap,
+        report
+            .resource_access
+            .maximum_exclusive_major_food_share_gap,
+        report
+            .resource_access
+            .maximum_starting_plant_occupancy_rate_gap,
+    ];
+    if access_gaps
+        .into_iter()
+        .flatten()
+        .any(|value| !value.is_finite() || value < 0.0)
+    {
+        return Err("ecological characterization resource access gaps are invalid".into());
     }
     if report.attack_volleys.len() != CharacterizedEffort::ALL.len()
         || CharacterizedEffort::ALL.iter().any(|effort| {
@@ -1517,6 +1591,67 @@ fn shortest_distances(
         .collect()
 }
 
+fn shortest_distances_from(
+    simulation: &ReferenceSimulation,
+    sources: &[TileIndex],
+    weighted: bool,
+) -> Vec<Option<u64>> {
+    let neighborhood = simulation.neighborhood();
+    let mut outgoing = vec![Vec::<(usize, u64)>::new(); neighborhood.tile_count()];
+    for (origin, edges) in outgoing.iter_mut().enumerate() {
+        for slot_index in 0..neighborhood.slot_count() {
+            let Ok(slot_u8) = u8::try_from(slot_index) else {
+                continue;
+            };
+            let slot = LocalSlot(slot_u8);
+            if !neighborhood.action_allows(TargetingAction::Move, slot) {
+                continue;
+            }
+            let Some(target) = neighborhood.target(TileIndex(origin), slot) else {
+                continue;
+            };
+            if target.0 == origin {
+                continue;
+            }
+            let cost = if weighted {
+                u64::from(
+                    neighborhood
+                        .offset(slot)
+                        .expect("compiled slot has an offset")
+                        .distance_cost_q10,
+                )
+            } else {
+                1
+            };
+            edges.push((target.0, cost));
+        }
+    }
+    let mut distances = vec![u64::MAX; neighborhood.tile_count()];
+    let mut frontier = BinaryHeap::new();
+    for source in sources {
+        distances[source.0] = 0;
+        frontier.push((Reverse(0_u64), source.0));
+    }
+    while let Some((Reverse(distance), tile)) = frontier.pop() {
+        if distance != distances[tile] {
+            continue;
+        }
+        for (target, cost) in &outgoing[tile] {
+            let Some(candidate) = distance.checked_add(*cost) else {
+                continue;
+            };
+            if candidate < distances[*target] {
+                distances[*target] = candidate;
+                frontier.push((Reverse(candidate), *target));
+            }
+        }
+    }
+    distances
+        .into_iter()
+        .map(|distance| (distance != u64::MAX).then_some(distance))
+        .collect()
+}
+
 fn percentile(sorted: &[u64], numerator: usize, denominator: usize) -> u64 {
     let index = (sorted.len().saturating_sub(1) * numerator).div_ceil(denominator);
     sorted[index]
@@ -1539,6 +1674,51 @@ fn distance_distribution(values: &[Option<u64>], scale: f64) -> DistanceDistribu
     }
 }
 
+#[derive(Default)]
+struct TeamResourceAccessAccumulator {
+    plant_steps: Vec<Option<u64>>,
+    plant_weighted: Vec<Option<u64>>,
+    food_steps: Vec<Option<u64>>,
+    food_weighted: Vec<Option<u64>>,
+    starting_on_plant_samples: usize,
+    starting_on_major_food_samples: usize,
+    exclusively_nearest_plant_tiles: usize,
+    exclusively_nearest_major_food_tiles: usize,
+}
+
+fn maximum_gap(values: impl IntoIterator<Item = Option<f64>>) -> Option<f64> {
+    let values = values.into_iter().flatten().collect::<Vec<_>>();
+    (values.len() >= 2).then(|| {
+        let minimum = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let maximum = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        maximum - minimum
+    })
+}
+
+fn record_exclusive_owner(
+    tile: TileIndex,
+    distances: &[Vec<Option<u64>>],
+    exclusive: &mut [usize],
+    tied: &mut usize,
+    unreachable: &mut usize,
+) {
+    let minimum = distances.iter().filter_map(|map| map[tile.0]).min();
+    let Some(minimum) = minimum else {
+        *unreachable += 1;
+        return;
+    };
+    let owners = distances
+        .iter()
+        .enumerate()
+        .filter_map(|(team, map)| (map[tile.0] == Some(minimum)).then_some(team))
+        .collect::<Vec<_>>();
+    if owners.len() == 1 {
+        exclusive[owners[0]] += 1;
+    } else {
+        *tied += 1;
+    }
+}
+
 fn characterize_food_distances(
     env: &EnvConfig,
     seeds: &[u64],
@@ -1546,16 +1726,20 @@ fn characterize_food_distances(
     (
         FoodDistanceCharacterization,
         FoodDistanceCharacterization,
+        ResourceAccessCharacterization,
         String,
     ),
     String,
 > {
-    let mut plant_steps = Vec::new();
-    let mut plant_weighted = Vec::new();
-    let mut food_steps = Vec::new();
-    let mut food_weighted = Vec::new();
+    let mut teams = (0..env.num_teams)
+        .map(|_| TeamResourceAccessAccumulator::default())
+        .collect::<Vec<_>>();
     let mut total_plant_tiles = 0usize;
     let mut total_food_tiles = 0usize;
+    let mut tied_nearest_plant_tiles = 0usize;
+    let mut unreachable_plant_tiles = 0usize;
+    let mut tied_nearest_major_food_tiles = 0usize;
+    let mut unreachable_major_food_tiles = 0usize;
     let mut compiled_ruleset_hash = None;
     for seed in seeds {
         let env_instance = BlobEnv::new(env.clone(), RewardConfig::default(), *seed);
@@ -1567,71 +1751,130 @@ fn characterize_food_distances(
             return Err("identical characterization rules compiled inconsistently".into());
         }
         compiled_ruleset_hash = Some(compiled);
-        let checkpoint = env_instance.checkpoint()?;
-        let canonical = ReferenceCheckpoint::from_bytes(&checkpoint.canonical_checkpoint)
-            .map_err(|error| format!("failed to decode characterization checkpoint: {error}"))?;
-        let host_teams = checkpoint
-            .host_cells
-            .iter()
-            .map(|cell| (cell.id.0, cell.team_id))
-            .collect::<HashMap<_, _>>();
-        let starts = canonical
-            .state()
-            .cells
-            .iter()
-            .filter_map(|(key, cell)| {
-                usize::try_from(key.0).ok().and_then(|id| {
-                    (host_teams.get(&id) == Some(&TeamId(0))).then_some(cell.position)
-                })
-            })
-            .collect::<Vec<_>>();
-        let plants = canonical
-            .state()
-            .tiles
-            .iter()
-            .enumerate()
-            .filter_map(|(index, tile)| {
-                (tile.plant_capacity > 0 || tile.plant_growth_rate > 0).then_some(TileIndex(index))
-            })
-            .collect::<Vec<_>>();
-        let major_food = canonical
-            .state()
-            .tiles
-            .iter()
-            .enumerate()
-            .filter_map(|(index, tile)| {
-                (tile.plant_capacity > 0 || tile.plant_growth_rate > 0 || tile.loose_energy > 0)
-                    .then_some(TileIndex(index))
-            })
-            .collect::<Vec<_>>();
+        let snapshot = env_instance.initial_ecology_snapshot()?;
+        let starts = snapshot.starts_by_team;
+        let plants = snapshot.plants;
+        let major_food = snapshot.major_food;
         total_plant_tiles += plants.len();
         total_food_tiles += major_food.len();
-        let simulation = canonical
-            .clone()
-            .into_simulation()
-            .map_err(|error| format!("failed to restore characterization state: {error}"))?;
-        let plant_step_map = shortest_distances(&simulation, &plants, false);
-        let plant_weighted_map = shortest_distances(&simulation, &plants, true);
-        let food_step_map = shortest_distances(&simulation, &major_food, false);
-        let food_weighted_map = shortest_distances(&simulation, &major_food, true);
-        plant_steps.extend(starts.iter().map(|start| plant_step_map[start.0]));
-        plant_weighted.extend(starts.iter().map(|start| plant_weighted_map[start.0]));
-        food_steps.extend(starts.iter().map(|start| food_step_map[start.0]));
-        food_weighted.extend(starts.iter().map(|start| food_weighted_map[start.0]));
+        let simulation = env_instance.reference_simulation_for_diagnostics()?;
+        let plant_step_map = shortest_distances(simulation, &plants, false);
+        let plant_weighted_map = shortest_distances(simulation, &plants, true);
+        let food_step_map = shortest_distances(simulation, &major_food, false);
+        let food_weighted_map = shortest_distances(simulation, &major_food, true);
+        for (team, starts) in starts.iter().enumerate() {
+            let accumulator = &mut teams[team];
+            accumulator
+                .plant_steps
+                .extend(starts.iter().map(|start| plant_step_map[start.0]));
+            accumulator
+                .plant_weighted
+                .extend(starts.iter().map(|start| plant_weighted_map[start.0]));
+            accumulator
+                .food_steps
+                .extend(starts.iter().map(|start| food_step_map[start.0]));
+            accumulator
+                .food_weighted
+                .extend(starts.iter().map(|start| food_weighted_map[start.0]));
+            for start in starts {
+                let tile = &simulation.tiles()[start.0];
+                accumulator.starting_on_plant_samples +=
+                    usize::from(tile.plant_capacity > 0 || tile.plant_growth_rate > 0);
+                accumulator.starting_on_major_food_samples += usize::from(
+                    tile.plant_capacity > 0 || tile.plant_growth_rate > 0 || tile.loose_energy > 0,
+                );
+            }
+        }
+        let reachability = starts
+            .iter()
+            .map(|starts| shortest_distances_from(simulation, starts, true))
+            .collect::<Vec<_>>();
+        let mut exclusive_plants = vec![0usize; env.num_teams];
+        let mut exclusive_food = vec![0usize; env.num_teams];
+        for plant in &plants {
+            record_exclusive_owner(
+                *plant,
+                &reachability,
+                &mut exclusive_plants,
+                &mut tied_nearest_plant_tiles,
+                &mut unreachable_plant_tiles,
+            );
+        }
+        for food in &major_food {
+            record_exclusive_owner(
+                *food,
+                &reachability,
+                &mut exclusive_food,
+                &mut tied_nearest_major_food_tiles,
+                &mut unreachable_major_food_tiles,
+            );
+        }
+        for team in 0..env.num_teams {
+            teams[team].exclusively_nearest_plant_tiles += exclusive_plants[team];
+            teams[team].exclusively_nearest_major_food_tiles += exclusive_food[team];
+        }
     }
-    let plant = FoodDistanceCharacterization {
-        source_tiles_across_seeds: total_plant_tiles,
-        move_steps: distance_distribution(&plant_steps, 1.0),
-        weighted_distance_units: distance_distribution(&plant_weighted, 1024.0),
-    };
-    let major = FoodDistanceCharacterization {
-        source_tiles_across_seeds: total_food_tiles,
-        move_steps: distance_distribution(&food_steps, 1.0),
-        weighted_distance_units: distance_distribution(&food_weighted, 1024.0),
+    let team_access = teams
+        .into_iter()
+        .enumerate()
+        .map(|(team, accumulator)| TeamResourceAccessCharacterization {
+            team,
+            starting_cell_samples: accumulator.plant_steps.len(),
+            starting_on_plant_samples: accumulator.starting_on_plant_samples,
+            starting_on_major_food_samples: accumulator.starting_on_major_food_samples,
+            distance_to_plants: FoodDistanceCharacterization {
+                source_tiles_across_seeds: total_plant_tiles,
+                move_steps: distance_distribution(&accumulator.plant_steps, 1.0),
+                weighted_distance_units: distance_distribution(&accumulator.plant_weighted, 1024.0),
+            },
+            distance_to_major_food: FoodDistanceCharacterization {
+                source_tiles_across_seeds: total_food_tiles,
+                move_steps: distance_distribution(&accumulator.food_steps, 1.0),
+                weighted_distance_units: distance_distribution(&accumulator.food_weighted, 1024.0),
+            },
+            exclusively_nearest_plant_tiles: accumulator.exclusively_nearest_plant_tiles,
+            exclusively_nearest_major_food_tiles: accumulator.exclusively_nearest_major_food_tiles,
+        })
+        .collect::<Vec<_>>();
+    let plant = team_access[0].distance_to_plants.clone();
+    let major = team_access[0].distance_to_major_food.clone();
+    let resource_access = ResourceAccessCharacterization {
+        maximum_team_mean_plant_distance_gap: maximum_gap(
+            team_access
+                .iter()
+                .map(|team| team.distance_to_plants.weighted_distance_units.mean),
+        ),
+        maximum_team_p90_plant_distance_gap: maximum_gap(
+            team_access
+                .iter()
+                .map(|team| team.distance_to_plants.weighted_distance_units.p90),
+        ),
+        maximum_exclusive_plant_share_gap: (total_plant_tiles > 0).then(|| {
+            maximum_gap(team_access.iter().map(|team| {
+                Some(team.exclusively_nearest_plant_tiles as f64 / total_plant_tiles as f64)
+            }))
+            .unwrap_or(0.0)
+        }),
+        maximum_exclusive_major_food_share_gap: (total_food_tiles > 0).then(|| {
+            maximum_gap(team_access.iter().map(|team| {
+                Some(team.exclusively_nearest_major_food_tiles as f64 / total_food_tiles as f64)
+            }))
+            .unwrap_or(0.0)
+        }),
+        maximum_starting_plant_occupancy_rate_gap: maximum_gap(team_access.iter().map(|team| {
+            (team.starting_cell_samples > 0)
+                .then(|| team.starting_on_plant_samples as f64 / team.starting_cell_samples as f64)
+        })),
+        teams: team_access,
+        tied_nearest_plant_tiles,
+        unreachable_plant_tiles,
+        tied_nearest_major_food_tiles,
+        unreachable_major_food_tiles,
     };
     Ok((
         plant,
         major,
+        resource_access,
         compiled_ruleset_hash.expect("validated nonempty seeds"),
     ))
 }
@@ -2122,7 +2365,7 @@ pub fn characterize_ecology(
     let scenario = ScenarioProfile::from(env);
     let scenario_hash = scenario.semantic_hash()?;
     let semantic_ruleset_hash = env.rules.semantic_hash().to_string();
-    let (distance_to_plants, distance_to_major_food, compiled_ruleset_hash) =
+    let (distance_to_plants, distance_to_major_food, resource_access, compiled_ruleset_hash) =
         characterize_food_distances(env, &options.seeds)?;
     let stationary_lifetime_quanta = stationary_lifetime(env)?;
     let mut travel = Vec::new();
@@ -2164,6 +2407,14 @@ pub fn characterize_ecology(
             .weighted_distance_units
             .p90
             .is_some_and(|distance| distance > best_distance),
+        some_team_p90_plant_beyond_best_travel_endurance: resource_access.teams.iter().any(
+            |team| {
+                team.distance_to_plants
+                    .weighted_distance_units
+                    .p90
+                    .is_some_and(|distance| distance > best_distance)
+            },
+        ),
         full_strength_high_attack_fails_to_land: !high.single_attack_lands,
         initial_cell_cannot_establish_standard_guard: high
             .guarded_victim_energy_at_volley
@@ -2207,6 +2458,7 @@ pub fn characterize_ecology(
         travel: &travel,
         distance_to_plants: &distance_to_plants,
         distance_to_major_food: &distance_to_major_food,
+        resource_access: &resource_access,
         attack_volleys: &attack_volleys,
         feeding_cycle: &feeding_cycle,
         reproduction_break_even: &reproduction_break_even,
@@ -2231,6 +2483,7 @@ pub fn characterize_ecology(
         travel,
         distance_to_plants,
         distance_to_major_food,
+        resource_access,
         attack_volleys,
         feeding_cycle,
         reproduction_break_even,
@@ -2293,6 +2546,8 @@ pub fn publish_ecological_characterization(
 mod tests {
     use super::*;
     use crate::config::VictoryConfig;
+    use blob_engine::engine::StartingCellLayout;
+    use blob_engine::world_gen::ResourceLayout;
 
     fn small_env() -> EnvConfig {
         EnvConfig {
@@ -2445,6 +2700,60 @@ mod tests {
         let mut tampered = loaded;
         tampered.sustained_siege.trials[0].applied_damage += 1;
         assert!(validate_ecological_characterization(&tampered).is_err());
+    }
+
+    #[test]
+    fn team_resource_access_distinguishes_balanced_and_favored_territories() {
+        let options = EcologicalCharacterizationOptions {
+            seeds: vec![31, 32, 33, 34],
+            max_micro_actions: 1_000,
+        };
+        let base = EnvConfig {
+            world_size: 32,
+            cells_per_team: 4,
+            starting_cell_layout: StartingCellLayout::Block,
+            num_scattered_energy: 0,
+            num_plants: 24,
+            plant_layout: ResourceLayout::Territories { radius: 5 },
+            ..EnvConfig::default()
+        };
+        let balanced = characterize_ecology(&base, &options).unwrap();
+        let favored = characterize_ecology(
+            &EnvConfig {
+                plant_layout: ResourceLayout::FavoredTerritory { team: 0, radius: 5 },
+                ..base
+            },
+            &options,
+        )
+        .unwrap();
+        assert_eq!(balanced.resource_access.teams.len(), 2);
+        assert_eq!(favored.resource_access.teams.len(), 2);
+        assert_eq!(
+            favored.resource_access.teams[0].exclusively_nearest_plant_tiles,
+            options.seeds.len() * 24
+        );
+        assert_eq!(
+            favored.resource_access.teams[1].exclusively_nearest_plant_tiles,
+            0
+        );
+        assert_eq!(
+            favored.resource_access.maximum_exclusive_plant_share_gap,
+            Some(1.0)
+        );
+        assert!(
+            favored.resource_access.teams[0]
+                .distance_to_plants
+                .weighted_distance_units
+                .mean
+                < favored.resource_access.teams[1]
+                    .distance_to_plants
+                    .weighted_distance_units
+                    .mean
+        );
+        assert!(
+            balanced.resource_access.maximum_exclusive_plant_share_gap
+                < favored.resource_access.maximum_exclusive_plant_share_gap
+        );
     }
 
     #[test]

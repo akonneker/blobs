@@ -26,7 +26,7 @@ use crate::telemetry::{
 };
 use crate::viability::{mind_abi_hash, ViabilityOutcome};
 
-pub const CONTROL_MATRIX_SCHEMA_VERSION: u32 = 3;
+pub const CONTROL_MATRIX_SCHEMA_VERSION: u32 = 6;
 pub const CONTROL_MATRIX_PROGRESS_SCHEMA_VERSION: u32 = 1;
 const MAX_CONTROL_MATRIX_BYTES: u64 = 64 * 1024 * 1024;
 static CONTROL_MATRIX_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -368,6 +368,7 @@ fn zero_reward() -> RewardConfig {
     RewardConfig {
         survive_tick: 0.0,
         eat_energy: 0.0,
+        damage_enemy: 0.0,
         kill_enemy: 0.0,
         cell_died: 0.0,
         split_success: 0.0,
@@ -423,6 +424,14 @@ fn aggregate_episodes(episodes: &[ControlEpisode]) -> ControlAggregate {
 
 fn swap_ecology_sides(sample: &mut EcologySample) {
     std::mem::swap(&mut sample.training_cells, &mut sample.opponent_cells);
+    std::mem::swap(
+        &mut sample.training_cells_on_plants,
+        &mut sample.opponent_cells_on_plants,
+    );
+    std::mem::swap(
+        &mut sample.training_cells_on_major_food,
+        &mut sample.opponent_cells_on_major_food,
+    );
     std::mem::swap(&mut sample.training_energy, &mut sample.opponent_energy);
     std::mem::swap(
         &mut sample.training_spatial_entropy,
@@ -587,9 +596,13 @@ fn run_matchup(
                 .saturating_mul(ControlSeat::MIRRORED.len())
                 .saturating_add(seat_index) as u64;
             if let Some(state) = telemetry_state.as_mut() {
-                state.start_episode(0, episode_id, seed, initial.clone());
+                state.start_episode(0, episode_id, seed, "control".into(), initial.clone());
             } else {
-                telemetry_state = Some(TrainingTelemetryState::new(vec![(seed, initial.clone())]));
+                telemetry_state = Some(TrainingTelemetryState::new(vec![(
+                    seed,
+                    "control".into(),
+                    initial.clone(),
+                )]));
             }
             let compiled = env.compiled_ruleset_hash();
             if compiled_ruleset_hash

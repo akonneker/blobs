@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use blob_engine::engine::{CellConfig, Engine, ReferenceRuntimeCheckpoint, TickEvents};
-use blob_engine::resolution::{BoundaryRule, CellKey, IntegrityMode, ReferenceCheckpoint};
+use blob_engine::resolution::{
+    BoundaryRule, CellKey, IntegrityMode, ReferenceCheckpoint, ReferenceSimulation,
+    ReplayBundleLimits, TargetingAction, TileIndex,
+};
 use blob_engine::world_gen;
 use blob_interface::cell::Cell;
 use blob_interface::randomness::PrivateRandom;
@@ -13,13 +16,17 @@ use blob_interface::reference_mind::{
     ReferenceMindAction, ReferenceMindDecision, ReferenceMindInput,
 };
 use blob_interface::types::{CellId, Coordinate, TeamId};
+use blob_interface::world::EnergySource;
 use burn::prelude::Backend;
 
 use crate::action::{
     action_is_commit_legal, action_mask, attach_policy_memory, decode_action, decode_policy_choice,
     PolicyChoice,
 };
-use crate::config::{DeadlineRewardMode, EnvConfig, OpponentProfile, RewardConfig};
+use crate::config::{
+    DeadlineRewardMode, EnvConfig, OpponentProfile, ResourcePlacement, RewardConfig,
+};
+use crate::match_explorer::{MatchExplorerConfig, MatchExplorerRecorder, RecordedExplorerMatch};
 use crate::model::{policy_memory_bytes, PolicyValueNet};
 use crate::observation::Observation;
 use crate::opponent::{BatchedSnapshotPolicy, SnapshotBatchPolicy, SnapshotPolicyMind};
@@ -49,8 +56,9 @@ pub struct BlobEnv {
     env_config: EnvConfig,
     training_team: TeamId,
     episode_step: u64,
-    /// Previous state snapshot for reward computation (energy, team_id)
-    prev_cell_energies: HashMap<CellId, (u32, TeamId)>,
+    /// Previous canonical stored biological energy (assimilated + gut) and
+    /// host-private team ownership for reward attribution.
+    prev_cell_energies: HashMap<CellId, (u64, TeamId)>,
     prev_cell_count: HashMap<TeamId, usize>,
     /// Previous cell positions for proximity reward shaping
     prev_cell_positions: HashMap<CellId, Coordinate>,
@@ -58,6 +66,16 @@ pub struct BlobEnv {
     opponent_batch_policy_factory: Option<OpponentBatchPolicyFactory>,
     opponent_batch_policy: Option<Box<dyn SnapshotBatchPolicy>>,
     telemetry: Option<EnvTelemetryRuntime>,
+    match_explorer: Option<MatchExplorerRecorder>,
+}
+
+/// Minimal trusted-host view of the initial ecology used by offline
+/// characterization. It is never exposed through the Mind ABI and avoids
+/// serializing a complete large-world checkpoint merely to inspect placement.
+pub(crate) struct InitialEcologySnapshot {
+    pub starts_by_team: Vec<Vec<TileIndex>>,
+    pub plants: Vec<TileIndex>,
+    pub major_food: Vec<TileIndex>,
 }
 
 struct EnvTelemetryRuntime {
@@ -211,6 +229,23 @@ impl ReferenceMind for ActionBufferMind {
                     ReferenceMindAction::Wait
                 }
             }
+            OpponentProfile::Defensive => {
+                let threatened = input.slots.iter().any(|slot| slot.neighbor.is_some());
+                if threatened {
+                    ReferenceMindAction::Guard {
+                        effort: ReferenceEffort::Standard,
+                    }
+                } else if input.action_space.consume_enabled
+                    && input.action_space.max_consume_amount > 0
+                    && input.current_tile.plant_energy + input.current_tile.loose_energy > 0
+                {
+                    ReferenceMindAction::Consume {
+                        amount: input.action_space.max_consume_amount,
+                    }
+                } else {
+                    forager_move(input)
+                }
+            }
         };
         let action = if action_is_commit_legal(input, &action, false) {
             action
@@ -313,6 +348,153 @@ pub struct PolicyObservation {
     pub private_memory: Vec<u8>,
 }
 
+fn configure_episode_resources(
+    engine: &mut Engine,
+    config: &EnvConfig,
+    seed: u64,
+) -> Result<(), String> {
+    if config.resource_placement == ResourcePlacement::Random {
+        let mut territories = (0..config.num_teams)
+            .map(|team| (TeamId(team), Vec::new()))
+            .collect::<Vec<_>>();
+        for (cell_id, cell) in &engine.cells {
+            let coordinate = *engine
+                .inv_coordinate_map
+                .get(cell_id)
+                .ok_or("starting cell has no host coordinate")?;
+            let (_, coordinates) = territories
+                .get_mut(cell.team_id.0)
+                .ok_or("starting cell names a team outside the environment")?;
+            coordinates.push(coordinate);
+        }
+        for (_, coordinates) in &mut territories {
+            coordinates.sort_unstable_by_key(|coordinate| (coordinate.y, coordinate.x));
+        }
+        engine.world.energy = world_gen::scatter_energy_with_layouts(
+            config.world_size,
+            config.world_size,
+            config.num_scattered_energy,
+            config.scattered_energy_amount,
+            &config.scattered_energy_layout,
+            config.num_plants,
+            config.plant_rate,
+            config.plant_max_energy,
+            &config.plant_layout,
+            &territories,
+            seed,
+        )?;
+        return Ok(());
+    }
+
+    engine.world.energy.fill(None);
+    let source = || EnergySource::Plant {
+        rate: config.plant_rate,
+        current_energy: config.plant_max_energy / 2,
+        max_energy: config.plant_max_energy,
+    };
+    let include_all_teams = config.resource_placement == ResourcePlacement::OnAllCells;
+    let mut training_cells = engine
+        .cells
+        .iter()
+        .filter_map(|(id, cell)| (include_all_teams || cell.team_id == TeamId(0)).then_some(*id))
+        .collect::<Vec<_>>();
+    training_cells.sort_unstable_by_key(|cell| cell.0);
+    let dimensions = engine.world.dimensions;
+
+    for cell_id in training_cells {
+        let origin = *engine
+            .inv_coordinate_map
+            .get(&cell_id)
+            .ok_or("curriculum cell has no host coordinate")?;
+        let target = match config.resource_placement {
+            ResourcePlacement::Random => unreachable!(),
+            ResourcePlacement::OnAllCells | ResourcePlacement::OnTrainingCells => origin,
+            ResourcePlacement::AdjacentToTrainingCells => {
+                adjacent_food_coordinate(engine, config, cell_id, origin, seed)?
+            }
+        };
+        let index = target
+            .y
+            .checked_mul(dimensions.0)
+            .and_then(|value| value.checked_add(target.x))
+            .ok_or("curriculum resource coordinate overflowed")?;
+        let tile = engine
+            .world
+            .energy
+            .get_mut(index)
+            .ok_or("curriculum resource coordinate is outside the world")?;
+        *tile = Some(source());
+    }
+    Ok(())
+}
+
+fn adjacent_food_coordinate(
+    engine: &Engine,
+    config: &EnvConfig,
+    cell_id: CellId,
+    origin: Coordinate,
+    seed: u64,
+) -> Result<Coordinate, String> {
+    let neighborhood = &config.rules.neighborhood;
+    let movable = neighborhood.target_mask(TargetingAction::Move);
+    let visible = neighborhood.observations.energy;
+    let slot_count = neighborhood.slots.len();
+    if slot_count == 0 {
+        return Err("adjacent-food curriculum requires at least one local slot".into());
+    }
+    let rotation = usize::try_from(
+        seed.wrapping_add((cell_id.0 as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15))
+            % slot_count as u64,
+    )
+    .map_err(|_| "curriculum slot rotation does not fit usize")?;
+    for offset_index in 0..slot_count {
+        let slot_index = (rotation + offset_index) % slot_count;
+        let slot = blob_engine::resolution::LocalSlot(slot_index as u8);
+        if !movable.contains(slot) || !visible.contains(slot) {
+            continue;
+        }
+        let offset = neighborhood.slots[slot_index];
+        let Some(target) = offset_coordinate(
+            origin,
+            offset.dx,
+            offset.dy,
+            engine.world.dimensions,
+            neighborhood.boundary_rule,
+        ) else {
+            continue;
+        };
+        if !engine.coordinate_map.contains_key(&target) {
+            return Ok(target);
+        }
+    }
+    Err(format!(
+        "adjacent-food curriculum found no visible reachable vacancy for cell {}",
+        cell_id.0
+    ))
+}
+
+fn offset_coordinate(
+    origin: Coordinate,
+    dx: i8,
+    dy: i8,
+    dimensions: (usize, usize),
+    boundary: BoundaryRule,
+) -> Option<Coordinate> {
+    let width = i64::try_from(dimensions.0).ok()?;
+    let height = i64::try_from(dimensions.1).ok()?;
+    let x = i64::try_from(origin.x).ok()?.checked_add(i64::from(dx))?;
+    let y = i64::try_from(origin.y).ok()?.checked_add(i64::from(dy))?;
+    let (x, y) = match boundary {
+        BoundaryRule::Wrap => (x.rem_euclid(width), y.rem_euclid(height)),
+        BoundaryRule::Bounded if x >= 0 && y >= 0 && x < width && y < height => (x, y),
+        BoundaryRule::Bounded => return None,
+    };
+    Some(Coordinate {
+        x: usize::try_from(x).ok()?,
+        y: usize::try_from(y).ok()?,
+    })
+}
+
 impl BlobEnv {
     /// Create a new BlobEnv.
     pub fn new(env_config: EnvConfig, reward_config: RewardConfig, seed: u64) -> Self {
@@ -400,20 +582,11 @@ impl BlobEnv {
             env_config.rules.clone(),
         );
         engine
+            .set_starting_cell_layout(env_config.starting_cell_layout)
+            .expect("a new RL engine has no starting teams");
+        engine
             .set_reference_integrity_mode(IntegrityMode::OnDemand)
             .expect("a new RL engine has no active replay recorder");
-
-        // Add energy to world using config params
-        engine.world.energy = world_gen::scatter_energy(
-            env_config.world_size,
-            env_config.world_size,
-            env_config.num_scattered_energy,
-            env_config.scattered_energy_amount,
-            env_config.num_plants,
-            env_config.plant_rate,
-            env_config.plant_max_energy,
-            seed,
-        );
 
         // Training team
         engine
@@ -426,6 +599,8 @@ impl BlobEnv {
                 .add_team_with_boxed_minds(TeamId(i), vec![opponent_mind_factory()])
                 .unwrap();
         }
+        configure_episode_resources(&mut engine, &env_config, seed)
+            .expect("validated RL resource placement failed");
         engine.initialize_reference_state().unwrap();
 
         let opponent_batch_policy = opponent_batch_policy_factory
@@ -444,7 +619,44 @@ impl BlobEnv {
             opponent_batch_policy_factory,
             opponent_batch_policy,
             telemetry: None,
+            match_explorer: None,
         }
+    }
+
+    /// Enable expensive, verified, per-resolution-batch recording for one
+    /// explicitly selected evaluation match. Ordinary rollout environments
+    /// never call this and retain on-demand hashing with no replay copies.
+    pub(crate) fn enable_match_explorer_recording(
+        &mut self,
+        config: MatchExplorerConfig,
+    ) -> Result<(), String> {
+        if self.match_explorer.is_some() {
+            return Err("match explorer recording is already active".into());
+        }
+        let recorder = MatchExplorerRecorder::start(&self.engine, config)?;
+        self.engine
+            .set_reference_integrity_mode(IntegrityMode::Verified)?;
+        self.engine.start_reference_replay_recording(128)?;
+        self.match_explorer = Some(recorder);
+        Ok(())
+    }
+
+    pub(crate) fn finish_match_explorer_recording(
+        &mut self,
+        outcome: impl Into<String>,
+        end_reason: impl Into<String>,
+    ) -> Result<RecordedExplorerMatch, String> {
+        let replay = self
+            .engine
+            .export_reference_replay_bundle(ReplayBundleLimits::default())?;
+        let recorder = self
+            .match_explorer
+            .take()
+            .ok_or("match explorer recording is not active")?;
+        if recorder.event_count() != replay.archive().event_count() {
+            return Err("presentation trace and canonical replay event counts diverged".into());
+        }
+        Ok(recorder.finish(replay, outcome, end_reason))
     }
 
     /// Enable bounded host telemetry. This changes neither canonical state nor
@@ -571,6 +783,62 @@ impl BlobEnv {
             .reference_simulation()
             .map(|simulation| simulation.compiled_ruleset_hash().to_string())
             .unwrap_or_else(|| "uninitialized".to_string())
+    }
+
+    pub(crate) fn initial_ecology_snapshot(&self) -> Result<InitialEcologySnapshot, String> {
+        let simulation = self
+            .engine
+            .reference_simulation()
+            .ok_or("reference state has not been initialized")?;
+        let host_teams = self
+            .engine
+            .cells
+            .iter()
+            .map(|(id, cell)| (id.0, cell.team_id))
+            .collect::<HashMap<_, _>>();
+        let mut starts_by_team = vec![Vec::new(); self.env_config.num_teams];
+        for (key, cell) in simulation.cells() {
+            let id = usize::try_from(key.0)
+                .map_err(|_| "characterization cell identity does not fit usize")?;
+            let team = host_teams
+                .get(&id)
+                .ok_or("characterization cell has no host-private team")?
+                .0;
+            starts_by_team
+                .get_mut(team)
+                .ok_or("characterization cell names an unknown team")?
+                .push(cell.position);
+        }
+        let plants = simulation
+            .tiles()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tile)| {
+                (tile.plant_capacity > 0 || tile.plant_growth_rate > 0).then_some(TileIndex(index))
+            })
+            .collect();
+        let major_food = simulation
+            .tiles()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tile)| {
+                (tile.plant_capacity > 0 || tile.plant_growth_rate > 0 || tile.loose_energy > 0)
+                    .then_some(TileIndex(index))
+            })
+            .collect();
+        Ok(InitialEcologySnapshot {
+            starts_by_team,
+            plants,
+            major_food,
+        })
+    }
+
+    pub(crate) fn reference_simulation_for_diagnostics(
+        &self,
+    ) -> Result<&ReferenceSimulation, String> {
+        self.engine
+            .reference_simulation()
+            .ok_or_else(|| "reference state has not been initialized".to_string())
     }
 
     pub fn checkpoint(&self) -> Result<BlobEnvCheckpoint, String> {
@@ -788,6 +1056,13 @@ impl BlobEnv {
                 }
                 telemetry.observe_kills(&batch.kills, &runtime.sides);
             }
+            if let (Some(recorder), Some(report)) =
+                (self.match_explorer.as_mut(), batch.reference_batch.as_ref())
+            {
+                recorder
+                    .observe(report)
+                    .expect("match explorer recording diverged from canonical resolution");
+            }
             tick_events.kills.extend(batch.kills);
             tick_events.splits.extend(batch.splits);
             tick_events.reference_batch = batch.reference_batch;
@@ -974,19 +1249,11 @@ impl BlobEnv {
             self.env_config.rules.clone(),
         );
         engine
+            .set_starting_cell_layout(self.env_config.starting_cell_layout)
+            .expect("a reset RL engine has no starting teams");
+        engine
             .set_reference_integrity_mode(IntegrityMode::OnDemand)
             .expect("a new RL engine has no active replay recorder");
-
-        engine.world.energy = world_gen::scatter_energy(
-            self.env_config.world_size,
-            self.env_config.world_size,
-            self.env_config.num_scattered_energy,
-            self.env_config.scattered_energy_amount,
-            self.env_config.num_plants,
-            self.env_config.plant_rate,
-            self.env_config.plant_max_energy,
-            seed,
-        );
 
         engine
             .add_team_with_minds(TeamId(0), vec![ActionBufferMind::new_training()])
@@ -996,6 +1263,8 @@ impl BlobEnv {
                 .add_team_with_boxed_minds(TeamId(i), vec![(self.opponent_mind_factory)()])
                 .unwrap();
         }
+        configure_episode_resources(&mut engine, &self.env_config, seed)
+            .expect("validated RL resource placement failed");
         engine.initialize_reference_state().unwrap();
 
         self.engine = engine;
@@ -1022,12 +1291,33 @@ impl BlobEnv {
         self.prev_cell_energies.clear();
         self.prev_cell_count.clear();
         self.prev_cell_positions.clear();
-        for (id, cell) in &self.engine.cells {
-            self.prev_cell_energies
-                .insert(*id, (cell.energy, cell.team_id));
+        let simulation = self
+            .engine
+            .reference_simulation()
+            .expect("reference simulation initialized");
+        for (key, state) in simulation.cells() {
+            let id = CellId(
+                usize::try_from(key.0)
+                    .expect("canonical cell key does not fit host dispatch identity"),
+            );
+            let cell = self
+                .engine
+                .cells
+                .get(&id)
+                .expect("canonical cell is missing host-private team ownership");
+            self.prev_cell_energies.insert(
+                id,
+                (
+                    state
+                        .assimilated_energy
+                        .checked_add(state.gut_energy)
+                        .expect("canonical stored energy overflowed"),
+                    cell.team_id,
+                ),
+            );
             *self.prev_cell_count.entry(cell.team_id).or_insert(0) += 1;
-            if let Some(&coord) = self.engine.inv_coordinate_map.get(id) {
-                self.prev_cell_positions.insert(*id, coord);
+            if let Some(&coord) = self.engine.inv_coordinate_map.get(&id) {
+                self.prev_cell_positions.insert(id, coord);
             }
         }
     }
@@ -1069,10 +1359,28 @@ impl BlobEnv {
 
             let mut reward = rc.survive_tick;
 
-            // Energy gain reward
-            if let Some(&(prev_energy, _)) = self.prev_cell_energies.get(cell_id) {
-                if cell.energy > prev_energy {
-                    reward += (cell.energy - prev_energy) as f32 * rc.eat_energy;
+            // Reward net food stored by the cell as soon as it enters the gut.
+            // Digestion merely transfers gut energy to assimilated energy and
+            // therefore cannot misattribute an earlier Consume to a later
+            // action interval.
+            if let Some(&(previous_stored, _)) = self.prev_cell_energies.get(cell_id) {
+                let key = CellKey(
+                    u64::try_from(cell_id.0)
+                        .expect("host dispatch identity does not fit canonical cell key"),
+                );
+                let current_stored = self
+                    .engine
+                    .reference_simulation()
+                    .and_then(|simulation| simulation.cell(key))
+                    .map(|state| {
+                        state
+                            .assimilated_energy
+                            .checked_add(state.gut_energy)
+                            .expect("canonical stored energy overflowed")
+                    })
+                    .unwrap_or(0);
+                if current_stored > previous_stored {
+                    reward += (current_stored - previous_stored) as f32 * rc.eat_energy;
                 }
             }
 
@@ -1129,6 +1437,24 @@ impl BlobEnv {
             }
         }
 
+        // Attribute only damage the authoritative resolver actually applied to
+        // an opposing cell. Requested payload, mitigated damage, overkill, and
+        // friendly fire are deliberately excluded.
+        if rc.damage_enemy != 0.0 {
+            if let Some(report) = &events.reference_batch {
+                for outcome in &report.outcomes {
+                    let Some(damage) = &outcome.attack_damage else {
+                        continue;
+                    };
+                    if let Some((attacker, applied)) =
+                        self.enemy_damage_credit(outcome.actor, damage)
+                    {
+                        *rewards.entry(attacker).or_default() += applied as f32 * rc.damage_enemy;
+                    }
+                }
+            }
+        }
+
         // Per-cell kill attribution from TickEvents
         for (attacker_id, _victim_id, victim_team) in &events.kills {
             if *victim_team != self.training_team {
@@ -1166,6 +1492,26 @@ impl BlobEnv {
         }
 
         rewards
+    }
+
+    fn enemy_damage_credit(
+        &self,
+        actor: CellKey,
+        damage: &blob_engine::resolution::AttackDamage,
+    ) -> Option<(CellId, u64)> {
+        let actor_id = CellId(usize::try_from(actor.0).ok()?);
+        let victim_id = CellId(usize::try_from(damage.victim.0).ok()?);
+        let team = |cell_id: CellId| {
+            self.engine
+                .cells
+                .get(&cell_id)
+                .map(|cell| cell.team_id)
+                .or_else(|| self.prev_cell_energies.get(&cell_id).map(|(_, team)| *team))
+        };
+        (damage.applied > 0
+            && team(actor_id) == Some(self.training_team)
+            && team(victim_id).is_some_and(|victim_team| victim_team != self.training_team))
+        .then_some((actor_id, damage.applied))
     }
 
     fn deadline_reward_outcome(&self) -> Option<DeadlineRewardOutcome> {
@@ -1308,6 +1654,7 @@ mod tests {
     use crate::config::{EnvConfig, RewardConfig};
     use crate::model::{encode_policy_memory, PolicyValueNet, PolicyValueNetConfig};
     use crate::observation::OBS_DIM;
+    use blob_engine::world_gen::ResourceLayout;
     use burn::backend::NdArray;
 
     fn test_env() -> BlobEnv {
@@ -1324,6 +1671,229 @@ mod tests {
         assert!(!env.engine.cells.is_empty());
         let obs = env.get_observations();
         assert!(!obs.is_empty());
+    }
+
+    #[test]
+    fn on_cell_curriculum_places_food_under_every_training_cell() {
+        let config = EnvConfig {
+            world_size: 8,
+            cells_per_team: 3,
+            num_scattered_energy: 0,
+            num_plants: 0,
+            resource_placement: ResourcePlacement::OnTrainingCells,
+            opponent: OpponentProfile::Wait,
+            ..EnvConfig::default()
+        };
+        let mut env = BlobEnv::new(config, RewardConfig::default(), 17);
+        let inputs = env.prepare_training_reference_inputs().unwrap();
+        assert_eq!(inputs.len(), 3);
+        assert!(inputs.iter().all(|(_, input)| {
+            input.current_tile.plant_energy > 0 && input.current_tile.loose_energy == 0
+        }));
+    }
+
+    #[test]
+    fn symmetric_single_founder_scenario_places_each_cell_on_its_own_plant() {
+        let config = EnvConfig {
+            world_size: 16,
+            cells_per_team: 1,
+            starting_cell_layout: blob_engine::engine::StartingCellLayout::Block,
+            num_scattered_energy: 0,
+            num_plants: 0,
+            resource_placement: ResourcePlacement::OnAllCells,
+            opponent: OpponentProfile::Wait,
+            ..EnvConfig::default()
+        };
+        let env = BlobEnv::new(config, RewardConfig::default(), 18);
+        assert_eq!(env.engine.cells.len(), 2);
+        assert_eq!(
+            env.engine.starting_cell_layout(),
+            blob_engine::engine::StartingCellLayout::Block
+        );
+        let width = env.engine.world.dimensions.0;
+        assert!(env.engine.inv_coordinate_map.values().all(|coordinate| {
+            matches!(
+                env.engine.world.energy[coordinate.y * width + coordinate.x],
+                Some(EnergySource::Plant { .. })
+            )
+        }));
+    }
+
+    #[test]
+    fn independent_resource_geometries_are_exact_and_reset_deterministically() {
+        let config = EnvConfig {
+            world_size: 32,
+            cells_per_team: 4,
+            starting_cell_layout: blob_engine::engine::StartingCellLayout::Block,
+            num_scattered_energy: 48,
+            scattered_energy_layout: ResourceLayout::Corridors {
+                corridor_count: 3,
+                half_width: 1,
+            },
+            num_plants: 12,
+            plant_layout: ResourceLayout::Islands {
+                island_count: 3,
+                radius: 2,
+                minimum_separation: 7,
+            },
+            opponent: OpponentProfile::Wait,
+            ..EnvConfig::default()
+        };
+        let mut env = BlobEnv::new(config, RewardConfig::default(), 181);
+        let first = env.engine.world.energy.clone();
+        assert_eq!(
+            first
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Scattered(_))))
+                .count(),
+            48
+        );
+        assert_eq!(
+            first
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Plant { .. })))
+                .count(),
+            12
+        );
+        env.reset(181);
+        assert!(env.engine.world.energy == first);
+        env.reset(182);
+        assert!(env.engine.world.energy != first);
+    }
+
+    #[test]
+    fn scale_qualification_profile_initializes_its_full_uniform_ecology() {
+        let training = crate::config::TrainingConfig::from_toml_str(include_str!(
+            "../config/large_world_1024.toml"
+        ))
+        .unwrap();
+        let env = BlobEnv::new(training.env, training.reward, 1024001);
+        assert_eq!(env.engine.world.energy.len(), 1024 * 1024);
+        assert_eq!(env.engine.cells.len(), 8192 * 2);
+        assert_eq!(
+            env.engine
+                .world
+                .energy
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Scattered(25))))
+                .count(),
+            32768
+        );
+        assert_eq!(
+            env.engine
+                .world
+                .energy
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Plant { .. })))
+                .count(),
+            4096
+        );
+    }
+
+    #[test]
+    fn adjacent_curriculum_places_food_only_on_visible_reachable_vacancies() {
+        let config = EnvConfig {
+            world_size: 8,
+            cells_per_team: 3,
+            num_scattered_energy: 0,
+            num_plants: 0,
+            resource_placement: ResourcePlacement::AdjacentToTrainingCells,
+            opponent: OpponentProfile::Wait,
+            ..EnvConfig::default()
+        };
+        let mut env = BlobEnv::new(config, RewardConfig::default(), 19);
+        let inputs = env.prepare_training_reference_inputs().unwrap();
+        assert_eq!(inputs.len(), 3);
+        assert!(inputs.iter().all(|(_, input)| {
+            input.current_tile.plant_energy == 0
+                && input.current_tile.loose_energy == 0
+                && input.slots.iter().any(|slot| {
+                    ReferenceActionSpace::allows_target(input.action_space.move_targets, slot.slot)
+                        && slot.reachable
+                        && slot.neighbor.is_none()
+                        && slot.plant_energy.unwrap_or(0) > 0
+                })
+        }));
+    }
+
+    #[test]
+    fn opt_in_match_explorer_records_every_canonical_batch_and_host_sidecar() {
+        use crate::match_explorer::MatchExplorerTeamSpec;
+        use std::collections::BTreeMap;
+
+        let mut env = test_env();
+        let teams = BTreeMap::from([
+            (
+                0,
+                MatchExplorerTeamSpec {
+                    name: "candidate".into(),
+                    mind: "test-policy".into(),
+                    color: "#65e6a8".into(),
+                },
+            ),
+            (
+                1,
+                MatchExplorerTeamSpec {
+                    name: "baseline".into(),
+                    mind: "wait".into(),
+                    color: "#ffb55e".into(),
+                },
+            ),
+        ]);
+        env.enable_match_explorer_recording(MatchExplorerConfig {
+            run_id: "test-match".into(),
+            title: "test match".into(),
+            ruleset: "test-rules".into(),
+            teams,
+        })
+        .unwrap();
+        assert_eq!(
+            env.engine.reference_integrity_mode(),
+            IntegrityMode::Verified
+        );
+        let actions = env
+            .get_policy_observations()
+            .into_iter()
+            .map(|observation| (observation.cell_id, 0))
+            .collect::<Vec<_>>();
+        env.step(&actions);
+        let recorded = env
+            .finish_match_explorer_recording("test_complete", "test_boundary")
+            .unwrap();
+        assert!(!recorded.bundle.events.is_empty());
+        assert_eq!(recorded.bundle.events.len(), recorded.replay_event_count());
+        assert!(recorded
+            .bundle
+            .events
+            .iter()
+            .all(|event| event.state_hash.is_some()));
+        assert!(recorded.bundle.events.iter().all(|event| {
+            event.actions == event.resolved_actions.len()
+                && event.resolved_actions.iter().all(|action| {
+                    recorded
+                        .bundle
+                        .presentation
+                        .cell_teams
+                        .contains_key(&action.actor)
+                })
+        }));
+        assert!(
+            recorded.bundle.presentation.cell_teams.len() >= recorded.bundle.initial.cells.len()
+        );
+        let json = serde_json::to_string(&recorded.bundle).unwrap();
+        assert!(!json.contains("\"team\":"));
+
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("match.json");
+        let (_, replay_path) = recorded.publish(&output).unwrap();
+        let published: crate::match_explorer::MatchExplorerBundle =
+            serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+        assert_eq!(
+            published.run.canonical_replay.as_ref().unwrap().events,
+            published.events.len()
+        );
+        blob_engine::resolution::ReplayBundle::from_bytes(&std::fs::read(replay_path).unwrap())
+            .unwrap();
     }
 
     #[test]
@@ -1423,7 +1993,18 @@ mod tests {
 
     #[test]
     fn baseline_profiles_are_typed_deterministic_and_use_only_mind_input() {
-        let env = test_env();
+        let env = BlobEnv::new(
+            EnvConfig {
+                world_size: 8,
+                cells_per_team: 1,
+                starting_cell_layout: blob_engine::engine::StartingCellLayout::PairedContact,
+                num_scattered_energy: 0,
+                num_plants: 0,
+                ..EnvConfig::default()
+            },
+            RewardConfig::default(),
+            42,
+        );
         let opponent = env
             .engine
             .cells
@@ -1456,6 +2037,58 @@ mod tests {
             ReferenceMindAction::Consume { .. }
         ));
         assert_eq!(aggressive.memory_update, ReferenceMemoryUpdate::Retain);
+
+        input.self_state.assimilated_energy = 100;
+        let defensive = ActionBufferMind::new_opponent(OpponentProfile::Defensive).decide(&input);
+        assert!(matches!(
+            defensive.action,
+            ReferenceMindAction::Guard {
+                effort: ReferenceEffort::Standard
+            }
+        ));
+    }
+
+    #[test]
+    fn opposed_lines_create_a_local_multi_cell_front_without_privileged_neighbors() {
+        let visible_occupants = |layout, cells_per_team| {
+            let env = BlobEnv::new(
+                EnvConfig {
+                    world_size: 8,
+                    cells_per_team,
+                    starting_cell_layout: layout,
+                    num_scattered_energy: 0,
+                    num_plants: 0,
+                    ..EnvConfig::default()
+                },
+                RewardConfig::default(),
+                43,
+            );
+            env.engine
+                .cells
+                .iter()
+                .filter(|(_, cell)| cell.team_id == env.training_team)
+                .map(|(cell_id, _)| {
+                    env.engine
+                        .reference_mind_input_for(*cell_id, PrivateRandom::ZERO)
+                        .unwrap()
+                        .slots
+                        .iter()
+                        .filter(|slot| slot.neighbor.is_some())
+                        .count()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            visible_occupants(blob_engine::engine::StartingCellLayout::PairedContact, 1),
+            vec![1]
+        );
+        let mut skirmish =
+            visible_occupants(blob_engine::engine::StartingCellLayout::OpposedLines, 4);
+        skirmish.sort_unstable();
+        assert_eq!(skirmish, vec![3, 3, 5, 5]);
+        // ReferenceNeighbor deliberately exposes neither occupant identity nor
+        // team; the additional context is purely local geometry and activity.
     }
 
     #[test]
@@ -1711,6 +2344,46 @@ mod tests {
     }
 
     #[test]
+    fn trusted_ecology_snapshot_matches_canonical_checkpoint_state() {
+        let env = test_env();
+        let snapshot = env.initial_ecology_snapshot().unwrap();
+        let checkpoint = env.checkpoint().unwrap();
+        let canonical = ReferenceCheckpoint::from_bytes(&checkpoint.canonical_checkpoint).unwrap();
+        let expected_plants = canonical
+            .state()
+            .tiles
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tile)| {
+                (tile.plant_capacity > 0 || tile.plant_growth_rate > 0).then_some(TileIndex(index))
+            })
+            .collect::<Vec<_>>();
+        let expected_major_food = canonical
+            .state()
+            .tiles
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tile)| {
+                (tile.plant_capacity > 0 || tile.plant_growth_rate > 0 || tile.loose_energy > 0)
+                    .then_some(TileIndex(index))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(snapshot.plants, expected_plants);
+        assert_eq!(snapshot.major_food, expected_major_food);
+
+        let host_teams = checkpoint
+            .host_cells
+            .iter()
+            .map(|cell| (cell.id.0, cell.team_id.0))
+            .collect::<HashMap<_, _>>();
+        let mut expected_starts = vec![Vec::new(); env.env_config.num_teams];
+        for (key, cell) in &canonical.state().cells {
+            expected_starts[host_teams[&(key.0 as usize)]].push(cell.position);
+        }
+        assert_eq!(snapshot.starts_by_team, expected_starts);
+    }
+
+    #[test]
     fn rl_environment_checkpoint_restores_exact_continuation_state() {
         let mut env = test_env();
         let actions = env
@@ -1757,6 +2430,112 @@ mod tests {
         for (_, o) in &obs {
             assert_eq!(o.data.len(), OBS_DIM);
         }
+    }
+
+    #[test]
+    fn consume_reward_is_attributed_when_food_enters_the_gut() {
+        let config = EnvConfig {
+            world_size: 8,
+            cells_per_team: 1,
+            max_episode_len: 16,
+            opponent: OpponentProfile::Wait,
+            num_scattered_energy: 0,
+            num_plants: 64,
+            victory: crate::config::VictoryConfig {
+                sim_time_limit_quanta: u64::MAX,
+                ..crate::config::VictoryConfig::default()
+            },
+            ..EnvConfig::default()
+        };
+        let reward = RewardConfig {
+            survive_tick: 0.0,
+            eat_energy: 1.0,
+            move_toward_food: 0.0,
+            move_toward_enemy: 0.0,
+            ..RewardConfig::default()
+        };
+        let mut env = BlobEnv::new(config, reward, 81);
+        let observation = env.get_policy_observations().into_iter().next().unwrap();
+        let actor = observation.cell_id;
+        let key = CellKey(u64::try_from(actor.0).unwrap());
+        let stored_before = env
+            .engine
+            .reference_simulation()
+            .unwrap()
+            .cell(key)
+            .map(|cell| cell.assimilated_energy + cell.gut_energy)
+            .unwrap();
+
+        let result = env.step_with_policy_memory(&[(
+            actor,
+            PolicyChoice {
+                action: 4,
+                amount: 4,
+                signal: 0,
+                signal_strength: 0,
+            },
+            None,
+        )]);
+        let cell = env
+            .engine
+            .reference_simulation()
+            .unwrap()
+            .cell(key)
+            .unwrap();
+        let stored_after = cell.assimilated_energy + cell.gut_energy;
+
+        assert!(cell.gut_energy > 0);
+        assert!(stored_after > stored_before);
+        assert_eq!(
+            result.rewards[&actor],
+            (stored_after - stored_before) as f32
+        );
+    }
+
+    #[test]
+    fn damage_credit_requires_applied_enemy_damage_from_a_training_cell() {
+        let env = test_env();
+        let training = env
+            .engine
+            .cells
+            .iter()
+            .find_map(|(id, cell)| (cell.team_id == env.training_team).then_some(*id))
+            .unwrap();
+        let opponent = env
+            .engine
+            .cells
+            .iter()
+            .find_map(|(id, cell)| (cell.team_id != env.training_team).then_some(*id))
+            .unwrap();
+        let key = |id: CellId| CellKey(u64::try_from(id.0).unwrap());
+        let damage = |victim, applied| blob_engine::resolution::AttackDamage {
+            victim: key(victim),
+            target_was_guarded: false,
+            raw: applied + 7,
+            mitigated: 3,
+            applied,
+            overkill: 4,
+        };
+
+        assert_eq!(
+            env.enemy_damage_credit(key(training), &damage(opponent, 11)),
+            Some((training, 11))
+        );
+        assert_eq!(
+            env.enemy_damage_credit(key(training), &damage(training, 11)),
+            None,
+            "friendly fire must not earn damage reward"
+        );
+        assert_eq!(
+            env.enemy_damage_credit(key(opponent), &damage(training, 11)),
+            None,
+            "opponent damage must not enter the training reward"
+        );
+        assert_eq!(
+            env.enemy_damage_credit(key(training), &damage(opponent, 0)),
+            None,
+            "mitigation and overkill alone must not earn damage reward"
+        );
     }
 
     #[test]

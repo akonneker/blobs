@@ -1,0 +1,162 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/specialist_distillation_coefficient_sweep.toml",
+  "spec_sha256": "bd43f859b27042afb955b860a503fc8e3bf8bac096a010bb40f84604b5990650",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_specialist_distillation.toml",
+  "base_config_sha256": "c168c6e7c4457e341a8a618b2f994fa00fdc93cc3b861238706de0e49044fd55",
+  "output_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "variants": [
+    {
+      "name": "coefficient-005",
+      "description": "Ecology and combat specialist coefficient 0.05",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {
+        "combat_coeff": 0.05,
+        "ecology_coeff": 0.05,
+        "enabled": true
+      }
+    },
+    {
+      "name": "coefficient-010",
+      "description": "Ecology and combat specialist coefficient 0.10",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {
+        "combat_coeff": 0.1,
+        "ecology_coeff": 0.1,
+        "enabled": true
+      }
+    },
+    {
+      "name": "coefficient-020",
+      "description": "Ecology and combat specialist coefficient 0.20",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {
+        "combat_coeff": 0.2,
+        "ecology_coeff": 0.2,
+        "enabled": true
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "coefficient-005",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "accc5b2f16d8bff0914ed1cf2b63dca5c6f0de225f6e77946e201e93558e4367",
+      "config_file_sha256": "3938c0bcec2a7be3e89d74e21538cf7dde36ac7217ad03af229207ba6d6450e5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-005/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-005/seed-42/config.toml"
+    },
+    {
+      "variant": "coefficient-005",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "7d69eba6e31cb15ca9abe8a7a8b3717fd08b7ec2a729ba28b16a5bab8b097b23",
+      "config_file_sha256": "ff1cfe52f45ab9b850e72d0b9f8d99bf4602833ab158f13904acd8a10cd66e8a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-005/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-005/seed-43/config.toml"
+    },
+    {
+      "variant": "coefficient-005",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "4294a6cc28933b1c04b29dbc5f451a706303d43a5638e20b508202c89c33059a",
+      "config_file_sha256": "a1a152fa110615d3bb6b149952bb72ff9e17edd3b0e6bb302c197ebe244b0c01",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-005/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-005/seed-44/config.toml"
+    },
+    {
+      "variant": "coefficient-010",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "787107cbcdd8fd01a63d94b7f30519e1a6470dda7eff9ef38538bebebd5ec581",
+      "config_file_sha256": "1b1ffe214926a75b720e40ff841f39bd2919a9a180e02e8c89cf4915eb174721",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-010/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-010/seed-42/config.toml"
+    },
+    {
+      "variant": "coefficient-010",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a225b01a74faf19280826e92992f41ac501beb6a62f0eda78ef6480434294c9e",
+      "config_file_sha256": "d60c73ce8ce0000e0be8903d6aae2e6baf66e218183717ec81da7cae362a5b7a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-010/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-010/seed-43/config.toml"
+    },
+    {
+      "variant": "coefficient-010",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "f0126bb340c3042a925708731658fde85fcb1608b27840ffa291782d49778bfd",
+      "config_file_sha256": "b209329c7cae10697c3e0f36afb7717bfc8c98573e1e01e3ecf59b4686fdce28",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-010/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-010/seed-44/config.toml"
+    },
+    {
+      "variant": "coefficient-020",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "9754fd9dc11ebbe2b1140228e4758b320f6efa3025f67969fa8b78c6b84aad34",
+      "config_file_sha256": "8d86fdd488697c91a1e165d5aadfefdcc6d53822384daf48b33a2e78dd3f532b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-020/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-020/seed-42/config.toml"
+    },
+    {
+      "variant": "coefficient-020",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "515e5bcfebde32a99a44c788a34a55b4859bbd59bc0a2a858a1d330fab2f040a",
+      "config_file_sha256": "5d3283d836f00f068b3252f57b9a21f294d45e164e0bd11d27c75063fafec545",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-020/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-020/seed-43/config.toml"
+    },
+    {
+      "variant": "coefficient-020",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a6a253d044f18c84f0ce9b0c57a2bfa4bc64bbb2898c2dc6438ea5417ff5a35f",
+      "config_file_sha256": "651d6da9d557cd65724ae5a8ef52d9f6761da3c8c1907838736885ae537b308d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-020/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/specialist-distillation-coefficient-v1/coefficient-020/seed-44/config.toml"
+    }
+  ]
+}

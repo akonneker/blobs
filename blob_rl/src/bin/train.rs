@@ -1,7 +1,7 @@
 #![recursion_limit = "512"]
 //! CLI entrypoint for blob_rl training.
 
-use blob_rl::config::TrainingConfig;
+use blob_rl::config::{InitialPolicyConfig, InitialPolicyQualificationConfig, TrainingConfig};
 use blob_rl::training::train;
 use clap::Parser;
 use std::fs::OpenOptions;
@@ -65,6 +65,22 @@ struct Args {
     /// Directory for metrics and immutable checkpoints
     #[arg(long)]
     checkpoint_dir: Option<String>,
+
+    /// Immutable behavior-cloning artifact directory used for a fresh run.
+    #[arg(long, conflicts_with = "load_model")]
+    initial_policy: Option<String>,
+
+    /// Expected SHA-256 of the behavior clone's metadata bytes.
+    #[arg(long)]
+    initial_policy_artifact_sha256: Option<String>,
+
+    /// Passing feeding-evaluation JSON that qualifies the behavior clone.
+    #[arg(long)]
+    initial_policy_qualification: Option<String>,
+
+    /// Expected semantic hash embedded in the feeding qualification.
+    #[arg(long)]
+    initial_policy_qualification_hash: Option<String>,
 
     /// Load a pre-trained model to continue training from
     #[arg(long, conflicts_with = "resume")]
@@ -147,6 +163,27 @@ fn main() {
     }
     if let Some(v) = args.checkpoint_dir {
         config.checkpoint_dir = v;
+    }
+    match (
+        args.initial_policy,
+        args.initial_policy_artifact_sha256,
+        args.initial_policy_qualification,
+        args.initial_policy_qualification_hash,
+    ) {
+        (None, None, None, None) => {}
+        (Some(directory), Some(artifact_sha256), Some(path), Some(artifact_hash)) => {
+            config.initial_policy = Some(InitialPolicyConfig {
+                directory,
+                artifact_sha256,
+                qualification: Some(InitialPolicyQualificationConfig {
+                    path,
+                    artifact_hash,
+                }),
+            });
+        }
+        _ => panic!(
+            "--initial-policy requires its artifact SHA-256, qualification path, and qualification hash"
+        ),
     }
 
     config.validate().expect("Invalid training configuration");

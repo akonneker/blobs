@@ -5,11 +5,15 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::action::{
-    PolicyChoice, NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    compose_policy_action, policy_action_kind_mask, policy_effort_mask, policy_target_mask,
+    HierarchicalActionChoice, PolicyChoice, NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS,
+    NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS, NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS,
+    NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::artifact::PolicySnapshot;
 use crate::config::{EnvConfig, OpponentProfile, RewardConfig};
-use crate::env::{BlobEnv, EpisodeOutcome};
+use crate::env::{BlobEnv, EpisodeEndReason, EpisodeOutcome};
+use crate::match_explorer::{MatchExplorerConfig, RecordedExplorerMatch};
 use crate::model::{decode_policy_memory, encode_policy_memory, PolicyValueNet};
 use crate::observation::{Observation, OBS_DIM};
 
@@ -75,21 +79,32 @@ pub struct EvaluationMetrics {
     pub actions: u64,
 }
 
-pub(crate) fn greedy_action(logits: &[f32], observation: &Observation) -> usize {
-    logits
-        .iter()
-        .copied()
-        .zip(observation.action_mask)
-        .enumerate()
-        .filter(|(_, (logit, allowed))| *allowed && logit.is_finite())
-        .max_by(|left, right| {
-            left.1
-                 .0
-                .total_cmp(&right.1 .0)
-                // Stable tie break: prefer the lower canonical action index.
-                .then_with(|| right.0.cmp(&left.0))
-        })
-        .map_or(0, |(index, _)| index)
+pub(crate) fn greedy_policy_action(
+    kind_logits: &[f32],
+    target_logits: &[f32],
+    effort_logits: &[f32],
+    observation: &Observation,
+) -> usize {
+    let kind = greedy_masked(
+        kind_logits,
+        &policy_action_kind_mask(&observation.action_mask),
+    );
+    let target_start = kind * NUM_POLICY_TARGETS;
+    let target = greedy_masked(
+        &target_logits[target_start..target_start + NUM_POLICY_TARGETS],
+        &policy_target_mask(&observation.action_mask, kind),
+    );
+    let effort_start = kind * NUM_POLICY_EFFORTS;
+    let effort = greedy_masked(
+        &effort_logits[effort_start..effort_start + NUM_POLICY_EFFORTS],
+        &policy_effort_mask(&observation.action_mask, kind, target),
+    );
+    compose_policy_action(HierarchicalActionChoice {
+        kind,
+        target,
+        effort,
+    })
+    .expect("projected hierarchical masks must compose to a flat policy action")
 }
 
 pub(crate) fn greedy_amount(logits: &[f32], observation: &Observation, action: usize) -> usize {
@@ -167,14 +182,18 @@ where
             device,
         ),
     );
-    let width = NUM_ACTIONS
-        + NUM_AMOUNT_CHOICES
+    let width = NUM_POLICY_ACTION_KINDS
+        + NUM_POLICY_TARGET_LOGITS
+        + NUM_POLICY_EFFORT_LOGITS
+        + NUM_POLICY_AMOUNT_LOGITS
         + NUM_SIGNAL_CHOICES
         + NUM_SIGNAL_STRENGTH_CHOICES
         + recurrent_size;
     let output = Tensor::cat(
         vec![
-            output.policy_logits,
+            output.action_kind_logits,
+            output.target_logits,
+            output.effort_logits,
             output.amount_logits,
             output.signal_logits,
             output.signal_strength_logits,
@@ -194,14 +213,25 @@ where
         .enumerate()
         .map(|(cell_index, input)| {
             let start = cell_index * width;
-            let action = greedy_action(&output[start..start + NUM_ACTIONS], &input.observation);
-            let amount_start = start + NUM_ACTIONS;
+            let target_start = start + NUM_POLICY_ACTION_KINDS;
+            let effort_start = target_start + NUM_POLICY_TARGET_LOGITS;
+            let amount_start = effort_start + NUM_POLICY_EFFORT_LOGITS;
+            let action = greedy_policy_action(
+                &output[start..target_start],
+                &output[target_start..effort_start],
+                &output[effort_start..amount_start],
+                &input.observation,
+            );
+            let kind = crate::action::decompose_policy_action(action)
+                .expect("greedy action is in the policy catalog")
+                .kind;
             let amount = greedy_amount(
-                &output[amount_start..amount_start + NUM_AMOUNT_CHOICES],
+                &output[amount_start + kind * NUM_AMOUNT_CHOICES
+                    ..amount_start + (kind + 1) * NUM_AMOUNT_CHOICES],
                 &input.observation,
                 action,
             );
-            let signal_start = amount_start + NUM_AMOUNT_CHOICES;
+            let signal_start = amount_start + NUM_POLICY_AMOUNT_LOGITS;
             let signal = greedy_signal(
                 &output[signal_start..signal_start + NUM_SIGNAL_CHOICES],
                 &input.observation,
@@ -291,6 +321,54 @@ where
             )
         },
     )
+}
+
+/// Record one deterministic greedy-policy evaluation at every canonical
+/// resolution batch. This is intentionally separate from bulk evaluation so
+/// verified hashing, replay copies, and presentation patches are paid only for
+/// the explicitly selected match.
+pub fn record_greedy_policy_match<B: Backend>(
+    model: &PolicyValueNet<B>,
+    env_config: &EnvConfig,
+    reward_config: &RewardConfig,
+    opponent: OpponentProfile,
+    seed: u64,
+    device: &B::Device,
+    explorer: MatchExplorerConfig,
+) -> Result<RecordedExplorerMatch, String>
+where
+    f32: From<B::FloatElem>,
+{
+    let mut profile_env = env_config.clone();
+    profile_env.opponent = opponent;
+    let mut env = BlobEnv::new(profile_env, reward_config.clone(), seed);
+    env.enable_match_explorer_recording(explorer)?;
+    let mut observations = env.get_policy_observations();
+    loop {
+        let actions = greedy_policy_choices(model, &observations, device);
+        let result = env.step_with_policy_memory(&actions);
+        if result.done {
+            let outcome = match result
+                .outcome
+                .ok_or("completed recorded match has no outcome")?
+            {
+                EpisodeOutcome::Win => "training_team_win",
+                EpisodeOutcome::Loss => "opponent_win",
+                EpisodeOutcome::Timeout => "timeout",
+                EpisodeOutcome::SafetyAbort => "safety_abort",
+            };
+            let end_reason = match result
+                .end_reason
+                .ok_or("completed recorded match has no end reason")?
+            {
+                EpisodeEndReason::Extermination => "extermination",
+                EpisodeEndReason::SimTimeDeadline => "sim_time_deadline",
+                EpisodeEndReason::DecisionFrontierSafetyLimit => "decision_frontier_safety_limit",
+            };
+            return env.finish_match_explorer_recording(outcome, end_reason);
+        }
+        observations = result.policy_observations;
+    }
 }
 
 fn evaluate_policy_with_env<B: Backend>(
@@ -426,6 +504,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action::NUM_ACTIONS;
     use burn::backend::NdArray;
 
     #[test]
@@ -439,10 +518,15 @@ mod tests {
         };
         observation.action_mask[3] = true;
         observation.action_mask[7] = true;
-        let mut logits = vec![100.0; NUM_ACTIONS];
-        logits[3] = 5.0;
-        logits[7] = 5.0;
-        assert_eq!(greedy_action(&logits, &observation), 3);
+        let mut kinds = vec![100.0; NUM_POLICY_ACTION_KINDS];
+        kinds[1] = 5.0;
+        kinds[3] = 5.0;
+        let targets = vec![100.0; NUM_POLICY_TARGET_LOGITS];
+        let efforts = vec![100.0; NUM_POLICY_EFFORT_LOGITS];
+        assert_eq!(
+            greedy_policy_action(&kinds, &targets, &efforts, &observation),
+            3
+        );
     }
 
     #[test]

@@ -1,0 +1,105 @@
+# First selection-grade large-world phase. Load the best small-world warm start
+# with `train --load-model ...`; a policy is not considered generally useful
+# until it passes held-out evaluation at this scale.
+seed = 256001
+num_envs = 4
+rollout_length = 8192
+total_timesteps = 100000000
+total_simulation_quanta_per_env = 67108864
+eval_interval = 25
+eval_episodes = 4
+evaluation_opponents = ["wait", "random", "forager", "aggressive"]
+evaluation_seed = 1256000000
+checkpoint_interval = 25
+checkpoint_dir = "./checkpoints/large-world-256"
+
+[feeding_curriculum]
+enabled = true
+on_food_until_sim_time_quanta_per_env = 16777216
+adjacent_food_until_sim_time_quanta_per_env = 33554432
+
+[feeding_curriculum.promotion]
+min_on_food_episode_success_rate = 0.95
+min_adjacent_episode_success_rate = 0.80
+min_survival_rate = 0.80
+min_consumed_energy_per_initial_cell = 1.0
+evaluation_max_episode_len = 4096
+evaluation_sim_time_limit_quanta = 262144
+
+[telemetry]
+enabled = true
+state_sample_interval_steps = 256
+max_state_samples_per_episode = 128
+episode_log_stride = 8
+
+[ppo]
+clip_epsilon = 0.2
+value_clip_epsilon = 0.2
+gamma = 0.9995
+gae_lambda = 0.995
+epochs_per_update = 4
+minibatch_size = 1024
+recurrent_unroll_steps = 64
+learning_rate = 3e-4
+entropy_coeff = 0.01
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+target_kl = 0.03
+
+[model]
+hidden1 = 128
+hidden2 = 64
+recurrent_size = 64
+
+[env]
+world_size = 256
+cells_per_team = 512
+starting_cell_layout = "block"
+max_episode_len = 65536
+num_teams = 2
+opponent = "aggressive"
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+num_scattered_energy = 2048
+scattered_energy_amount = 25
+num_plants = 256
+plant_rate = 3
+plant_max_energy = 100
+
+[env.scattered_energy_layout]
+mode = "uniform"
+
+[env.plant_layout]
+mode = "uniform"
+
+[env.victory]
+immediate = "extermination"
+deadline = "draw"
+sim_time_limit_quanta = 16777216
+
+[reward]
+survive_tick = 0.0
+eat_energy = 0.002
+kill_enemy = 1.0
+cell_died = -1.0
+split_success = 2.0
+team_wins = 10.0
+team_loses = -10.0
+move_toward_food = 0.0
+move_toward_enemy = 0.0
+
+[reward.deadline]
+mode = "none"
+
+[self_play]
+start_after_sim_time_quanta_per_env = 33554432
+opponent_update_interval = 25
+max_opponent_pool = 10
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

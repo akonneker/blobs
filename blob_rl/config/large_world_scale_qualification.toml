@@ -1,0 +1,29 @@
+# Bounded scale qualification. This runs ecological characterization only;
+# complete match matrices remain a 256-square promotion gate and an occasional
+# selected-checkpoint test at 512/1024.
+seeds = [256001, 256019, 256061]
+max_micro_actions = 100000
+max_parallel_profiles = 1
+minimum_world_size = 256
+
+# These profiles intentionally preserve exact densities and give canonical
+# match time proportional to board width, independent of population count.
+maximum_population_density_relative_deviation = 0.0
+maximum_plant_density_relative_deviation = 0.0
+maximum_loose_energy_density_relative_deviation = 0.0
+maximum_deadline_per_width_relative_deviation = 0.0
+require_identical_rules = true
+require_all_starting_cells_reach_plants = true
+require_team_p90_plant_routes_within_travel_endurance = true
+
+[[profiles]]
+name = "selection-256"
+config = "large_world_256.toml"
+
+[[profiles]]
+name = "bridge-512"
+config = "large_world_512.toml"
+
+[[profiles]]
+name = "qualification-1024"
+config = "large_world_1024.toml"

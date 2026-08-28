@@ -1,0 +1,21 @@
+# Paired test of an explicitly configured positive-damage combat precursor.
+# A gate-qualified combat teacher always takes precedence. The precursor arm
+# differs only by permitting a frontier checkpoint with at least one unit of
+# resolver-attributed skirmish damage when no qualified teacher exists.
+
+base_config = "competitive_transfer_large_specialist_distillation.toml"
+output_dir = "../../sweeps/specialist-distillation-precursor-v1"
+seeds = [45, 46, 47, 48, 49]
+
+[[variants]]
+name = "qualified-only"
+description = "Coefficient 0.05 with combat teachers restricted to gate-qualified checkpoints"
+
+[[variants]]
+name = "damage-precursor"
+description = "Coefficient 0.05 with a positive-skirmish-damage fallback combat teacher"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.05
+combat_coeff = 0.05
+combat_precursor_min_skirmish_damage = 1

@@ -1,0 +1,32 @@
+# Coarse behavior envelope for rejecting clearly unplayable physics regimes.
+# These are broad feasibility expectations, not target values for optimization.
+schema_version = 1
+
+# Topology and resource placement: all sampled starts should reach food.
+min_reachable_major_food_fraction = 1.0
+min_reachable_plant_fraction = 1.0
+
+# A fresh cell should have time to react and enough standard-effort endurance
+# for meaningful travel. Ratios compare one-way fasting endurance with p90
+# shortest-path food distance; 3x means round trip plus 50% reserve.
+min_stationary_lifetime_time_units = 20.0
+min_standard_travel_distance_units = 12.0
+min_standard_travel_to_p90_major_food_ratio = 3.0
+min_standard_travel_to_p90_plant_ratio = 2.0
+
+# A fully digested maximum bite must produce a positive, useful net return.
+min_feeding_net_energy = 1.0
+min_feeding_net_fraction = 0.25
+
+# Minimum viable reproduction should be affordable at initial cell energy.
+max_reproduction_break_even_initial_energy_fraction = 1.0
+
+# Combat should occupy a middle regime: guard must matter, one attacker should
+# not trivially dislodge a feeding defender, and a modest group must be able to.
+require_high_attack_to_land = true
+min_guarded_volley_additional_attackers = 1.0
+min_sustained_siege_attackers = 2.0
+max_sustained_siege_attackers = 4.0
+
+# Construction remains optional behavior, but its primitive cycle must work.
+require_terrain_cycle = true

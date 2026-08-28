@@ -1,0 +1,12 @@
+# Produce one frozen-policy cohort for the held-out combat-horizon sensitivity
+# matrix. This is deliberately a one-arm training sweep: horizon variants are
+# applied only after training by checkpoint-evaluation, so every comparison
+# judges byte-identical policy models.
+
+base_config = "competitive_transfer_large_skirmish_frequent.toml"
+output_dir = "../../sweeps/combat-evaluation-horizon-source-v2"
+seeds = [45, 46, 47, 48, 49]
+
+[[variants]]
+name = "four-cycle-source"
+description = "Schema-36 four-cycle policies frozen before evaluation-horizon variation"

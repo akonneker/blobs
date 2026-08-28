@@ -1,6 +1,8 @@
 //! Training configuration — TOML file with CLI overrides.
 
+use blob_engine::engine::StartingCellLayout;
 use blob_engine::resolution::{BoundaryRule, NeighborhoodSpec, ReferenceRuleset};
+use blob_engine::world_gen::ResourceLayout;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -20,11 +22,18 @@ pub enum OpponentProfile {
     Forager,
     #[default]
     Aggressive,
+    Defensive,
 }
 
 impl OpponentProfile {
     pub const DEFAULT_EVALUATION: [Self; 3] = [Self::Wait, Self::Random, Self::Aggressive];
-    pub const ALL: [Self; 4] = [Self::Wait, Self::Random, Self::Forager, Self::Aggressive];
+    pub const ALL: [Self; 5] = [
+        Self::Wait,
+        Self::Random,
+        Self::Forager,
+        Self::Aggressive,
+        Self::Defensive,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -32,6 +41,7 @@ impl OpponentProfile {
             Self::Random => "random",
             Self::Forager => "forager",
             Self::Aggressive => "aggressive",
+            Self::Defensive => "defensive",
         }
     }
 
@@ -269,6 +279,23 @@ pub struct TrainingConfig {
     #[serde(default)]
     pub self_play: SelfPlayConfig,
 
+    /// Optional staged feeding curriculum and its independent held-out
+    /// promotion checks. Disabled by default so existing training semantics do
+    /// not change silently.
+    #[serde(default)]
+    pub feeding_curriculum: FeedingCurriculumConfig,
+
+    /// Cyclic contact practice interleaved with feeding-retention and ordinary
+    /// competitive rollouts. Disabled by default.
+    #[serde(default, skip_serializing_if = "combat_curriculum_is_default")]
+    pub combat_curriculum: CombatCurriculumConfig,
+
+    /// Optional host-side functional distillation from independently
+    /// qualified ecology and combat checkpoints on matching curriculum
+    /// stages. Disabled by default.
+    #[serde(default, skip_serializing_if = "specialist_distillation_is_default")]
+    pub specialist_distillation: SpecialistDistillationConfig,
+
     #[serde(default)]
     pub telemetry: TelemetryConfig,
 }
@@ -279,6 +306,46 @@ pub struct InitialPolicyConfig {
     pub directory: String,
     /// SHA-256 of the exact `behavior-cloning.json` bytes.
     pub artifact_sha256: String,
+    /// Required feeding-competency evidence when the retention gate is active.
+    #[serde(default)]
+    pub qualification: Option<InitialPolicyQualificationConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct InitialPolicyQualificationConfig {
+    pub path: String,
+    /// Semantic artifact hash embedded in the verified evaluation JSON.
+    pub artifact_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpecialistDistillationConfig {
+    pub enabled: bool,
+    /// Functional-anchor coefficient on on-food and adjacent-food decisions.
+    pub ecology_coeff: f32,
+    /// Functional-anchor coefficient on contact and skirmish decisions.
+    pub combat_coeff: f32,
+    /// When no checkpoint passes the combat gate, permit a checkpoint with at
+    /// least this much resolver-attributed skirmish damage as a temporary
+    /// combat teacher. `None` keeps the strict qualified-only behavior.
+    pub combat_precursor_min_skirmish_damage: Option<u64>,
+}
+
+fn specialist_distillation_is_default(config: &SpecialistDistillationConfig) -> bool {
+    config == &SpecialistDistillationConfig::default()
+}
+
+impl Default for SpecialistDistillationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ecology_coeff: 0.1,
+            combat_coeff: 0.1,
+            combat_precursor_min_skirmish_damage: None,
+        }
+    }
 }
 
 /// PPO hyperparameters.
@@ -313,6 +380,11 @@ pub struct PPOConfig {
     #[serde(default = "default_entropy_coeff")]
     pub entropy_coeff: f32,
 
+    /// Training-only mixture weight for a uniform draw over currently legal
+    /// action kinds. Conditional target/effort distributions remain learned.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub action_kind_exploration_floor: f32,
+
     #[serde(default = "default_value_loss_coeff")]
     pub value_loss_coeff: f32,
 
@@ -323,6 +395,12 @@ pub struct PPOConfig {
     /// already too large. Set to `None` to disable early stopping.
     #[serde(default = "default_target_kl")]
     pub target_kl: Option<f32>,
+
+    /// Functional distillation penalty against the verified initial policy.
+    /// This anchors every policy head and the cell-private recurrent
+    /// transition on ordinary rollout observations. Zero disables anchoring.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub initial_policy_anchor_coeff: f32,
 }
 
 /// Model architecture config.
@@ -348,6 +426,11 @@ pub struct EnvConfig {
 
     #[serde(default = "default_cells_per_team")]
     pub cells_per_team: usize,
+
+    /// Pre-match spatial assembly. This affects only initial coordinates and
+    /// is included in the scientific scenario identity.
+    #[serde(default)]
+    pub starting_cell_layout: StartingCellLayout,
 
     #[serde(default = "default_max_episode_len")]
     /// Host safety ceiling measured in team-zero decision frontiers. Scientific
@@ -393,17 +476,394 @@ pub struct EnvConfig {
     #[serde(default = "default_num_scattered_energy")]
     pub num_scattered_energy: usize,
 
+    /// Spatial treatment for initial loose-energy sources.
+    #[serde(default)]
+    pub scattered_energy_layout: ResourceLayout,
+
     #[serde(default = "default_scattered_energy_amount")]
     pub scattered_energy_amount: u32,
 
     #[serde(default = "default_num_plants")]
     pub num_plants: usize,
 
+    /// Spatial treatment for initial plant sources, independent of loose
+    /// energy so their causal effects can be crossed experimentally.
+    #[serde(default)]
+    pub plant_layout: ResourceLayout,
+
     #[serde(default = "default_plant_rate")]
     pub plant_rate: u32,
 
     #[serde(default = "default_plant_max_energy")]
     pub plant_max_energy: u32,
+
+    /// Initial resource placement used by explicit curriculum scenarios.
+    /// This changes only episode initialization, never observations or physics.
+    #[serde(default)]
+    pub resource_placement: ResourcePlacement,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourcePlacement {
+    #[default]
+    Random,
+    /// Symmetric scenario placement: put a plant under every team's starting
+    /// cells. Useful for single-founder-on-food controls.
+    OnAllCells,
+    OnTrainingCells,
+    AdjacentToTrainingCells,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedingCurriculumStage {
+    OnFood,
+    AdjacentFood,
+    Contact,
+    Skirmish,
+    Competitive,
+}
+
+impl fmt::Display for FeedingCurriculumStage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::OnFood => "on_food",
+            Self::AdjacentFood => "adjacent_food",
+            Self::Contact => "contact",
+            Self::Skirmish => "skirmish",
+            Self::Competitive => "competitive",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct FeedingPromotionGateConfig {
+    pub min_on_food_episode_success_rate: f64,
+    pub min_adjacent_episode_success_rate: f64,
+    pub min_survival_rate: f64,
+    pub min_consumed_energy_per_initial_cell: f64,
+    pub evaluation_max_episode_len: u64,
+    pub evaluation_sim_time_limit_quanta: u64,
+}
+
+impl Default for FeedingPromotionGateConfig {
+    fn default() -> Self {
+        Self {
+            min_on_food_episode_success_rate: 0.95,
+            min_adjacent_episode_success_rate: 0.80,
+            min_survival_rate: 0.80,
+            min_consumed_energy_per_initial_cell: 1.0,
+            evaluation_max_episode_len: 4096,
+            evaluation_sim_time_limit_quanta: 65_536,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct FeedingCurriculumConfig {
+    pub enabled: bool,
+    /// Whether fresh rollout environments use the two prerequisite stages.
+    /// Retention evaluation remains active whenever `enabled` is true.
+    #[serde(default = "default_true")]
+    pub rollout_stages_enabled: bool,
+    /// Per-environment cumulative canonical world time at which on-food
+    /// episodes stop being assigned to newly reset environments.
+    pub on_food_until_sim_time_quanta_per_env: u64,
+    /// Per-environment cumulative canonical world time at which adjacent-food
+    /// episodes stop and ordinary competitive rollout assignment begins.
+    pub adjacent_food_until_sim_time_quanta_per_env: u64,
+    pub promotion: FeedingPromotionGateConfig,
+}
+
+impl Default for FeedingCurriculumConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rollout_stages_enabled: true,
+            on_food_until_sim_time_quanta_per_env: 524_288,
+            adjacent_food_until_sim_time_quanta_per_env: 1_572_864,
+            promotion: FeedingPromotionGateConfig::default(),
+        }
+    }
+}
+
+impl FeedingCurriculumConfig {
+    pub fn stage(&self, simulation_time_quanta: u64) -> FeedingCurriculumStage {
+        if !self.enabled
+            || !self.rollout_stages_enabled
+            || simulation_time_quanta >= self.adjacent_food_until_sim_time_quanta_per_env
+        {
+            FeedingCurriculumStage::Competitive
+        } else if simulation_time_quanta >= self.on_food_until_sim_time_quanta_per_env {
+            FeedingCurriculumStage::AdjacentFood
+        } else {
+            FeedingCurriculumStage::OnFood
+        }
+    }
+
+    pub fn environment_for_stage(
+        &self,
+        base: &EnvConfig,
+        stage: FeedingCurriculumStage,
+    ) -> EnvConfig {
+        let mut env = base.clone();
+        env.resource_placement = match stage {
+            FeedingCurriculumStage::OnFood => ResourcePlacement::OnTrainingCells,
+            FeedingCurriculumStage::AdjacentFood => ResourcePlacement::AdjacentToTrainingCells,
+            FeedingCurriculumStage::Contact | FeedingCurriculumStage::Skirmish => {
+                ResourcePlacement::Random
+            }
+            FeedingCurriculumStage::Competitive => ResourcePlacement::Random,
+        };
+        if stage != FeedingCurriculumStage::Competitive {
+            env.opponent = OpponentProfile::Wait;
+        }
+        env
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct CombatCurriculumConfig {
+    pub enabled: bool,
+    /// Repeating per-environment canonical-time cycle.
+    pub cycle_sim_time_quanta_per_env: u64,
+    pub on_food_sim_time_quanta_per_cycle: u64,
+    pub adjacent_food_sim_time_quanta_per_cycle: u64,
+    pub contact_sim_time_quanta_per_cycle: u64,
+    pub skirmish_sim_time_quanta_per_cycle: u64,
+    /// Rollout horizon for ecology-retention stages. Held-out feeding gates use
+    /// `feeding_curriculum.promotion.evaluation_sim_time_limit_quanta`.
+    pub retention_episode_sim_time_limit_quanta: u64,
+    /// Rollout horizon for direct-contact curriculum episodes.
+    pub contact_episode_sim_time_limit_quanta: u64,
+    /// Rollout horizon for local-skirmish curriculum episodes.
+    pub skirmish_episode_sim_time_limit_quanta: u64,
+    /// Independent held-out direct-contact gate horizon.
+    pub contact_evaluation_sim_time_limit_quanta: u64,
+    /// Independent held-out local-skirmish gate horizon.
+    pub skirmish_evaluation_sim_time_limit_quanta: u64,
+    /// Training-only legal-action-kind mixture used during contact episodes.
+    /// Stored on each transition so PPO recomputes the exact behavior policy.
+    pub contact_action_kind_exploration_floor: f32,
+    /// Lower training-only legal-kind mixture for multi-cell skirmishes.
+    pub skirmish_action_kind_exploration_floor: f32,
+    /// Optional functional-anchor coefficient for contact-stage transitions.
+    /// When omitted, the ordinary PPO initial-policy coefficient is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_initial_policy_anchor_coeff: Option<f32>,
+    pub contact_cells_per_team: usize,
+    pub skirmish_cells_per_team: usize,
+    pub contact_initial_energies: Vec<u32>,
+    pub contact_opponents: Vec<OpponentProfile>,
+    /// Resolver-attributed kills required before an evaluated checkpoint may
+    /// be labeled best or promoted. Scenario wins alone are insufficient.
+    pub min_contact_kills_for_promotion: u64,
+    pub min_skirmish_kills_for_promotion: u64,
+}
+
+fn combat_curriculum_is_default(config: &CombatCurriculumConfig) -> bool {
+    config == &CombatCurriculumConfig::default()
+}
+
+impl Default for CombatCurriculumConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cycle_sim_time_quanta_per_env: 262_144,
+            on_food_sim_time_quanta_per_cycle: 32_768,
+            adjacent_food_sim_time_quanta_per_cycle: 32_768,
+            contact_sim_time_quanta_per_cycle: 65_536,
+            skirmish_sim_time_quanta_per_cycle: 65_536,
+            retention_episode_sim_time_limit_quanta: 32_768,
+            contact_episode_sim_time_limit_quanta: 32_768,
+            skirmish_episode_sim_time_limit_quanta: 65_536,
+            contact_evaluation_sim_time_limit_quanta: 32_768,
+            skirmish_evaluation_sim_time_limit_quanta: 65_536,
+            contact_action_kind_exploration_floor: 0.50,
+            skirmish_action_kind_exploration_floor: 0.25,
+            contact_initial_policy_anchor_coeff: None,
+            contact_cells_per_team: 1,
+            skirmish_cells_per_team: 4,
+            contact_initial_energies: vec![60, 100, 180],
+            contact_opponents: vec![OpponentProfile::Aggressive, OpponentProfile::Defensive],
+            min_contact_kills_for_promotion: 0,
+            min_skirmish_kills_for_promotion: 0,
+        }
+    }
+}
+
+impl CombatCurriculumConfig {
+    pub fn stage(
+        &self,
+        feeding: &FeedingCurriculumConfig,
+        simulation_time_quanta: u64,
+    ) -> FeedingCurriculumStage {
+        if !self.enabled {
+            return feeding.stage(simulation_time_quanta);
+        }
+        let phase = simulation_time_quanta % self.cycle_sim_time_quanta_per_env;
+        let adjacent_start = self.on_food_sim_time_quanta_per_cycle;
+        let contact_start =
+            adjacent_start.saturating_add(self.adjacent_food_sim_time_quanta_per_cycle);
+        let skirmish_start = contact_start.saturating_add(self.contact_sim_time_quanta_per_cycle);
+        let competitive_start =
+            skirmish_start.saturating_add(self.skirmish_sim_time_quanta_per_cycle);
+        if phase < adjacent_start {
+            FeedingCurriculumStage::OnFood
+        } else if phase < contact_start {
+            FeedingCurriculumStage::AdjacentFood
+        } else if phase < skirmish_start {
+            FeedingCurriculumStage::Contact
+        } else if phase < competitive_start {
+            FeedingCurriculumStage::Skirmish
+        } else {
+            FeedingCurriculumStage::Competitive
+        }
+    }
+
+    fn variant_index(&self, stage: FeedingCurriculumStage, simulation_time_quanta: u64) -> usize {
+        let episode_limit = match stage {
+            FeedingCurriculumStage::Contact => self.contact_episode_sim_time_limit_quanta,
+            FeedingCurriculumStage::Skirmish => self.skirmish_episode_sim_time_limit_quanta,
+            _ => return 0,
+        };
+        usize::try_from(simulation_time_quanta / episode_limit).unwrap_or(usize::MAX)
+    }
+
+    pub fn combat_opponent(
+        &self,
+        stage: FeedingCurriculumStage,
+        simulation_time_quanta: u64,
+    ) -> OpponentProfile {
+        self.contact_opponents
+            [self.variant_index(stage, simulation_time_quanta) % self.contact_opponents.len()]
+    }
+
+    pub fn combat_initial_energy(
+        &self,
+        stage: FeedingCurriculumStage,
+        simulation_time_quanta: u64,
+    ) -> u32 {
+        self.contact_initial_energies[self.variant_index(stage, simulation_time_quanta)
+            % self.contact_initial_energies.len()]
+    }
+
+    pub fn combat_cells_per_team(&self, stage: FeedingCurriculumStage) -> usize {
+        match stage {
+            FeedingCurriculumStage::Contact => self.contact_cells_per_team,
+            FeedingCurriculumStage::Skirmish => self.skirmish_cells_per_team,
+            _ => 0,
+        }
+    }
+
+    pub fn combat_episode_limit(&self, stage: FeedingCurriculumStage) -> u64 {
+        match stage {
+            FeedingCurriculumStage::Contact => self.contact_episode_sim_time_limit_quanta,
+            FeedingCurriculumStage::Skirmish => self.skirmish_episode_sim_time_limit_quanta,
+            _ => 0,
+        }
+    }
+
+    pub fn combat_evaluation_episode_limit(&self, stage: FeedingCurriculumStage) -> u64 {
+        match stage {
+            FeedingCurriculumStage::Contact => self.contact_evaluation_sim_time_limit_quanta,
+            FeedingCurriculumStage::Skirmish => self.skirmish_evaluation_sim_time_limit_quanta,
+            _ => 0,
+        }
+    }
+
+    pub const fn combat_stages() -> [FeedingCurriculumStage; 2] {
+        [
+            FeedingCurriculumStage::Contact,
+            FeedingCurriculumStage::Skirmish,
+        ]
+    }
+
+    fn stage_remaining_quanta(&self, simulation_time_quanta: u64) -> u64 {
+        let phase = simulation_time_quanta % self.cycle_sim_time_quanta_per_env;
+        let on_food_end = self.on_food_sim_time_quanta_per_cycle;
+        let adjacent_end = on_food_end.saturating_add(self.adjacent_food_sim_time_quanta_per_cycle);
+        let contact_end = adjacent_end.saturating_add(self.contact_sim_time_quanta_per_cycle);
+        let skirmish_end = contact_end.saturating_add(self.skirmish_sim_time_quanta_per_cycle);
+        let stage_end = if phase < on_food_end {
+            on_food_end
+        } else if phase < adjacent_end {
+            adjacent_end
+        } else if phase < contact_end {
+            contact_end
+        } else if phase < skirmish_end {
+            skirmish_end
+        } else {
+            self.cycle_sim_time_quanta_per_env
+        };
+        stage_end.saturating_sub(phase).max(1)
+    }
+
+    pub fn environment_for_stage(
+        &self,
+        feeding: &FeedingCurriculumConfig,
+        base: &EnvConfig,
+        stage: FeedingCurriculumStage,
+        simulation_time_quanta: u64,
+    ) -> EnvConfig {
+        if !self.enabled {
+            return feeding.environment_for_stage(base, stage);
+        }
+        let mut env = match stage {
+            FeedingCurriculumStage::Contact | FeedingCurriculumStage::Skirmish => {
+                let mut env = base.clone();
+                env.cells_per_team = self.combat_cells_per_team(stage);
+                env.starting_cell_layout = match stage {
+                    FeedingCurriculumStage::Contact => StartingCellLayout::PairedContact,
+                    FeedingCurriculumStage::Skirmish => StartingCellLayout::OpposedLines,
+                    _ => unreachable!(),
+                };
+                env.initial_energy = self.combat_initial_energy(stage, simulation_time_quanta);
+                env.num_scattered_energy = 0;
+                env.num_plants = 0;
+                env.resource_placement = ResourcePlacement::Random;
+                env.opponent = self.combat_opponent(stage, simulation_time_quanta);
+                env.victory.sim_time_limit_quanta = self.combat_episode_limit(stage);
+                env
+            }
+            FeedingCurriculumStage::OnFood | FeedingCurriculumStage::AdjacentFood => {
+                let mut env = feeding.environment_for_stage(base, stage);
+                env.victory.sim_time_limit_quanta = self.retention_episode_sim_time_limit_quanta;
+                env
+            }
+            FeedingCurriculumStage::Competitive => feeding.environment_for_stage(base, stage),
+        };
+        if matches!(
+            stage,
+            FeedingCurriculumStage::Contact | FeedingCurriculumStage::Skirmish
+        ) {
+            env.max_episode_len = env.max_episode_len.max(256);
+        }
+        // Stages rotate only at episode reset. Cap every new episode by the
+        // remaining canonical time in its assigned stage so a long episode
+        // cannot cross a boundary and silently skip later curriculum blocks.
+        env.victory.sim_time_limit_quanta = env
+            .victory
+            .sim_time_limit_quanta
+            .min(self.stage_remaining_quanta(simulation_time_quanta));
+        env
+    }
+
+    pub fn evaluation_environment_for_stage(
+        &self,
+        feeding: &FeedingCurriculumConfig,
+        base: &EnvConfig,
+        stage: FeedingCurriculumStage,
+        simulation_time_quanta: u64,
+    ) -> EnvConfig {
+        let mut env = self.environment_for_stage(feeding, base, stage, simulation_time_quanta);
+        env.victory.sim_time_limit_quanta = self.combat_evaluation_episode_limit(stage);
+        env
+    }
 }
 
 /// Initial world and population parameters, distinct from resolver semantics.
@@ -414,15 +874,19 @@ pub struct EnvConfig {
 pub struct ScenarioProfile {
     pub world_size: usize,
     pub cells_per_team: usize,
+    pub starting_cell_layout: StartingCellLayout,
     pub victory: VictoryConfig,
     pub num_teams: usize,
     pub min_energy: u32,
     pub initial_energy: u32,
     pub num_scattered_energy: usize,
+    pub scattered_energy_layout: ResourceLayout,
     pub scattered_energy_amount: u32,
     pub num_plants: usize,
+    pub plant_layout: ResourceLayout,
     pub plant_rate: u32,
     pub plant_max_energy: u32,
+    pub resource_placement: ResourcePlacement,
 }
 
 impl From<&EnvConfig> for ScenarioProfile {
@@ -430,15 +894,19 @@ impl From<&EnvConfig> for ScenarioProfile {
         Self {
             world_size: env.world_size,
             cells_per_team: env.cells_per_team,
+            starting_cell_layout: env.starting_cell_layout,
             victory: env.victory.clone(),
             num_teams: env.num_teams,
             min_energy: env.min_energy,
             initial_energy: env.initial_energy,
             num_scattered_energy: env.num_scattered_energy,
+            scattered_energy_layout: env.scattered_energy_layout.clone(),
             scattered_energy_amount: env.scattered_energy_amount,
             num_plants: env.num_plants,
+            plant_layout: env.plant_layout.clone(),
             plant_rate: env.plant_rate,
             plant_max_energy: env.plant_max_energy,
+            resource_placement: env.resource_placement,
         }
     }
 }
@@ -454,15 +922,19 @@ impl ScenarioProfile {
     fn apply_to(&self, env: &mut EnvConfig) {
         env.world_size = self.world_size;
         env.cells_per_team = self.cells_per_team;
+        env.starting_cell_layout = self.starting_cell_layout;
         env.victory = self.victory.clone();
         env.num_teams = self.num_teams;
         env.min_energy = self.min_energy;
         env.initial_energy = self.initial_energy;
         env.num_scattered_energy = self.num_scattered_energy;
+        env.scattered_energy_layout = self.scattered_energy_layout.clone();
         env.scattered_energy_amount = self.scattered_energy_amount;
         env.num_plants = self.num_plants;
+        env.plant_layout = self.plant_layout.clone();
         env.plant_rate = self.plant_rate;
         env.plant_max_energy = self.plant_max_energy;
+        env.resource_placement = self.resource_placement;
     }
 }
 
@@ -474,6 +946,11 @@ pub struct RewardConfig {
 
     #[serde(default = "default_eat_energy")]
     pub eat_energy: f32,
+
+    /// Reward per unit of resolver-confirmed damage applied to an opposing
+    /// cell. Friendly-fire and overkill damage receive no credit.
+    #[serde(default)]
+    pub damage_enemy: f32,
 
     #[serde(default = "default_kill_enemy")]
     pub kill_enemy: f32,
@@ -509,9 +986,10 @@ pub struct RewardConfig {
 /// Self-play config.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SelfPlayConfig {
-    /// First completed training-action count eligible for pool promotion.
+    /// Minimum cumulative canonical world time required in every rollout
+    /// environment before snapshots may enter the opponent pool.
     #[serde(default = "default_self_play_start")]
-    pub start_after_timesteps: u64,
+    pub start_after_sim_time_quanta_per_env: u64,
 
     /// PPO update cadence for promotion evaluation. A zero-sized pool disables
     /// self-play entirely; otherwise this interval must be positive.
@@ -549,6 +1027,12 @@ pub struct SelfPlayConfig {
 
 fn default_num_envs() -> usize {
     16
+}
+fn is_zero_f32(value: &f32) -> bool {
+    *value == 0.0
+}
+fn default_true() -> bool {
+    true
 }
 fn default_seed() -> u64 {
     42
@@ -714,7 +1198,7 @@ fn default_proximity_search_radius() -> usize {
 }
 
 fn default_self_play_start() -> u64 {
-    500_000
+    2_097_152
 }
 fn default_opponent_update_interval() -> usize {
     50
@@ -762,9 +1246,11 @@ impl Default for PPOConfig {
             recurrent_unroll_steps: default_recurrent_unroll_steps(),
             learning_rate: default_learning_rate(),
             entropy_coeff: default_entropy_coeff(),
+            action_kind_exploration_floor: 0.0,
             value_loss_coeff: default_value_loss_coeff(),
             max_grad_norm: default_max_grad_norm(),
             target_kl: default_target_kl(),
+            initial_policy_anchor_coeff: 0.0,
         }
     }
 }
@@ -784,6 +1270,7 @@ impl Default for EnvConfig {
         EnvConfig {
             world_size: default_world_size(),
             cells_per_team: default_cells_per_team(),
+            starting_cell_layout: StartingCellLayout::default(),
             max_episode_len: default_max_episode_len(),
             victory: VictoryConfig::default(),
             num_teams: default_num_teams(),
@@ -796,10 +1283,13 @@ impl Default for EnvConfig {
             max_attack_power: default_max_attack_power(),
             max_energy_for_attack_scaling: default_max_energy_for_attack_scaling(),
             num_scattered_energy: default_num_scattered_energy(),
+            scattered_energy_layout: ResourceLayout::default(),
             scattered_energy_amount: default_scattered_energy_amount(),
             num_plants: default_num_plants(),
+            plant_layout: ResourceLayout::default(),
             plant_rate: default_plant_rate(),
             plant_max_energy: default_plant_max_energy(),
+            resource_placement: ResourcePlacement::Random,
         }
     }
 }
@@ -809,6 +1299,7 @@ impl Default for RewardConfig {
         RewardConfig {
             survive_tick: default_survive_tick(),
             eat_energy: default_eat_energy(),
+            damage_enemy: 0.0,
             kill_enemy: default_kill_enemy(),
             cell_died: default_cell_died(),
             split_success: default_split_success(),
@@ -825,7 +1316,7 @@ impl Default for RewardConfig {
 impl Default for SelfPlayConfig {
     fn default() -> Self {
         SelfPlayConfig {
-            start_after_timesteps: default_self_play_start(),
+            start_after_sim_time_quanta_per_env: default_self_play_start(),
             opponent_update_interval: default_opponent_update_interval(),
             max_opponent_pool: default_max_opponent_pool(),
             baseline_probability: default_baseline_probability(),
@@ -840,6 +1331,93 @@ impl Default for SelfPlayConfig {
 }
 
 impl TrainingConfig {
+    pub fn rollout_stage(&self, simulation_time_quanta: u64) -> FeedingCurriculumStage {
+        self.combat_curriculum
+            .stage(&self.feeding_curriculum, simulation_time_quanta)
+    }
+
+    pub fn rollout_environment(
+        &self,
+        stage: FeedingCurriculumStage,
+        simulation_time_quanta: u64,
+    ) -> EnvConfig {
+        self.combat_curriculum.environment_for_stage(
+            &self.feeding_curriculum,
+            &self.env,
+            stage,
+            simulation_time_quanta,
+        )
+    }
+
+    pub fn rollout_baseline_opponent(
+        &self,
+        stage: FeedingCurriculumStage,
+        simulation_time_quanta: u64,
+    ) -> OpponentProfile {
+        match stage {
+            FeedingCurriculumStage::Competitive => self.env.opponent,
+            FeedingCurriculumStage::Contact | FeedingCurriculumStage::Skirmish => self
+                .combat_curriculum
+                .combat_opponent(stage, simulation_time_quanta),
+            FeedingCurriculumStage::OnFood | FeedingCurriculumStage::AdjacentFood => {
+                OpponentProfile::Wait
+            }
+        }
+    }
+
+    pub fn rollout_action_kind_exploration_floor(&self, stage: FeedingCurriculumStage) -> f32 {
+        if self.combat_curriculum.enabled {
+            match stage {
+                FeedingCurriculumStage::Contact => {
+                    return self.combat_curriculum.contact_action_kind_exploration_floor;
+                }
+                FeedingCurriculumStage::Skirmish => {
+                    return self
+                        .combat_curriculum
+                        .skirmish_action_kind_exploration_floor;
+                }
+                _ => {}
+            }
+        }
+        self.ppo.action_kind_exploration_floor
+    }
+
+    pub fn rollout_initial_policy_anchor_coeff(&self, stage: FeedingCurriculumStage) -> f32 {
+        if self.combat_curriculum.enabled && stage == FeedingCurriculumStage::Contact {
+            self.combat_curriculum
+                .contact_initial_policy_anchor_coeff
+                .unwrap_or(self.ppo.initial_policy_anchor_coeff)
+        } else {
+            self.ppo.initial_policy_anchor_coeff
+        }
+    }
+
+    pub fn rollout_specialist_distillation_coeff(
+        &self,
+        stage: FeedingCurriculumStage,
+    ) -> Option<f32> {
+        if !self.specialist_distillation.enabled {
+            return None;
+        }
+        match stage {
+            FeedingCurriculumStage::OnFood | FeedingCurriculumStage::AdjacentFood => {
+                Some(self.specialist_distillation.ecology_coeff)
+            }
+            FeedingCurriculumStage::Contact | FeedingCurriculumStage::Skirmish => {
+                Some(self.specialist_distillation.combat_coeff)
+            }
+            FeedingCurriculumStage::Competitive => None,
+        }
+    }
+
+    pub fn uses_initial_policy_anchor(&self) -> bool {
+        self.ppo.initial_policy_anchor_coeff > 0.0
+            || self
+                .combat_curriculum
+                .contact_initial_policy_anchor_coeff
+                .is_some_and(|coefficient| coefficient > 0.0)
+    }
+
     /// Parse a training config while applying the hosted rules profile as the
     /// base for partial `[env.rules]` overrides. Checkpoint JSON always stores
     /// the fully expanded profile, so this merge is needed only for TOML input.
@@ -901,6 +1479,50 @@ impl TrainingConfig {
         Ok(config)
     }
 
+    /// Clone this training configuration and apply a strict partial combat-
+    /// curriculum override. This intentionally exposes only the curriculum
+    /// profile: a cadence sweep cannot silently alter physics, rewards, PPO,
+    /// model capacity, evaluation seeds, or the base competitive scenario.
+    pub fn with_combat_curriculum_override(
+        &self,
+        combat_curriculum: &toml::Table,
+    ) -> Result<Self, String> {
+        let mut expanded = toml::Value::try_from(&self.combat_curriculum)
+            .map_err(|error| format!("Failed to encode base combat curriculum: {error}"))?;
+        merge_toml_override(
+            &mut expanded,
+            &toml::Value::Table(combat_curriculum.clone()),
+        );
+        let mut config = self.clone();
+        config.combat_curriculum = expanded
+            .try_into()
+            .map_err(|error| format!("Failed to parse combat-curriculum override: {error}"))?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Clone this training configuration and apply a strict partial
+    /// specialist-distillation override. Keeping this as a dedicated sweep
+    /// seam prevents a retention experiment from silently changing PPO,
+    /// curriculum cadence, physics, rewards, or model capacity.
+    pub fn with_specialist_distillation_override(
+        &self,
+        specialist_distillation: &toml::Table,
+    ) -> Result<Self, String> {
+        let mut expanded = toml::Value::try_from(&self.specialist_distillation)
+            .map_err(|error| format!("Failed to encode specialist distillation: {error}"))?;
+        merge_toml_override(
+            &mut expanded,
+            &toml::Value::Table(specialist_distillation.clone()),
+        );
+        let mut config = self.clone();
+        config.specialist_distillation = expanded.try_into().map_err(|error| {
+            format!("Failed to parse specialist-distillation override: {error}")
+        })?;
+        config.validate()?;
+        Ok(config)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.num_envs == 0 {
             return Err("num_envs must be positive".into());
@@ -911,6 +1533,126 @@ impl TrainingConfig {
         }
         if self.total_simulation_quanta_per_env == Some(0) {
             return Err("total_simulation_quanta_per_env must be positive when set".into());
+        }
+        let feeding = &self.feeding_curriculum;
+        let gate = &feeding.promotion;
+        if feeding.enabled
+            && feeding.rollout_stages_enabled
+            && (feeding.on_food_until_sim_time_quanta_per_env == 0
+                || feeding.on_food_until_sim_time_quanta_per_env
+                    >= feeding.adjacent_food_until_sim_time_quanta_per_env)
+        {
+            return Err(
+                "feeding curriculum simulation-time frontiers must be positive and strictly ordered"
+                    .into(),
+            );
+        }
+        let feeding_rates = [
+            gate.min_on_food_episode_success_rate,
+            gate.min_adjacent_episode_success_rate,
+            gate.min_survival_rate,
+        ];
+        if feeding_rates
+            .iter()
+            .any(|rate| !rate.is_finite() || !(0.0..=1.0).contains(rate))
+            || !gate.min_consumed_energy_per_initial_cell.is_finite()
+            || gate.min_consumed_energy_per_initial_cell < 0.0
+            || gate.evaluation_max_episode_len == 0
+            || gate.evaluation_sim_time_limit_quanta == 0
+        {
+            return Err("feeding promotion thresholds and horizons are invalid".into());
+        }
+        let combat = &self.combat_curriculum;
+        let distillation = &self.specialist_distillation;
+        if distillation.enabled
+            && (!feeding.enabled
+                || !combat.enabled
+                || !distillation.ecology_coeff.is_finite()
+                || distillation.ecology_coeff < 0.0
+                || !distillation.combat_coeff.is_finite()
+                || distillation.combat_coeff < 0.0
+                || (distillation.ecology_coeff == 0.0 && distillation.combat_coeff == 0.0))
+        {
+            return Err(
+                "specialist distillation requires feeding and combat curricula plus a positive finite coefficient"
+                    .into(),
+            );
+        }
+        if distillation
+            .combat_precursor_min_skirmish_damage
+            .is_some_and(|minimum| {
+                !distillation.enabled || minimum == 0 || distillation.combat_coeff <= 0.0
+            })
+        {
+            return Err(
+                "combat precursor distillation requires enabled specialist distillation, a positive combat coefficient, and a positive damage threshold"
+                    .into(),
+            );
+        }
+        if !combat.enabled && combat.contact_initial_policy_anchor_coeff.is_some() {
+            return Err(
+                "contact-specific anchoring requires the combat curriculum to be enabled".into(),
+            );
+        }
+        if !combat.enabled
+            && (combat.min_contact_kills_for_promotion > 0
+                || combat.min_skirmish_kills_for_promotion > 0)
+        {
+            return Err(
+                "combat kill thresholds require the combat curriculum to be enabled".into(),
+            );
+        }
+        if combat.enabled {
+            let scheduled = combat
+                .on_food_sim_time_quanta_per_cycle
+                .checked_add(combat.adjacent_food_sim_time_quanta_per_cycle)
+                .and_then(|value| value.checked_add(combat.contact_sim_time_quanta_per_cycle))
+                .and_then(|value| value.checked_add(combat.skirmish_sim_time_quanta_per_cycle));
+            if !feeding.enabled
+                || combat.cycle_sim_time_quanta_per_env == 0
+                || combat.on_food_sim_time_quanta_per_cycle == 0
+                || combat.adjacent_food_sim_time_quanta_per_cycle == 0
+                || combat.contact_sim_time_quanta_per_cycle == 0
+                || combat.skirmish_sim_time_quanta_per_cycle == 0
+                || scheduled.is_none_or(|value| value >= combat.cycle_sim_time_quanta_per_env)
+                || combat.retention_episode_sim_time_limit_quanta == 0
+                || combat.contact_episode_sim_time_limit_quanta == 0
+                || combat.skirmish_episode_sim_time_limit_quanta == 0
+                || combat.contact_evaluation_sim_time_limit_quanta == 0
+                || combat.skirmish_evaluation_sim_time_limit_quanta == 0
+                || !combat.contact_action_kind_exploration_floor.is_finite()
+                || !(0.0..1.0).contains(&combat.contact_action_kind_exploration_floor)
+                || !combat.skirmish_action_kind_exploration_floor.is_finite()
+                || !(0.0..1.0).contains(&combat.skirmish_action_kind_exploration_floor)
+                || combat
+                    .contact_initial_policy_anchor_coeff
+                    .is_some_and(|value| !value.is_finite() || value < 0.0)
+                || combat.contact_cells_per_team == 0
+                || combat.skirmish_cells_per_team == 0
+                || combat.contact_initial_energies.is_empty()
+                || combat.contact_opponents.is_empty()
+                || self.env.num_teams != 2
+                || self.env.world_size < 2
+                || combat.contact_cells_per_team
+                    > (self.env.world_size / 2).saturating_mul(self.env.world_size)
+                || self.env.world_size < 2
+                || combat.skirmish_cells_per_team > self.env.world_size
+                || combat.contact_initial_energies.iter().any(|energy| {
+                    u64::from(*energy) <= self.env.rules.minimum_survival_energy
+                        || *energy > self.env.max_energy
+                })
+                || combat.contact_opponents.iter().any(|opponent| {
+                    !matches!(
+                        opponent,
+                        OpponentProfile::Aggressive | OpponentProfile::Defensive
+                    )
+                })
+            {
+                return Err(
+                    "combat curriculum cycle, contact variants, or retention settings are invalid"
+                        .into(),
+                );
+            }
         }
         if let Some(initial) = &self.initial_policy {
             if initial.directory.trim().is_empty()
@@ -923,6 +1665,23 @@ impl TrainingConfig {
                 return Err(
                     "initial_policy requires a directory and 64-character lowercase SHA-256".into(),
                 );
+            }
+            if feeding.enabled && initial.qualification.is_none() {
+                return Err("feeding-gated initial_policy requires qualification evidence".into());
+            }
+            if let Some(qualification) = &initial.qualification {
+                if qualification.path.trim().is_empty()
+                    || qualification.artifact_hash.len() != 64
+                    || !qualification
+                        .artifact_hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                {
+                    return Err(
+                        "initial_policy qualification requires a path and 64-character lowercase artifact hash"
+                            .into(),
+                    );
+                }
             }
         }
         if self.eval_interval > 0 && self.eval_episodes == 0 {
@@ -1019,12 +1778,16 @@ impl TrainingConfig {
             || !self.ppo.learning_rate.is_finite()
             || self.ppo.learning_rate <= 0.0
             || self.ppo.entropy_coeff < 0.0
+            || !self.ppo.action_kind_exploration_floor.is_finite()
+            || !(0.0..1.0).contains(&self.ppo.action_kind_exploration_floor)
             || self.ppo.value_loss_coeff < 0.0
             || self.ppo.max_grad_norm <= 0.0
             || self
                 .ppo
                 .target_kl
                 .is_some_and(|value| !value.is_finite() || value <= 0.0)
+            || !self.ppo.initial_policy_anchor_coeff.is_finite()
+            || self.ppo.initial_policy_anchor_coeff < 0.0
         {
             return Err(
                 "PPO coefficients, epochs, batch size, recurrent unroll steps (1..=256), and learning rate are invalid".into(),
@@ -1055,6 +1818,51 @@ impl TrainingConfig {
         if starting_cells > tiles {
             return Err("starting population exceeds world area".into());
         }
+        let layout_side = (self.env.cells_per_team as f64).sqrt().ceil() as usize;
+        match self.env.starting_cell_layout {
+            StartingCellLayout::Line if self.env.cells_per_team > self.env.world_size => {
+                return Err("line starting layout population exceeds world width".into());
+            }
+            StartingCellLayout::Checkerboard
+                if layout_side.saturating_mul(2).saturating_sub(1) > self.env.world_size =>
+            {
+                return Err("checkerboard starting layout exceeds world dimensions".into());
+            }
+            StartingCellLayout::Ring
+                if self.env.cells_per_team > 1
+                    && self
+                        .env
+                        .cells_per_team
+                        .div_ceil(8)
+                        .saturating_mul(2)
+                        .saturating_add(1)
+                        > self.env.world_size =>
+            {
+                return Err("ring starting layout exceeds world dimensions".into());
+            }
+            StartingCellLayout::PairedContact
+                if self.env.num_teams != 2
+                    || self.env.world_size < 2
+                    || self.env.cells_per_team
+                        > (self.env.world_size / 2).saturating_mul(self.env.world_size) =>
+            {
+                return Err(
+                    "paired-contact starting layout requires two teams and fits paired tiles"
+                        .into(),
+                );
+            }
+            StartingCellLayout::OpposedLines
+                if self.env.num_teams != 2
+                    || self.env.world_size < 2
+                    || self.env.cells_per_team > self.env.world_size =>
+            {
+                return Err(
+                    "opposed-lines starting layout requires two teams and fits two adjacent lines"
+                        .into(),
+                );
+            }
+            _ => {}
+        }
         let resource_sources = self
             .env
             .num_scattered_energy
@@ -1063,9 +1871,24 @@ impl TrainingConfig {
         if resource_sources > tiles {
             return Err("initial resource sources exceed world area".into());
         }
+        self.env
+            .scattered_energy_layout
+            .validate_for_scenario(self.env.world_size, self.env.world_size, self.env.num_teams)
+            .map_err(|error| format!("invalid loose-energy layout: {error}"))?;
+        self.env
+            .plant_layout
+            .validate_for_scenario(self.env.world_size, self.env.world_size, self.env.num_teams)
+            .map_err(|error| format!("invalid plant layout: {error}"))?;
+        if self.env.resource_placement != ResourcePlacement::Random && self.env.plant_max_energy < 2
+        {
+            return Err(
+                "curriculum resource placement requires plant_max_energy of at least 2".into(),
+            );
+        }
         let rewards = [
             self.reward.survive_tick,
             self.reward.eat_energy,
+            self.reward.damage_enemy,
             self.reward.kill_enemy,
             self.reward.cell_died,
             self.reward.split_success,
@@ -1132,11 +1955,23 @@ mod tests {
         config.initial_policy = Some(InitialPolicyConfig {
             directory: "artifact".into(),
             artifact_sha256: "not-a-hash".into(),
+            qualification: None,
         });
         assert!(config
             .validate()
             .unwrap_err()
             .contains("initial_policy requires"));
+        config.initial_policy = Some(InitialPolicyConfig {
+            directory: "artifact".into(),
+            artifact_sha256: "a".repeat(64),
+            qualification: None,
+        });
+        config.feeding_curriculum.enabled = true;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            "feeding-gated initial_policy requires qualification evidence"
+        );
+        config.feeding_curriculum.enabled = false;
         config.initial_policy = None;
         config.ppo.gamma = 1.1;
         assert_eq!(
@@ -1198,6 +2033,363 @@ mod tests {
         assert_eq!(
             config.validate().unwrap_err(),
             "initial resource sources exceed world area"
+        );
+    }
+
+    #[test]
+    fn feeding_curriculum_stages_are_exact_and_preserve_the_mind_boundary() {
+        let curriculum = FeedingCurriculumConfig {
+            enabled: true,
+            on_food_until_sim_time_quanta_per_env: 10,
+            adjacent_food_until_sim_time_quanta_per_env: 20,
+            ..FeedingCurriculumConfig::default()
+        };
+        assert_eq!(curriculum.stage(0), FeedingCurriculumStage::OnFood);
+        assert_eq!(curriculum.stage(9), FeedingCurriculumStage::OnFood);
+        assert_eq!(curriculum.stage(10), FeedingCurriculumStage::AdjacentFood);
+        assert_eq!(curriculum.stage(19), FeedingCurriculumStage::AdjacentFood);
+        assert_eq!(curriculum.stage(20), FeedingCurriculumStage::Competitive);
+        let competitive_transfer = FeedingCurriculumConfig {
+            rollout_stages_enabled: false,
+            ..curriculum.clone()
+        };
+        assert_eq!(
+            competitive_transfer.stage(0),
+            FeedingCurriculumStage::Competitive
+        );
+
+        let base = EnvConfig {
+            opponent: OpponentProfile::Aggressive,
+            ..EnvConfig::default()
+        };
+        let on_food = curriculum.environment_for_stage(&base, FeedingCurriculumStage::OnFood);
+        assert_eq!(
+            on_food.resource_placement,
+            ResourcePlacement::OnTrainingCells
+        );
+        assert_eq!(on_food.opponent, OpponentProfile::Wait);
+        assert_eq!(on_food.rules, base.rules);
+        let competitive =
+            curriculum.environment_for_stage(&base, FeedingCurriculumStage::Competitive);
+        assert_eq!(competitive.resource_placement, ResourcePlacement::Random);
+        assert_eq!(competitive.opponent, OpponentProfile::Aggressive);
+        assert_eq!(competitive.rules, base.rules);
+    }
+
+    #[test]
+    fn combat_curriculum_cycles_retention_contact_and_competitive_stages() {
+        let mut config = TrainingConfig::default();
+        config.feeding_curriculum.enabled = true;
+        config.feeding_curriculum.rollout_stages_enabled = false;
+        config.combat_curriculum.enabled = true;
+
+        assert_eq!(config.rollout_stage(0), FeedingCurriculumStage::OnFood);
+        assert_eq!(config.rollout_stage(32_767), FeedingCurriculumStage::OnFood);
+        assert_eq!(
+            config.rollout_stage(32_768),
+            FeedingCurriculumStage::AdjacentFood
+        );
+        assert_eq!(
+            config.rollout_stage(65_536),
+            FeedingCurriculumStage::Contact
+        );
+        assert_eq!(
+            config.rollout_stage(131_072),
+            FeedingCurriculumStage::Skirmish
+        );
+        assert_eq!(
+            config.rollout_stage(196_608),
+            FeedingCurriculumStage::Competitive
+        );
+        assert_eq!(
+            config.rollout_stage(262_144),
+            FeedingCurriculumStage::OnFood
+        );
+
+        let aggressive = config.rollout_environment(FeedingCurriculumStage::Contact, 65_536);
+        assert_eq!(aggressive.cells_per_team, 1);
+        assert_eq!(
+            aggressive.starting_cell_layout,
+            StartingCellLayout::PairedContact
+        );
+        assert_eq!(aggressive.initial_energy, 180);
+        assert_eq!(aggressive.opponent, OpponentProfile::Aggressive);
+        assert_eq!(aggressive.num_plants, 0);
+        assert_eq!(aggressive.num_scattered_energy, 0);
+        assert_eq!(aggressive.victory.sim_time_limit_quanta, 32_768);
+
+        let defensive = config.rollout_environment(FeedingCurriculumStage::Contact, 98_304);
+        assert_eq!(defensive.initial_energy, 60);
+        assert_eq!(defensive.opponent, OpponentProfile::Defensive);
+        assert_eq!(
+            config.rollout_baseline_opponent(FeedingCurriculumStage::Contact, 98_304),
+            OpponentProfile::Defensive
+        );
+        assert_eq!(
+            config.rollout_action_kind_exploration_floor(FeedingCurriculumStage::Contact),
+            0.50
+        );
+        assert_eq!(
+            config.rollout_action_kind_exploration_floor(FeedingCurriculumStage::Competitive),
+            config.ppo.action_kind_exploration_floor
+        );
+
+        let skirmish = config.rollout_environment(FeedingCurriculumStage::Skirmish, 131_072);
+        assert_eq!(skirmish.cells_per_team, 4);
+        assert_eq!(
+            skirmish.starting_cell_layout,
+            StartingCellLayout::OpposedLines
+        );
+        assert_eq!(skirmish.initial_energy, 180);
+        assert_eq!(skirmish.opponent, OpponentProfile::Aggressive);
+        assert_eq!(skirmish.num_plants, 0);
+        assert_eq!(skirmish.num_scattered_energy, 0);
+        assert_eq!(skirmish.victory.sim_time_limit_quanta, 65_536);
+        assert_eq!(
+            config.rollout_action_kind_exploration_floor(FeedingCurriculumStage::Skirmish),
+            0.25
+        );
+        let late_skirmish = config.rollout_environment(FeedingCurriculumStage::Skirmish, 190_000);
+        assert_eq!(late_skirmish.victory.sim_time_limit_quanta, 6_608);
+        let late_competitive =
+            config.rollout_environment(FeedingCurriculumStage::Competitive, 200_000);
+        assert_eq!(late_competitive.victory.sim_time_limit_quanta, 62_144);
+    }
+
+    #[test]
+    fn combat_curriculum_episode_horizons_do_not_cross_stage_boundaries() {
+        for profile in [
+            "competitive_transfer_large_skirmish.toml",
+            "competitive_transfer_large_skirmish_frequent.toml",
+            "competitive_transfer_large_specialist_distillation.toml",
+        ] {
+            let path = format!("{}/config/{profile}", env!("CARGO_MANIFEST_DIR"));
+            let config = TrainingConfig::from_file(&path).unwrap();
+            config.validate().unwrap();
+            let curriculum = &config.combat_curriculum;
+            let stage_lengths = [
+                curriculum.on_food_sim_time_quanta_per_cycle,
+                curriculum.adjacent_food_sim_time_quanta_per_cycle,
+                curriculum.contact_sim_time_quanta_per_cycle,
+                curriculum.skirmish_sim_time_quanta_per_cycle,
+                curriculum.cycle_sim_time_quanta_per_env.saturating_sub(
+                    curriculum
+                        .on_food_sim_time_quanta_per_cycle
+                        .saturating_add(curriculum.adjacent_food_sim_time_quanta_per_cycle)
+                        .saturating_add(curriculum.contact_sim_time_quanta_per_cycle)
+                        .saturating_add(curriculum.skirmish_sim_time_quanta_per_cycle),
+                ),
+            ];
+
+            for cycle in 0..2 {
+                let mut stage_start = cycle * curriculum.cycle_sim_time_quanta_per_env;
+                for stage_length in stage_lengths {
+                    for offset in [0, 1, stage_length / 2, stage_length - 1] {
+                        let time = stage_start + offset;
+                        let stage = config.rollout_stage(time);
+                        let environment = config.rollout_environment(stage, time);
+                        let end = time + environment.victory.sim_time_limit_quanta;
+                        assert!(
+                            end <= stage_start + stage_length,
+                            "{profile} episode at {time} crossed its {stage} boundary"
+                        );
+                        assert_eq!(config.rollout_stage(end - 1), stage);
+                    }
+                    stage_start += stage_length;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn combat_rollout_and_evaluation_horizons_are_independent() {
+        let feeding = FeedingCurriculumConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        let combat = CombatCurriculumConfig {
+            enabled: true,
+            contact_episode_sim_time_limit_quanta: 1_024,
+            skirmish_episode_sim_time_limit_quanta: 2_048,
+            contact_evaluation_sim_time_limit_quanta: 4_096,
+            skirmish_evaluation_sim_time_limit_quanta: 8_192,
+            ..Default::default()
+        };
+        let base = EnvConfig::default();
+        let contact_start = combat
+            .on_food_sim_time_quanta_per_cycle
+            .saturating_add(combat.adjacent_food_sim_time_quanta_per_cycle);
+        let skirmish_start = contact_start + combat.contact_sim_time_quanta_per_cycle;
+
+        let contact_rollout = combat.environment_for_stage(
+            &feeding,
+            &base,
+            FeedingCurriculumStage::Contact,
+            contact_start,
+        );
+        let contact_evaluation = combat.evaluation_environment_for_stage(
+            &feeding,
+            &base,
+            FeedingCurriculumStage::Contact,
+            contact_start,
+        );
+        assert_eq!(contact_rollout.victory.sim_time_limit_quanta, 1_024);
+        assert_eq!(contact_evaluation.victory.sim_time_limit_quanta, 4_096);
+
+        let skirmish_rollout = combat.environment_for_stage(
+            &feeding,
+            &base,
+            FeedingCurriculumStage::Skirmish,
+            skirmish_start,
+        );
+        let skirmish_evaluation = combat.evaluation_environment_for_stage(
+            &feeding,
+            &base,
+            FeedingCurriculumStage::Skirmish,
+            skirmish_start,
+        );
+        assert_eq!(skirmish_rollout.victory.sim_time_limit_quanta, 2_048);
+        assert_eq!(skirmish_evaluation.victory.sim_time_limit_quanta, 8_192);
+    }
+
+    #[test]
+    fn combat_curriculum_rejects_nonlocal_or_incomplete_contact_schedules() {
+        let mut config = TrainingConfig::default();
+        config.combat_curriculum.contact_initial_policy_anchor_coeff = Some(0.5);
+        assert_eq!(
+            config.validate().unwrap_err(),
+            "contact-specific anchoring requires the combat curriculum to be enabled"
+        );
+
+        config.combat_curriculum.contact_initial_policy_anchor_coeff = None;
+        config.combat_curriculum.min_skirmish_kills_for_promotion = 1;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            "combat kill thresholds require the combat curriculum to be enabled"
+        );
+        config.combat_curriculum.min_skirmish_kills_for_promotion = 0;
+        config.combat_curriculum.enabled = true;
+        assert!(config.validate().is_err());
+
+        config.feeding_curriculum.enabled = true;
+        config.combat_curriculum.cycle_sim_time_quanta_per_env = 196_608;
+        assert!(config.validate().is_err());
+
+        config.combat_curriculum.cycle_sim_time_quanta_per_env = 262_144;
+        config.combat_curriculum.contact_initial_energies.clear();
+        assert!(config.validate().is_err());
+
+        config.combat_curriculum.contact_initial_energies = vec![100];
+        config.combat_curriculum.contact_opponents = vec![OpponentProfile::Random];
+        assert!(config.validate().is_err());
+
+        config.combat_curriculum.contact_opponents = vec![OpponentProfile::Defensive];
+        config
+            .combat_curriculum
+            .contact_action_kind_exploration_floor = 1.0;
+        assert!(config.validate().is_err());
+
+        config
+            .combat_curriculum
+            .contact_action_kind_exploration_floor = 0.5;
+        config
+            .combat_curriculum
+            .skirmish_action_kind_exploration_floor = 1.0;
+        assert!(config.validate().is_err());
+
+        config
+            .combat_curriculum
+            .skirmish_action_kind_exploration_floor = 0.25;
+        for invalid in [-0.01, f32::INFINITY, f32::NAN] {
+            config.combat_curriculum.contact_initial_policy_anchor_coeff = Some(invalid);
+            assert!(
+                config.validate().is_err(),
+                "accepted contact anchor coefficient {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn specialist_distillation_is_explicit_and_requires_both_curricula() {
+        let default_json = serde_json::to_value(TrainingConfig::default()).unwrap();
+        assert!(default_json.get("specialist_distillation").is_none());
+
+        let mut config = TrainingConfig::default();
+        config.specialist_distillation.enabled = true;
+        assert!(config.validate().is_err());
+        config.feeding_curriculum.enabled = true;
+        config.combat_curriculum.enabled = true;
+        assert!(config.validate().is_ok());
+        assert_eq!(
+            config.rollout_specialist_distillation_coeff(FeedingCurriculumStage::OnFood),
+            Some(0.1)
+        );
+        assert_eq!(
+            config.rollout_specialist_distillation_coeff(FeedingCurriculumStage::Skirmish),
+            Some(0.1)
+        );
+        assert_eq!(
+            config.rollout_specialist_distillation_coeff(FeedingCurriculumStage::Competitive),
+            None
+        );
+
+        config.specialist_distillation.ecology_coeff = f32::NAN;
+        assert!(config.validate().is_err());
+
+        let mut precursor = TrainingConfig::default();
+        precursor.feeding_curriculum.enabled = true;
+        precursor.combat_curriculum.enabled = true;
+        precursor.specialist_distillation.enabled = true;
+        precursor
+            .specialist_distillation
+            .combat_precursor_min_skirmish_damage = Some(1);
+        assert!(precursor.validate().is_ok());
+        precursor
+            .specialist_distillation
+            .combat_precursor_min_skirmish_damage = Some(0);
+        assert!(precursor.validate().is_err());
+        precursor
+            .specialist_distillation
+            .combat_precursor_min_skirmish_damage = Some(1);
+        precursor.specialist_distillation.combat_coeff = 0.0;
+        assert!(precursor.validate().is_err());
+        precursor.specialist_distillation.combat_coeff = 0.1;
+        precursor.specialist_distillation.enabled = false;
+        assert!(precursor.validate().is_err());
+    }
+
+    #[test]
+    fn disabled_default_combat_curriculum_is_omitted_from_serialized_configs() {
+        let config = TrainingConfig::default();
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert!(encoded.get("combat_curriculum").is_none());
+        assert_eq!(
+            serde_json::from_value::<TrainingConfig>(encoded).unwrap(),
+            config
+        );
+    }
+
+    #[test]
+    fn feeding_curriculum_rejects_invalid_frontiers_and_gate_thresholds() {
+        let mut config = TrainingConfig::default();
+        config.feeding_curriculum.enabled = true;
+        config
+            .feeding_curriculum
+            .on_food_until_sim_time_quanta_per_env = 10;
+        config
+            .feeding_curriculum
+            .adjacent_food_until_sim_time_quanta_per_env = 10;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            "feeding curriculum simulation-time frontiers must be positive and strictly ordered"
+        );
+        config
+            .feeding_curriculum
+            .adjacent_food_until_sim_time_quanta_per_env = 20;
+        config.feeding_curriculum.promotion.min_survival_rate = f64::NAN;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            "feeding promotion thresholds and horizons are invalid"
         );
     }
 
@@ -1276,10 +2468,15 @@ mod tests {
         let scenario = toml::Table::from_iter([
             ("num_plants".into(), toml::Value::Integer(12)),
             ("initial_energy".into(), toml::Value::Integer(80)),
+            (
+                "starting_cell_layout".into(),
+                toml::Value::String("ring".into()),
+            ),
         ]);
         let changed = base.with_scenario_override(&scenario).unwrap();
         assert_eq!(changed.env.num_plants, 12);
         assert_eq!(changed.env.initial_energy, 80);
+        assert_eq!(changed.env.starting_cell_layout, StartingCellLayout::Ring);
         assert_eq!(changed.env.rules, base.env.rules);
         assert_eq!(changed.reward, base.reward);
         assert_eq!(changed.ppo, base.ppo);
@@ -1301,6 +2498,189 @@ mod tests {
             .with_scenario_override(&host_guard)
             .unwrap_err()
             .contains("unknown field `max_episode_len`"));
+    }
+
+    #[test]
+    fn combat_curriculum_overrides_are_strict_and_isolated() {
+        let mut base = TrainingConfig::default();
+        base.feeding_curriculum.enabled = true;
+        base.combat_curriculum.enabled = true;
+        let changed = base
+            .with_combat_curriculum_override(&toml::Table::from_iter([
+                (
+                    "cycle_sim_time_quanta_per_env".into(),
+                    toml::Value::Integer(131_072),
+                ),
+                (
+                    "on_food_sim_time_quanta_per_cycle".into(),
+                    toml::Value::Integer(16_384),
+                ),
+                (
+                    "adjacent_food_sim_time_quanta_per_cycle".into(),
+                    toml::Value::Integer(16_384),
+                ),
+                (
+                    "contact_sim_time_quanta_per_cycle".into(),
+                    toml::Value::Integer(16_384),
+                ),
+                (
+                    "skirmish_sim_time_quanta_per_cycle".into(),
+                    toml::Value::Integer(49_152),
+                ),
+                (
+                    "retention_episode_sim_time_limit_quanta".into(),
+                    toml::Value::Integer(16_384),
+                ),
+                (
+                    "contact_episode_sim_time_limit_quanta".into(),
+                    toml::Value::Integer(16_384),
+                ),
+                (
+                    "skirmish_episode_sim_time_limit_quanta".into(),
+                    toml::Value::Integer(49_152),
+                ),
+                (
+                    "contact_evaluation_sim_time_limit_quanta".into(),
+                    toml::Value::Integer(8_192),
+                ),
+                (
+                    "skirmish_evaluation_sim_time_limit_quanta".into(),
+                    toml::Value::Integer(24_576),
+                ),
+            ]))
+            .unwrap();
+        assert_eq!(
+            changed.combat_curriculum.cycle_sim_time_quanta_per_env,
+            131_072
+        );
+        assert_eq!(
+            changed.combat_curriculum.skirmish_sim_time_quanta_per_cycle,
+            49_152
+        );
+        assert_eq!(
+            changed
+                .combat_curriculum
+                .contact_evaluation_sim_time_limit_quanta,
+            8_192
+        );
+        assert_eq!(
+            changed
+                .combat_curriculum
+                .skirmish_evaluation_sim_time_limit_quanta,
+            24_576
+        );
+        assert_eq!(changed.env, base.env);
+        assert_eq!(changed.reward, base.reward);
+        assert_eq!(changed.ppo, base.ppo);
+        assert_eq!(changed.model, base.model);
+        assert_eq!(changed.evaluation_seed, base.evaluation_seed);
+
+        let typo = toml::Table::from_iter([(
+            "skirmish_sim_time_quanta_per_cyle".into(),
+            toml::Value::Integer(49_152),
+        )]);
+        assert!(base
+            .with_combat_curriculum_override(&typo)
+            .unwrap_err()
+            .contains("unknown field `skirmish_sim_time_quanta_per_cyle`"));
+    }
+
+    #[test]
+    fn specialist_distillation_overrides_are_strict_and_isolated() {
+        let mut base = TrainingConfig::default();
+        base.feeding_curriculum.enabled = true;
+        base.combat_curriculum.enabled = true;
+        let changed = base
+            .with_specialist_distillation_override(&toml::Table::from_iter([
+                ("enabled".into(), toml::Value::Boolean(true)),
+                ("ecology_coeff".into(), toml::Value::Float(0.2)),
+            ]))
+            .unwrap();
+        assert!(changed.specialist_distillation.enabled);
+        assert_eq!(changed.specialist_distillation.ecology_coeff, 0.2);
+        assert_eq!(changed.specialist_distillation.combat_coeff, 0.1);
+        assert_eq!(changed.env, base.env);
+        assert_eq!(changed.reward, base.reward);
+        assert_eq!(changed.ppo, base.ppo);
+        assert_eq!(changed.model, base.model);
+        assert_eq!(changed.combat_curriculum, base.combat_curriculum);
+
+        let typo =
+            toml::Table::from_iter([("ecology_coefficient".into(), toml::Value::Float(0.2))]);
+        assert!(base
+            .with_specialist_distillation_override(&typo)
+            .unwrap_err()
+            .contains("unknown field `ecology_coefficient`"));
+    }
+
+    #[test]
+    fn resource_layouts_are_strict_validated_and_scenario_hash_bound() {
+        let configured = TrainingConfig::from_toml_str(
+            r#"
+            [env]
+            world_size = 32
+            cells_per_team = 4
+            num_teams = 2
+            num_scattered_energy = 40
+            num_plants = 12
+
+            [env.plant_layout]
+            mode = "islands"
+            island_count = 3
+            radius = 2
+            minimum_separation = 6
+
+            [env.scattered_energy_layout]
+            mode = "corridors"
+            corridor_count = 2
+            half_width = 1
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            configured.env.plant_layout,
+            ResourceLayout::Islands {
+                island_count: 3,
+                radius: 2,
+                minimum_separation: 6
+            }
+        ));
+        assert!(matches!(
+            configured.env.scattered_energy_layout,
+            ResourceLayout::Corridors {
+                corridor_count: 2,
+                half_width: 1
+            }
+        ));
+        assert_ne!(
+            ScenarioProfile::from(&configured.env)
+                .semantic_hash()
+                .unwrap(),
+            ScenarioProfile::from(&TrainingConfig::default().env)
+                .semantic_hash()
+                .unwrap()
+        );
+
+        let typo = TrainingConfig::from_toml_str(
+            r#"
+            [env.plant_layout]
+            mode = "patches"
+            patch_count = 2
+            raduis = 3
+            "#,
+        )
+        .unwrap_err();
+        assert!(typo.contains("unknown field `raduis`"));
+
+        let mut invalid = TrainingConfig::default();
+        invalid.env.plant_layout = ResourceLayout::FavoredTerritory {
+            team: invalid.env.num_teams,
+            radius: 4,
+        };
+        assert!(invalid
+            .validate()
+            .unwrap_err()
+            .contains("favored resource territory names no starting team"));
     }
 
     #[test]
@@ -1398,5 +2778,175 @@ mod tests {
             config.env.rules.neighborhood.boundary_rule,
             BoundaryRule::Wrap
         );
+    }
+
+    #[test]
+    fn competitive_transfer_profile_keeps_retention_without_rollout_staging() {
+        let path = format!(
+            "{}/config/competitive_transfer.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let config = TrainingConfig::from_file(&path).unwrap();
+        config.validate().unwrap();
+        assert!(config.feeding_curriculum.enabled);
+        assert!(!config.feeding_curriculum.rollout_stages_enabled);
+        assert_eq!(
+            config.feeding_curriculum.stage(0),
+            FeedingCurriculumStage::Competitive
+        );
+        assert_eq!(config.ppo.learning_rate, 1e-5);
+        assert_eq!(config.ppo.action_kind_exploration_floor, 0.1);
+        assert_eq!(config.reward.damage_enemy, 0.02);
+        assert!(config.combat_curriculum.enabled);
+        assert_eq!(config.total_simulation_quanta_per_env, Some(262_144));
+
+        let large_path = format!(
+            "{}/config/competitive_transfer_large.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let large = TrainingConfig::from_file(&large_path).unwrap();
+        large.validate().unwrap();
+        assert_eq!(large.env, config.env);
+        assert_eq!(large.reward, config.reward);
+        assert_eq!(large.feeding_curriculum, config.feeding_curriculum);
+        assert_eq!(large.combat_curriculum, config.combat_curriculum);
+        assert_eq!(large.model.hidden1, 256);
+        assert_eq!(large.model.hidden2, 128);
+        assert_eq!(large.model.recurrent_size, 128);
+        assert_eq!(crate::model::policy_memory_bytes(128), Some(264));
+        assert!(264 <= large.env.rules.max_private_memory_bytes);
+
+        let long_path = format!(
+            "{}/config/competitive_transfer_large_long.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let long = TrainingConfig::from_file(&long_path).unwrap();
+        long.validate().unwrap();
+        assert_eq!(long.env, large.env);
+        assert_eq!(long.reward, large.reward);
+        assert_eq!(long.feeding_curriculum, large.feeding_curriculum);
+        assert_eq!(long.combat_curriculum, large.combat_curriculum);
+        assert_eq!(long.ppo, large.ppo);
+        assert_eq!(long.model, large.model);
+        assert_eq!(long.total_simulation_quanta_per_env, Some(1_048_576));
+        assert_eq!(long.eval_interval, 16);
+
+        let skirmish_path = format!(
+            "{}/config/competitive_transfer_large_skirmish.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let skirmish = TrainingConfig::from_file(&skirmish_path).unwrap();
+        skirmish.validate().unwrap();
+        assert_eq!(skirmish.env, large.env);
+        assert_eq!(skirmish.reward, large.reward);
+        assert_eq!(skirmish.feeding_curriculum, large.feeding_curriculum);
+        assert_eq!(skirmish.combat_curriculum, large.combat_curriculum);
+        assert_eq!(skirmish.ppo, large.ppo);
+        assert_eq!(skirmish.model, large.model);
+        assert_eq!(skirmish.total_simulation_quanta_per_env, Some(524_288));
+        assert_eq!(skirmish.eval_interval, 16);
+        assert_eq!(
+            skirmish.combat_curriculum.min_skirmish_kills_for_promotion,
+            1
+        );
+
+        let frequent_path = format!(
+            "{}/config/competitive_transfer_large_skirmish_frequent.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let frequent = TrainingConfig::from_file(&frequent_path).unwrap();
+        frequent.validate().unwrap();
+        assert_eq!(frequent.env, skirmish.env);
+        assert_eq!(frequent.reward, skirmish.reward);
+        assert_eq!(frequent.feeding_curriculum, skirmish.feeding_curriculum);
+        assert_eq!(frequent.ppo, skirmish.ppo);
+        assert_eq!(frequent.model, skirmish.model);
+        assert_eq!(frequent.total_simulation_quanta_per_env, Some(524_288));
+        assert_eq!(
+            frequent.combat_curriculum.cycle_sim_time_quanta_per_env,
+            131_072
+        );
+        assert_eq!(
+            frequent.combat_curriculum.min_skirmish_kills_for_promotion,
+            1
+        );
+
+        let specialist_path = format!(
+            "{}/config/competitive_transfer_large_specialist_distillation.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let specialist = TrainingConfig::from_file(&specialist_path).unwrap();
+        specialist.validate().unwrap();
+        assert_eq!(specialist.env, frequent.env);
+        assert_eq!(specialist.reward, frequent.reward);
+        assert_eq!(specialist.feeding_curriculum, frequent.feeding_curriculum);
+        assert_eq!(specialist.combat_curriculum, frequent.combat_curriculum);
+        assert_eq!(specialist.ppo, frequent.ppo);
+        assert!(specialist.specialist_distillation.enabled);
+        assert_eq!(specialist.specialist_distillation.ecology_coeff, 0.05);
+        assert_eq!(specialist.specialist_distillation.combat_coeff, 0.05);
+
+        let contact_anchor_path = format!(
+            "{}/config/competitive_transfer_large_contact_anchor.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let contact_anchor = TrainingConfig::from_file(&contact_anchor_path).unwrap();
+        contact_anchor.validate().unwrap();
+        assert_eq!(contact_anchor.env, large.env);
+        assert_eq!(contact_anchor.reward, large.reward);
+        assert_eq!(contact_anchor.ppo, large.ppo);
+        assert_eq!(
+            contact_anchor
+                .combat_curriculum
+                .contact_initial_policy_anchor_coeff,
+            Some(0.5)
+        );
+        assert_eq!(
+            contact_anchor.rollout_initial_policy_anchor_coeff(FeedingCurriculumStage::Contact),
+            0.5
+        );
+        assert_eq!(
+            contact_anchor.rollout_initial_policy_anchor_coeff(FeedingCurriculumStage::Competitive),
+            0.25
+        );
+    }
+
+    #[test]
+    fn action_kind_exploration_floor_must_be_a_finite_fraction_below_one() {
+        for invalid in [-0.01, 1.0, f32::INFINITY, f32::NAN] {
+            let mut config = TrainingConfig::default();
+            config.ppo.action_kind_exploration_floor = invalid;
+            assert!(
+                config.validate().is_err(),
+                "accepted exploration floor {invalid}"
+            );
+        }
+
+        let mut config = TrainingConfig::default();
+        config.ppo.action_kind_exploration_floor = 0.25;
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn large_world_profiles_are_valid_and_scale_world_time() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let expected = [
+            ("large_world_256.toml", 256, 67_108_864, 16_777_216),
+            ("large_world_512.toml", 512, 134_217_728, 33_554_432),
+            ("large_world_1024.toml", 1_024, 268_435_456, 67_108_864),
+        ];
+
+        for (name, world_size, training_quanta, episode_quanta) in expected {
+            let path = format!("{manifest}/config/{name}");
+            let config = TrainingConfig::from_file(&path).unwrap();
+            config.validate().unwrap();
+            assert_eq!(config.env.world_size, world_size);
+            assert_eq!(
+                config.total_simulation_quanta_per_env,
+                Some(training_quanta)
+            );
+            assert_eq!(config.env.victory.sim_time_limit_quanta, episode_quanta);
+            assert!(config.total_timesteps > training_quanta / 1_024);
+        }
     }
 }

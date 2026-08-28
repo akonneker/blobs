@@ -9,11 +9,26 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 use crate::action::{
-    NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    decompose_policy_action, policy_action_kind_mask, policy_effort_mask, policy_target_mask,
+    NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS,
+    NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
+    NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::config::PPOConfig;
 use crate::model::PolicyValueNet;
 use crate::observation::OBS_DIM;
+
+/// Detached functional outputs from a verified initial or frontier policy.
+#[derive(Debug, Clone)]
+pub struct PolicyAnchorTarget {
+    pub action_kind_logits: Vec<f32>,
+    pub target_logits: Vec<f32>,
+    pub effort_logits: Vec<f32>,
+    pub amount_logits: Vec<f32>,
+    pub signal_logits: Vec<f32>,
+    pub signal_strength_logits: Vec<f32>,
+    pub next_memory: Vec<f32>,
+}
 
 /// A single experience transition.
 #[derive(Debug, Clone)]
@@ -29,6 +44,9 @@ pub struct Transition {
     pub signal: usize,
     pub signal_strength_mask: Vec<bool>,
     pub signal_strength: usize,
+    /// Exact legal-kind behavior-policy mixture used when this action was
+    /// sampled. Contact curricula may override the global PPO default.
+    pub action_kind_exploration_floor: f32,
     pub reward: f32,
     pub value: f32,
     /// Value at this cell's next decision frontier. This is supplied only
@@ -36,6 +54,13 @@ pub struct Transition {
     /// zero.
     pub next_value: f32,
     pub log_prob: f32,
+    /// Detached functional target from the active verified teacher on this
+    /// cell's ordinary observation and private recurrent state.
+    pub anchor: Option<PolicyAnchorTarget>,
+    /// Exact coefficient applied to the functional anchor for this decision.
+    /// Curriculum stages and host-side teacher selection may vary it without
+    /// becoming part of the Mind input or behavior policy.
+    pub initial_policy_anchor_coeff: f32,
     pub done: bool,
     /// Simulated time between this decision and its next frontier, expressed
     /// in nominal ruleset time units rather than resolver batches.
@@ -94,6 +119,8 @@ pub struct PpoMetrics {
     pub value_loss: f32,
     pub entropy: f32,
     pub approx_kl: f32,
+    /// Functional divergence from the frozen qualified initial policy.
+    pub anchor_loss: f32,
     pub clip_fraction: f32,
     pub explained_variance: f32,
     pub recurrent_unroll_steps: usize,
@@ -163,6 +190,21 @@ fn quantize_straight_through<B: Backend>(memory: Tensor<B, 2>) -> Tensor<B, 2> {
     let quantized = (memory.clone().detach().clamp(-1.0, 1.0) * f32::from(i16::MAX)).round()
         / f32::from(i16::MAX);
     memory.clone() + (quantized - memory).detach()
+}
+
+/// KL(reference || candidate) for one masked categorical policy head. The
+/// reference side is detached so gradients can update only the live policy.
+fn categorical_anchor_kl<B: Backend>(
+    candidate_logits: Tensor<B, 2>,
+    reference_logits: Tensor<B, 2>,
+) -> Tensor<B, 1> {
+    let reference_logits = reference_logits.detach();
+    let reference_probs = burn::tensor::activation::softmax(reference_logits.clone(), 1);
+    let reference_log_probs = burn::tensor::activation::log_softmax(reference_logits, 1);
+    let candidate_log_probs = burn::tensor::activation::log_softmax(candidate_logits, 1);
+    (reference_probs * (reference_log_probs - candidate_log_probs))
+        .sum_dim(1)
+        .squeeze_dims::<1>(&[1])
 }
 
 fn explained_variance(predictions: &[f32], targets: &[f32]) -> f32 {
@@ -247,6 +289,7 @@ struct RecurrentBatchMetrics {
     value_loss: f32,
     entropy: f32,
     approx_kl: f32,
+    anchor_loss: f32,
     clip_fraction: f32,
     samples: usize,
 }
@@ -289,6 +332,7 @@ where
     let mut value_loss_sum = None;
     let mut entropy_sum = None;
     let mut approx_kl_sum = None;
+    let mut anchor_loss_sum = None;
     let mut clip_fraction_sum = None;
 
     for step in 0..steps {
@@ -300,13 +344,34 @@ where
             .iter()
             .flat_map(|index| rollout.transitions[*index].observation.iter().copied())
             .collect::<Vec<_>>();
-        let mask_bias = indices
+        let kind_masks = indices
+            .iter()
+            .map(|index| policy_action_kind_mask(&rollout.transitions[*index].action_mask))
+            .collect::<Vec<_>>();
+        let kind_mask_bias = kind_masks
+            .iter()
+            .flat_map(|mask| {
+                mask.iter()
+                    .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
+            })
+            .collect::<Vec<_>>();
+        let kind_uniform = kind_masks
+            .iter()
+            .zip(&indices)
+            .flat_map(|(mask, index)| {
+                let legal = mask.iter().filter(|allowed| **allowed).count().max(1) as f32;
+                let floor = rollout.transitions[*index].action_kind_exploration_floor;
+                mask.iter()
+                    .map(move |allowed| if *allowed { floor / legal } else { 0.0 })
+            })
+            .collect::<Vec<_>>();
+        let kind_policy_scale = indices
             .iter()
             .flat_map(|index| {
-                rollout.transitions[*index]
-                    .action_mask
-                    .iter()
-                    .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
+                std::iter::repeat_n(
+                    1.0 - rollout.transitions[*index].action_kind_exploration_floor,
+                    NUM_POLICY_ACTION_KINDS,
+                )
             })
             .collect::<Vec<_>>();
         let batch_advantages = indices
@@ -325,21 +390,84 @@ where
             .iter()
             .map(|index| rollout.transitions[*index].log_prob)
             .collect::<Vec<_>>();
-        let actions = indices
+        let hierarchical = indices
             .iter()
-            .map(|index| rollout.transitions[*index].action as i32)
+            .map(|index| {
+                decompose_policy_action(rollout.transitions[*index].action)
+                    .expect("rollout action is in the policy catalog")
+            })
+            .collect::<Vec<_>>();
+        let kinds = hierarchical
+            .iter()
+            .map(|choice| choice.kind as i32)
+            .collect::<Vec<_>>();
+        let targets = hierarchical
+            .iter()
+            .map(|choice| (choice.kind * NUM_POLICY_TARGETS + choice.target) as i32)
+            .collect::<Vec<_>>();
+        let efforts = hierarchical
+            .iter()
+            .map(|choice| (choice.kind * NUM_POLICY_EFFORTS + choice.effort) as i32)
+            .collect::<Vec<_>>();
+        let target_mask_bias = indices
+            .iter()
+            .zip(&hierarchical)
+            .flat_map(|(index, choice)| {
+                let mut bias = vec![-1.0e9; NUM_POLICY_TARGET_LOGITS];
+                let start = choice.kind * NUM_POLICY_TARGETS;
+                for (target, allowed) in
+                    policy_target_mask(&rollout.transitions[*index].action_mask, choice.kind)
+                        .into_iter()
+                        .enumerate()
+                {
+                    if allowed {
+                        bias[start + target] = 0.0;
+                    }
+                }
+                bias
+            })
+            .collect::<Vec<_>>();
+        let effort_mask_bias = indices
+            .iter()
+            .zip(&hierarchical)
+            .flat_map(|(index, choice)| {
+                let mut bias = vec![-1.0e9; NUM_POLICY_EFFORT_LOGITS];
+                let start = choice.kind * NUM_POLICY_EFFORTS;
+                for (effort, allowed) in policy_effort_mask(
+                    &rollout.transitions[*index].action_mask,
+                    choice.kind,
+                    choice.target,
+                )
+                .into_iter()
+                .enumerate()
+                {
+                    if allowed {
+                        bias[start + effort] = 0.0;
+                    }
+                }
+                bias
+            })
             .collect::<Vec<_>>();
         let amounts = indices
             .iter()
-            .map(|index| rollout.transitions[*index].amount as i32)
+            .zip(&hierarchical)
+            .map(|(index, choice)| {
+                (choice.kind * NUM_AMOUNT_CHOICES + rollout.transitions[*index].amount) as i32
+            })
             .collect::<Vec<_>>();
         let amount_mask_bias = indices
             .iter()
-            .flat_map(|index| {
-                rollout.transitions[*index]
-                    .amount_mask
-                    .iter()
-                    .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
+            .zip(&hierarchical)
+            .flat_map(|(index, choice)| {
+                let mut bias = vec![-1.0e9; NUM_POLICY_AMOUNT_LOGITS];
+                let start = choice.kind * NUM_AMOUNT_CHOICES;
+                for (amount, allowed) in rollout.transitions[*index].amount_mask.iter().enumerate()
+                {
+                    if *allowed {
+                        bias[start + amount] = 0.0;
+                    }
+                }
+                bias
             })
             .collect::<Vec<_>>();
         let signals = indices
@@ -369,52 +497,88 @@ where
             })
             .collect::<Vec<_>>();
 
-        let output = model.forward_with_memory(
-            Tensor::<B, 2>::from_data(TensorData::new(obs_data, [batch_size, OBS_DIM]), device),
-            memory,
+        let observations =
+            Tensor::<B, 2>::from_data(TensorData::new(obs_data, [batch_size, OBS_DIM]), device);
+        let output = model.forward_with_memory(observations, memory);
+        let kind_mask_bias = Tensor::<B, 2>::from_data(
+            TensorData::new(kind_mask_bias, [batch_size, NUM_POLICY_ACTION_KINDS]),
+            device,
         );
-        let masked_logits = output.policy_logits
+        let masked_kind_logits = output.action_kind_logits + kind_mask_bias.clone();
+        let learned_kind_logits = masked_kind_logits.clone();
+        let kind_probs = burn::tensor::activation::softmax(masked_kind_logits, 1)
+            * Tensor::<B, 2>::from_data(
+                TensorData::new(kind_policy_scale, [batch_size, NUM_POLICY_ACTION_KINDS]),
+                device,
+            )
             + Tensor::<B, 2>::from_data(
-                TensorData::new(mask_bias, [batch_size, NUM_ACTIONS]),
+                TensorData::new(kind_uniform, [batch_size, NUM_POLICY_ACTION_KINDS]),
                 device,
             );
-        let log_probs = burn::tensor::activation::log_softmax(masked_logits.clone(), 1);
-        let masked_amount_logits = output.amount_logits
-            + Tensor::<B, 2>::from_data(
-                TensorData::new(amount_mask_bias, [batch_size, NUM_AMOUNT_CHOICES]),
-                device,
-            );
+        let kind_log_probs = kind_probs.clone().clamp_min(1.0e-20).log();
+        let target_mask_bias = Tensor::<B, 2>::from_data(
+            TensorData::new(target_mask_bias, [batch_size, NUM_POLICY_TARGET_LOGITS]),
+            device,
+        );
+        let masked_target_logits = output.target_logits + target_mask_bias.clone();
+        let target_log_probs =
+            burn::tensor::activation::log_softmax(masked_target_logits.clone(), 1);
+        let effort_mask_bias = Tensor::<B, 2>::from_data(
+            TensorData::new(effort_mask_bias, [batch_size, NUM_POLICY_EFFORT_LOGITS]),
+            device,
+        );
+        let masked_effort_logits = output.effort_logits + effort_mask_bias.clone();
+        let effort_log_probs =
+            burn::tensor::activation::log_softmax(masked_effort_logits.clone(), 1);
+        let amount_mask_bias = Tensor::<B, 2>::from_data(
+            TensorData::new(amount_mask_bias, [batch_size, NUM_POLICY_AMOUNT_LOGITS]),
+            device,
+        );
+        let masked_amount_logits = output.amount_logits + amount_mask_bias.clone();
         let amount_log_probs =
             burn::tensor::activation::log_softmax(masked_amount_logits.clone(), 1);
-        let masked_signal_logits = output.signal_logits
-            + Tensor::<B, 2>::from_data(
-                TensorData::new(signal_mask_bias, [batch_size, NUM_SIGNAL_CHOICES]),
-                device,
-            );
+        let signal_mask_bias = Tensor::<B, 2>::from_data(
+            TensorData::new(signal_mask_bias, [batch_size, NUM_SIGNAL_CHOICES]),
+            device,
+        );
+        let masked_signal_logits = output.signal_logits + signal_mask_bias.clone();
         let signal_log_probs =
             burn::tensor::activation::log_softmax(masked_signal_logits.clone(), 1);
-        let masked_signal_strength_logits = output.signal_strength_logits
-            + Tensor::<B, 2>::from_data(
-                TensorData::new(
-                    signal_strength_mask_bias,
-                    [batch_size, NUM_SIGNAL_STRENGTH_CHOICES],
-                ),
-                device,
-            );
+        let signal_strength_mask_bias = Tensor::<B, 2>::from_data(
+            TensorData::new(
+                signal_strength_mask_bias,
+                [batch_size, NUM_SIGNAL_STRENGTH_CHOICES],
+            ),
+            device,
+        );
+        let masked_signal_strength_logits =
+            output.signal_strength_logits + signal_strength_mask_bias.clone();
         let signal_strength_log_probs =
             burn::tensor::activation::log_softmax(masked_signal_strength_logits.clone(), 1);
-        let actions_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(actions, [batch_size]), device);
+        let kinds_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(kinds, [batch_size]), device);
+        let targets_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(targets, [batch_size]), device);
+        let efforts_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(efforts, [batch_size]), device);
         let amounts_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::new(amounts, [batch_size]), device);
         let signals_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::new(signals, [batch_size]), device);
         let signal_strengths_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::new(signal_strengths, [batch_size]), device);
-        let action_log_probs = log_probs
+        let action_log_probs = kind_log_probs
             .clone()
-            .gather(1, actions_tensor.unsqueeze_dim(1))
+            .gather(1, kinds_tensor.unsqueeze_dim(1))
             .squeeze_dims::<1>(&[1])
+            + target_log_probs
+                .clone()
+                .gather(1, targets_tensor.unsqueeze_dim(1))
+                .squeeze_dims::<1>(&[1])
+            + effort_log_probs
+                .clone()
+                .gather(1, efforts_tensor.unsqueeze_dim(1))
+                .squeeze_dims::<1>(&[1])
             + amount_log_probs
                 .clone()
                 .gather(1, amounts_tensor.unsqueeze_dim(1))
@@ -452,12 +616,136 @@ where
             .powf_scalar(2.0)
             .max_pair((clipped_values - returns_tensor).powf_scalar(2.0))
             .mean();
-        let probs = burn::tensor::activation::softmax(masked_logits, 1);
+        let anchor_loss = indices
+            .iter()
+            .any(|index| rollout.transitions[*index].initial_policy_anchor_coeff > 0.0)
+            .then(|| {
+                let anchors = indices
+                    .iter()
+                    .map(|index| {
+                        rollout.transitions[*index]
+                            .anchor
+                            .as_ref()
+                            .expect("anchored PPO transition has a frozen target")
+                    })
+                    .collect::<Vec<_>>();
+                let reference_kind_logits = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.action_kind_logits.iter().copied())
+                            .collect(),
+                        [batch_size, NUM_POLICY_ACTION_KINDS],
+                    ),
+                    device,
+                );
+                let reference_target_logits = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.target_logits.iter().copied())
+                            .collect(),
+                        [batch_size, NUM_POLICY_TARGET_LOGITS],
+                    ),
+                    device,
+                );
+                let reference_effort_logits = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.effort_logits.iter().copied())
+                            .collect(),
+                        [batch_size, NUM_POLICY_EFFORT_LOGITS],
+                    ),
+                    device,
+                );
+                let reference_amount_logits = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.amount_logits.iter().copied())
+                            .collect(),
+                        [batch_size, NUM_POLICY_AMOUNT_LOGITS],
+                    ),
+                    device,
+                );
+                let reference_signal_logits = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.signal_logits.iter().copied())
+                            .collect(),
+                        [batch_size, NUM_SIGNAL_CHOICES],
+                    ),
+                    device,
+                );
+                let reference_signal_strength_logits = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.signal_strength_logits.iter().copied())
+                            .collect(),
+                        [batch_size, NUM_SIGNAL_STRENGTH_CHOICES],
+                    ),
+                    device,
+                );
+                let reference_next_memory = Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        anchors
+                            .iter()
+                            .flat_map(|target| target.next_memory.iter().copied())
+                            .collect(),
+                        [batch_size, recurrent_size],
+                    ),
+                    device,
+                );
+                let head_kl = categorical_anchor_kl(
+                    learned_kind_logits,
+                    reference_kind_logits + kind_mask_bias,
+                ) + categorical_anchor_kl(
+                    masked_target_logits.clone(),
+                    reference_target_logits + target_mask_bias,
+                ) + categorical_anchor_kl(
+                    masked_effort_logits.clone(),
+                    reference_effort_logits + effort_mask_bias,
+                ) + categorical_anchor_kl(
+                    masked_amount_logits.clone(),
+                    reference_amount_logits + amount_mask_bias,
+                ) + categorical_anchor_kl(
+                    masked_signal_logits.clone(),
+                    reference_signal_logits + signal_mask_bias,
+                ) + categorical_anchor_kl(
+                    masked_signal_strength_logits.clone(),
+                    reference_signal_strength_logits + signal_strength_mask_bias,
+                );
+                let memory_loss = (output.next_memory.clone() - reference_next_memory)
+                    .powf_scalar(2.0)
+                    .sum_dim(1)
+                    .squeeze_dims::<1>(&[1])
+                    / recurrent_size as f32;
+                let per_sample_loss = head_kl + memory_loss;
+                let coefficients = Tensor::<B, 1>::from_data(
+                    TensorData::new(
+                        indices
+                            .iter()
+                            .map(|index| rollout.transitions[*index].initial_policy_anchor_coeff)
+                            .collect(),
+                        [batch_size],
+                    ),
+                    device,
+                );
+                let weighted_penalty = (per_sample_loss.clone() * coefficients).mean();
+                (per_sample_loss.mean(), weighted_penalty)
+            });
+        let target_probs = burn::tensor::activation::softmax(masked_target_logits, 1);
+        let effort_probs = burn::tensor::activation::softmax(masked_effort_logits, 1);
         let amount_probs = burn::tensor::activation::softmax(masked_amount_logits, 1);
         let signal_probs = burn::tensor::activation::softmax(masked_signal_logits, 1);
         let signal_strength_probs =
             burn::tensor::activation::softmax(masked_signal_strength_logits, 1);
-        let entropy = (-(probs * log_probs).sum_dim(1)
+        let entropy = (-(kind_probs * kind_log_probs).sum_dim(1)
+            - (target_probs * target_log_probs).sum_dim(1)
+            - (effort_probs * effort_log_probs).sum_dim(1)
             - (amount_probs * amount_log_probs).sum_dim(1)
             - (signal_probs * signal_log_probs).sum_dim(1)
             - (signal_strength_probs * signal_strength_log_probs).sum_dim(1))
@@ -468,8 +756,15 @@ where
             .greater_elem(config.clip_epsilon)
             .float()
             .mean();
-        let step_loss = policy_loss.clone() + value_loss.clone() * config.value_loss_coeff
+        let mut step_loss = policy_loss.clone() + value_loss.clone() * config.value_loss_coeff
             - entropy.clone() * config.entropy_coeff;
+        if let Some((anchor_loss, anchor_penalty)) = anchor_loss {
+            step_loss = step_loss + anchor_penalty;
+            anchor_loss_sum = Some(match anchor_loss_sum {
+                Some(value) => value + anchor_loss,
+                None => anchor_loss,
+            });
+        }
 
         total_loss = Some(match total_loss {
             Some(value) => value + step_loss,
@@ -503,12 +798,16 @@ where
     let value_loss = value_loss_sum.expect("a recurrent chunk is nonempty") / divisor;
     let entropy = entropy_sum.expect("a recurrent chunk is nonempty") / divisor;
     let approx_kl = approx_kl_sum.expect("a recurrent chunk is nonempty") / divisor;
+    let anchor_loss = anchor_loss_sum
+        .map(|loss| f32::from((loss / divisor).into_scalar()))
+        .unwrap_or(0.0);
     let clip_fraction = clip_fraction_sum.expect("a recurrent chunk is nonempty") / divisor;
     let batch_metrics = RecurrentBatchMetrics {
         policy_loss: f32::from(policy_loss.into_scalar()),
         value_loss: f32::from(value_loss.into_scalar()),
         entropy: f32::from(entropy.into_scalar()),
         approx_kl: f32::from(approx_kl.into_scalar()),
+        anchor_loss,
         clip_fraction: f32::from(clip_fraction.into_scalar()),
         samples: batch_size * steps,
     };
@@ -523,8 +822,8 @@ where
     (model, batch_metrics, early_stopped)
 }
 
-/// PPO training step: compute loss and update model.
-pub fn ppo_update<B: AutodiffBackend>(
+/// PPO training step with an optional frozen qualified-policy anchor.
+pub fn ppo_update_anchored<B: AutodiffBackend>(
     model: PolicyValueNet<B>,
     optimizer: &mut impl Optimizer<PolicyValueNet<B>, B>,
     rollout: &RolloutBuffer,
@@ -540,6 +839,32 @@ where
         return (model, PpoMetrics::default());
     }
     let recurrent_size = model.recurrent_size();
+    assert!(
+        rollout.transitions.iter().all(|transition| {
+            transition.initial_policy_anchor_coeff.is_finite()
+                && transition.initial_policy_anchor_coeff >= 0.0
+        }),
+        "PPO transition anchor coefficients must be finite and nonnegative"
+    );
+    let has_anchor_targets = rollout
+        .transitions
+        .first()
+        .is_some_and(|transition| transition.anchor.is_some());
+    assert!(
+        rollout
+            .transitions
+            .iter()
+            .all(|transition| transition.anchor.is_some() == has_anchor_targets),
+        "anchored PPO requires a frozen target on every transition"
+    );
+    assert!(
+        has_anchor_targets
+            || rollout
+                .transitions
+                .iter()
+                .all(|transition| transition.initial_policy_anchor_coeff == 0.0),
+        "positive transition anchor coefficients require frozen targets"
+    );
     assert!(
         rollout
             .transitions
@@ -591,6 +916,7 @@ where
             metrics.value_loss += batch_metrics.value_loss * weight;
             metrics.entropy += batch_metrics.entropy * weight;
             metrics.approx_kl += batch_metrics.approx_kl * weight;
+            metrics.anchor_loss += batch_metrics.anchor_loss * weight;
             metrics.clip_fraction += batch_metrics.clip_fraction * weight;
             samples_evaluated += batch_metrics.samples;
             if early_stopped {
@@ -607,13 +933,30 @@ where
     metrics.value_loss /= denominator;
     metrics.entropy /= denominator;
     metrics.approx_kl /= denominator;
+    metrics.anchor_loss /= denominator;
     metrics.clip_fraction /= denominator;
     (model, metrics)
+}
+
+/// Ordinary PPO update without an initial-policy anchor.
+pub fn ppo_update<B: AutodiffBackend>(
+    model: PolicyValueNet<B>,
+    optimizer: &mut impl Optimizer<PolicyValueNet<B>, B>,
+    rollout: &RolloutBuffer,
+    config: &PPOConfig,
+    rng: &mut impl Rng,
+    device: &B::Device,
+) -> (PolicyValueNet<B>, PpoMetrics)
+where
+    f32: From<B::FloatElem>,
+{
+    ppo_update_anchored(model, optimizer, rollout, config, rng, device)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action::NUM_ACTIONS;
     use burn::backend::{Autodiff, NdArray};
     use burn::optim::AdamWConfig;
     use rand::rngs::StdRng;
@@ -631,10 +974,13 @@ mod tests {
             signal: 0,
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
+            action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 0.0,
             next_value: 0.0,
             log_prob: 0.0,
+            anchor: None,
+            initial_policy_anchor_coeff: 0.0,
             done,
             elapsed_time: 1.0,
             complete: true,
@@ -715,10 +1061,13 @@ mod tests {
                 signal: 0,
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
+                action_kind_exploration_floor: 0.1,
                 reward: 1.0,
                 value: 0.0,
                 next_value: 0.0,
                 log_prob: 0.0,
+                anchor: None,
+                initial_policy_anchor_coeff: 0.0,
                 done: true,
                 elapsed_time: 1.0,
                 complete: true,
@@ -729,6 +1078,7 @@ mod tests {
             epochs_per_update: 1,
             minibatch_size: 128,
             target_kl: None,
+            action_kind_exploration_floor: 0.1,
             ..PPOConfig::default()
         };
         let mut rng = StdRng::seed_from_u64(9);
@@ -739,6 +1089,62 @@ mod tests {
         assert_eq!(metrics.recurrent_chunks, 1);
         assert!(metrics.policy_loss.is_finite());
         assert!(metrics.value_loss.is_finite());
+    }
+
+    #[test]
+    fn identical_frozen_policy_has_zero_functional_anchor_loss() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        type TestBackend = Autodiff<NdArray>;
+
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 19);
+        let model = crate::model::PolicyValueNetConfig::new().init::<TestBackend>(&device);
+        let reference = model.clone();
+        let mut optimizer = AdamWConfig::new().init();
+        let mut rollout = RolloutBuffer::new();
+        let mut transition = transition((0, 0), true);
+        let reference_output = reference.forward_with_memory(
+            Tensor::from_data(
+                TensorData::new(transition.observation.clone(), [1, OBS_DIM]),
+                &device,
+            ),
+            Tensor::from_data(
+                TensorData::new(transition.policy_memory.clone(), [1, 64]),
+                &device,
+            ),
+        );
+        transition.anchor = Some(PolicyAnchorTarget {
+            action_kind_logits: reference_output
+                .action_kind_logits
+                .into_data()
+                .to_vec()
+                .unwrap(),
+            target_logits: reference_output.target_logits.into_data().to_vec().unwrap(),
+            effort_logits: reference_output.effort_logits.into_data().to_vec().unwrap(),
+            amount_logits: reference_output.amount_logits.into_data().to_vec().unwrap(),
+            signal_logits: reference_output.signal_logits.into_data().to_vec().unwrap(),
+            signal_strength_logits: reference_output
+                .signal_strength_logits
+                .into_data()
+                .to_vec()
+                .unwrap(),
+            next_memory: reference_output.next_memory.into_data().to_vec().unwrap(),
+        });
+        transition.initial_policy_anchor_coeff = 0.1;
+        rollout.push(transition);
+        let config = PPOConfig {
+            epochs_per_update: 1,
+            minibatch_size: 1,
+            target_kl: None,
+            initial_policy_anchor_coeff: 0.1,
+            ..PPOConfig::default()
+        };
+        let mut rng = StdRng::seed_from_u64(23);
+
+        let (_, metrics) =
+            ppo_update_anchored(model, &mut optimizer, &rollout, &config, &mut rng, &device);
+        assert!(metrics.anchor_loss.abs() < 1e-6, "{metrics:?}");
+        assert_eq!(metrics.optimizer_steps, 1);
     }
 
     #[test]
@@ -797,10 +1203,13 @@ mod tests {
                 signal: 0,
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
+                action_kind_exploration_floor: 0.0,
                 reward: 1.0,
                 value: 0.5,
                 next_value: 1.0,
                 log_prob: 0.0,
+                anchor: None,
+                initial_policy_anchor_coeff: 0.0,
                 done: false,
                 elapsed_time: 1.0,
                 complete: true,
@@ -817,10 +1226,13 @@ mod tests {
                 signal: 0,
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
+                action_kind_exploration_floor: 0.0,
                 reward: 2.0,
                 value: 1.0,
                 next_value: 1.5,
                 log_prob: 0.0,
+                anchor: None,
+                initial_policy_anchor_coeff: 0.0,
                 done: false,
                 elapsed_time: 1.0,
                 complete: true,
@@ -837,10 +1249,13 @@ mod tests {
                 signal: 0,
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
+                action_kind_exploration_floor: 0.0,
                 reward: 3.0,
                 value: 1.5,
                 next_value: 0.0,
                 log_prob: 0.0,
+                anchor: None,
+                initial_policy_anchor_coeff: 0.0,
                 done: true,
                 elapsed_time: 1.0,
                 complete: true,
@@ -870,10 +1285,13 @@ mod tests {
             signal: 0,
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
+            action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 0.5,
             next_value: 0.0,
             log_prob: -0.5,
+            anchor: None,
+            initial_policy_anchor_coeff: 0.0,
             done: false,
             elapsed_time: 1.0,
             complete: false,
@@ -893,10 +1311,13 @@ mod tests {
             signal: 0,
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
+            action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 0.5,
             next_value: 0.0,
             log_prob: -0.5,
+            anchor: None,
+            initial_policy_anchor_coeff: 0.0,
             done: true,
             elapsed_time: 2.0,
             complete: true,
@@ -919,10 +1340,13 @@ mod tests {
             signal: 0,
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
+            action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 2.0,
             next_value: 10.0,
             log_prob: 0.0,
+            anchor: None,
+            initial_policy_anchor_coeff: 0.0,
             done: false,
             elapsed_time: 2.0,
             complete: true,

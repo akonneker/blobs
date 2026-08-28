@@ -1,6 +1,20 @@
 # Starter pre-training gates for the documented three-seed viability matrix.
 # These are explicit exploratory thresholds, not permanent game-balance goals.
-schema_version = 1
+schema_version = 2
+
+[geometry]
+# These checks are independent of which baseline Minds happen to be selected.
+# Every founder must have a movement path to a plant, and the p90 plant route
+# for every team must fit inside the best measured no-food travel endurance.
+require_all_starting_cells_can_reach_plants = true
+require_team_p90_within_best_travel_endurance = true
+# Ordinary symmetric sweep variants should not create a large team-specific
+# access advantage. Deliberate asymmetry should use a separate policy below.
+max_team_mean_plant_distance_gap = 4.0
+max_team_p90_plant_distance_gap = 6.0
+max_exclusive_plant_share_gap = 0.25
+max_exclusive_major_food_share_gap = 0.25
+max_starting_plant_occupancy_rate_gap = 0.10
 
 [absolute]
 # Timeouts are retained as a separate result rather than silently scored as a

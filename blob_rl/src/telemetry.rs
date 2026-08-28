@@ -17,7 +17,7 @@ use blob_engine::resolution::{
 use blob_interface::reference_mind::REFERENCE_SIGNAL_CHANNELS;
 use serde::{Deserialize, Serialize};
 
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 5;
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 8;
 static TELEMETRY_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,6 +86,9 @@ pub struct ActionTelemetry {
     pub interrupted: u64,
     pub effort_spent: u128,
     pub payload: u128,
+    /// Exact environmental energy extracted by completed consume actions.
+    /// Unlike `payload`, this excludes requested-but-unavailable amounts.
+    pub consumed_energy: u128,
 }
 
 impl ActionTelemetry {
@@ -111,6 +114,9 @@ impl ActionTelemetry {
             .effort_spent
             .saturating_add(u128::from(outcome.effort_spent));
         self.payload = self.payload.saturating_add(u128::from(outcome.payload));
+        self.consumed_energy = self
+            .consumed_energy
+            .saturating_add(u128::from(outcome.consumed_energy));
     }
 
     fn merge(&mut self, other: &Self) {
@@ -127,6 +133,7 @@ impl ActionTelemetry {
         self.interrupted = self.interrupted.saturating_add(other.interrupted);
         self.effort_spent = self.effort_spent.saturating_add(other.effort_spent);
         self.payload = self.payload.saturating_add(other.payload);
+        self.consumed_energy = self.consumed_energy.saturating_add(other.consumed_energy);
     }
 }
 
@@ -506,6 +513,10 @@ pub struct EcologySample {
     pub sim_time_quanta: u64,
     pub training_cells: usize,
     pub opponent_cells: usize,
+    pub training_cells_on_plants: usize,
+    pub opponent_cells_on_plants: usize,
+    pub training_cells_on_major_food: usize,
+    pub opponent_cells_on_major_food: usize,
     pub training_energy: CellEnergyCompartments,
     pub opponent_energy: CellEnergyCompartments,
     pub environment_energy: EnvironmentEnergyCompartments,
@@ -555,6 +566,10 @@ impl EcologySample {
         let mut opponent_energy = CellEnergyCompartments::default();
         let mut training_cells = 0usize;
         let mut opponent_cells = 0usize;
+        let mut training_cells_on_plants = 0usize;
+        let mut opponent_cells_on_plants = 0usize;
+        let mut training_cells_on_major_food = 0usize;
+        let mut opponent_cells_on_major_food = 0usize;
         let mut training_bins = [0_u64; 64];
         let mut opponent_bins = [0_u64; 64];
         let mut side_by_tile = vec![None; width.saturating_mul(height)];
@@ -570,14 +585,23 @@ impl EcologySample {
             let bin_x = x.saturating_mul(8) / width.max(1);
             let bin_y = y.saturating_mul(8) / height.max(1);
             let bin = (bin_y.min(7) * 8 + bin_x.min(7)).min(63);
+            let tile = simulation
+                .tile_state(cell.position)
+                .expect("canonical cell occupies an existing tile");
+            let on_plant = tile.plant_capacity > 0 || tile.plant_growth_rate > 0;
+            let on_major_food = on_plant || tile.loose_energy > 0;
             match side {
                 TelemetrySide::Training => {
                     training_cells += 1;
+                    training_cells_on_plants += usize::from(on_plant);
+                    training_cells_on_major_food += usize::from(on_major_food);
                     training_bins[bin] += 1;
                     training_energy.add_cell(cell);
                 }
                 TelemetrySide::Opponents => {
                     opponent_cells += 1;
+                    opponent_cells_on_plants += usize::from(on_plant);
+                    opponent_cells_on_major_food += usize::from(on_major_food);
                     opponent_bins[bin] += 1;
                     opponent_energy.add_cell(cell);
                 }
@@ -697,6 +721,10 @@ impl EcologySample {
             sim_time_quanta: simulation.now().0,
             training_cells,
             opponent_cells,
+            training_cells_on_plants,
+            opponent_cells_on_plants,
+            training_cells_on_major_food,
+            opponent_cells_on_major_food,
             training_spatial_entropy: spatial_entropy(&training_bins, training_cells),
             opponent_spatial_entropy: spatial_entropy(&opponent_bins, opponent_cells),
             encounter_edges,
@@ -868,6 +896,9 @@ pub struct EpisodeTelemetryRecord {
     pub environment_index: usize,
     pub episode_id: u64,
     pub environment_seed: u64,
+    /// Host curriculum label for this episode. This is diagnostic metadata,
+    /// never a Mind observation or canonical simulation input.
+    pub curriculum_stage: String,
     pub completed: bool,
     pub outcome: Option<TelemetryEpisodeOutcome>,
     pub episode_steps: u64,
@@ -883,6 +914,7 @@ impl EpisodeTelemetryRecord {
         environment_index: usize,
         episode_id: u64,
         environment_seed: u64,
+        curriculum_stage: String,
         initial_sample: EcologySample,
     ) -> Self {
         Self {
@@ -890,6 +922,7 @@ impl EpisodeTelemetryRecord {
             environment_index,
             episode_id,
             environment_seed,
+            curriculum_stage,
             completed: false,
             outcome: None,
             episode_steps: 0,
@@ -922,6 +955,10 @@ impl EpisodeTelemetryRecord {
 pub struct TelemetrySampleMeans {
     pub training_cells: f64,
     pub opponent_cells: f64,
+    pub training_cells_on_plants: f64,
+    pub opponent_cells_on_plants: f64,
+    pub training_cells_on_major_food: f64,
+    pub opponent_cells_on_major_food: f64,
     pub training_assimilated_energy: f64,
     pub opponent_assimilated_energy: f64,
     pub environment_plant_energy: f64,
@@ -948,6 +985,10 @@ impl TelemetrySampleAccumulator {
         self.samples = self.samples.saturating_add(1);
         self.sums.training_cells += sample.training_cells as f64;
         self.sums.opponent_cells += sample.opponent_cells as f64;
+        self.sums.training_cells_on_plants += sample.training_cells_on_plants as f64;
+        self.sums.opponent_cells_on_plants += sample.opponent_cells_on_plants as f64;
+        self.sums.training_cells_on_major_food += sample.training_cells_on_major_food as f64;
+        self.sums.opponent_cells_on_major_food += sample.opponent_cells_on_major_food as f64;
         self.sums.training_assimilated_energy += sample.training_energy.assimilated_energy as f64;
         self.sums.opponent_assimilated_energy += sample.opponent_energy.assimilated_energy as f64;
         self.sums.environment_plant_energy += sample.environment_energy.plant_energy as f64;
@@ -977,6 +1018,10 @@ impl TelemetrySampleAccumulator {
         TelemetrySampleMeans {
             training_cells: self.sums.training_cells / denominator,
             opponent_cells: self.sums.opponent_cells / denominator,
+            training_cells_on_plants: self.sums.training_cells_on_plants / denominator,
+            opponent_cells_on_plants: self.sums.opponent_cells_on_plants / denominator,
+            training_cells_on_major_food: self.sums.training_cells_on_major_food / denominator,
+            opponent_cells_on_major_food: self.sums.opponent_cells_on_major_food / denominator,
             training_assimilated_energy: self.sums.training_assimilated_energy / denominator,
             opponent_assimilated_energy: self.sums.opponent_assimilated_energy / denominator,
             environment_plant_energy: self.sums.environment_plant_energy / denominator,
@@ -1011,15 +1056,17 @@ pub struct TrainingTelemetryState {
 }
 
 impl TrainingTelemetryState {
-    pub fn new(initial: Vec<(u64, EcologySample)>) -> Self {
+    pub fn new(initial: Vec<(u64, String, EcologySample)>) -> Self {
         let mut sampled_state = TelemetrySampleAccumulator::default();
-        for (_, sample) in &initial {
+        for (_, _, sample) in &initial {
             sampled_state.observe(sample);
         }
         let active_episodes = initial
             .into_iter()
             .enumerate()
-            .map(|(index, (seed, sample))| EpisodeTelemetryRecord::new(index, 0, seed, sample))
+            .map(|(index, (seed, stage, sample))| {
+                EpisodeTelemetryRecord::new(index, 0, seed, stage, sample)
+            })
             .collect();
         Self {
             schema_version: TELEMETRY_SCHEMA_VERSION,
@@ -1097,11 +1144,17 @@ impl TrainingTelemetryState {
         environment: usize,
         episode_id: u64,
         seed: u64,
+        curriculum_stage: String,
         initial_sample: EcologySample,
     ) {
         self.sampled_state.observe(&initial_sample);
-        self.active_episodes[environment] =
-            EpisodeTelemetryRecord::new(environment, episode_id, seed, initial_sample);
+        self.active_episodes[environment] = EpisodeTelemetryRecord::new(
+            environment,
+            episode_id,
+            seed,
+            curriculum_stage,
+            initial_sample,
+        );
     }
 
     pub fn sample_active_episode(
@@ -1208,6 +1261,9 @@ pub fn publish_episode_record(
 ) -> Result<PathBuf, String> {
     if !record.completed || record.outcome.is_none() {
         return Err("only completed telemetry episodes may be published".into());
+    }
+    if record.curriculum_stage.trim().is_empty() {
+        return Err("telemetry episode curriculum stage must be nonempty".into());
     }
     let path = artifact_root
         .join("telemetry")
@@ -1335,6 +1391,37 @@ mod tests {
             telemetry.training.terrain.material_mass_dumped,
             u128::from(simulation.rules().terrain_mass_per_elevation)
         );
+    }
+
+    #[test]
+    fn consume_telemetry_counts_only_energy_actually_extracted() {
+        let mut simulation = ReferenceSimulation::new(1, 1, rules()).unwrap();
+        let tile = simulation.tile(0, 0).unwrap();
+        let actor = simulation.add_cell(tile, 10, 100, 0).unwrap();
+        {
+            let plant = simulation.tile_state_mut(tile).unwrap();
+            plant.plant_energy = 7;
+            plant.plant_capacity = 7;
+        }
+        let mut sides = HashMap::from([(actor, TelemetrySide::Training)]);
+        let mut telemetry = StepTelemetry::default();
+        let occupancy = EcologySample::capture(&simulation, &sides, 0, 1, 1);
+        assert_eq!(occupancy.training_cells_on_plants, 1);
+        assert_eq!(occupancy.training_cells_on_major_food, 1);
+        assert_eq!(occupancy.opponent_cells_on_plants, 0);
+        simulation
+            .commit_action(actor, ActionRequest::Consume { amount: 20 })
+            .unwrap();
+        let report = simulation.resolve_next_batch().unwrap();
+        telemetry.observe_batch(
+            &report,
+            &mut sides,
+            simulation.last_resolution_metrics().signal_energy_decayed,
+        );
+
+        assert_eq!(telemetry.training.actions.consume.succeeded, 1);
+        assert_eq!(telemetry.training.actions.consume.payload, 0);
+        assert_eq!(telemetry.training.actions.consume.consumed_energy, 7);
     }
 
     #[test]

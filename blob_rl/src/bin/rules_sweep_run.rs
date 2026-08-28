@@ -32,6 +32,30 @@ struct Args {
     #[arg(long)]
     threads_per_run: Option<usize>,
 
+    /// Immutable behavior-cloning artifact used to initialize every run.
+    #[arg(
+        long,
+        requires_all = [
+            "initial_policy_artifact_sha256",
+            "initial_policy_qualification",
+            "initial_policy_qualification_hash"
+        ],
+        conflicts_with = "aggregate_only"
+    )]
+    initial_policy: Option<PathBuf>,
+
+    /// Expected behavior-clone metadata SHA-256.
+    #[arg(long, requires = "initial_policy", conflicts_with = "aggregate_only")]
+    initial_policy_artifact_sha256: Option<String>,
+
+    /// Passing feeding-evaluation JSON shared by every paired run.
+    #[arg(long, requires = "initial_policy", conflicts_with = "aggregate_only")]
+    initial_policy_qualification: Option<PathBuf>,
+
+    /// Expected semantic hash embedded in the feeding qualification.
+    #[arg(long, requires = "initial_policy", conflicts_with = "aggregate_only")]
+    initial_policy_qualification_hash: Option<String>,
+
     /// Retry runs whose last recorded attempt failed. Interrupted running runs
     /// are always recovered from their newest verified checkpoint.
     #[arg(long)]
@@ -101,11 +125,30 @@ fn main() {
             train_program.display()
         );
     }
+    let train_arguments = match (
+        args.initial_policy,
+        args.initial_policy_artifact_sha256,
+        args.initial_policy_qualification,
+        args.initial_policy_qualification_hash,
+    ) {
+        (Some(policy), Some(policy_hash), Some(qualification), Some(qualification_hash)) => vec![
+            "--initial-policy".into(),
+            policy.to_string_lossy().into_owned(),
+            "--initial-policy-artifact-sha256".into(),
+            policy_hash,
+            "--initial-policy-qualification".into(),
+            qualification.to_string_lossy().into_owned(),
+            "--initial-policy-qualification-hash".into(),
+            qualification_hash,
+        ],
+        (None, None, None, None) => Vec::new(),
+        _ => unreachable!("clap requires complete initial-policy provenance"),
+    };
     let summary = execute_rules_sweep(
         &args.manifest,
         &SweepExecutorOptions {
             train_program,
-            train_arguments: Vec::new(),
+            train_arguments,
             trainer_container_digest: args.trainer_container_digest,
             max_parallel: args.max_parallel,
             threads_per_run: args.threads_per_run,
@@ -177,6 +220,49 @@ mod tests {
             "matrix.json",
             "--viability-gates",
             "gates.toml",
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn initial_policy_cli_requires_complete_bound_provenance() {
+        assert!(Args::try_parse_from([
+            "rules-sweep-run",
+            "manifest.json",
+            "--initial-policy",
+            "clone",
+        ])
+        .is_err());
+        let parsed = Args::try_parse_from([
+            "rules-sweep-run",
+            "manifest.json",
+            "--initial-policy",
+            "clone",
+            "--initial-policy-artifact-sha256",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--initial-policy-qualification",
+            "feeding.json",
+            "--initial-policy-qualification-hash",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ])
+        .unwrap();
+        assert_eq!(parsed.initial_policy, Some(PathBuf::from("clone")));
+        assert_eq!(
+            parsed.initial_policy_qualification,
+            Some(PathBuf::from("feeding.json"))
+        );
+        assert!(Args::try_parse_from([
+            "rules-sweep-run",
+            "manifest.json",
+            "--aggregate-only",
+            "--initial-policy",
+            "clone",
+            "--initial-policy-artifact-sha256",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--initial-policy-qualification",
+            "feeding.json",
+            "--initial-policy-qualification-hash",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         ])
         .is_err());
     }

@@ -1,0 +1,91 @@
+# Independent initial-ecology treatments. Every run uses the same tight cell
+# assembly; only the plant and/or loose-energy geometry changes. Minds receive
+# no resource-layout label or global position.
+base_config = "objective_large_draw_smoke.toml"
+output_dir = "../../sweeps/resource-layout-controls-v2"
+seeds = [7101, 7201, 7301, 7401]
+
+[[variants]]
+name = "uniform-control"
+description = "Historical uniform plant and loose-energy scattering"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.plant_layout]
+mode = "uniform"
+[variants.scenario.scattered_energy_layout]
+mode = "uniform"
+
+[[variants]]
+name = "plant-patches"
+description = "Plants cluster in four overlapping local patches"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.plant_layout]
+mode = "patches"
+patch_count = 4
+radius = 3
+
+[[variants]]
+name = "plant-islands"
+description = "Plants occupy four separated islands"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.plant_layout]
+mode = "islands"
+island_count = 4
+radius = 2
+minimum_separation = 7
+
+[[variants]]
+name = "loose-patches"
+description = "Loose energy clusters while plants remain uniform"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.scattered_energy_layout]
+mode = "patches"
+patch_count = 6
+radius = 5
+
+[[variants]]
+name = "loose-corridors"
+description = "Loose energy follows three seeded axis-aligned corridors"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.scattered_energy_layout]
+mode = "corridors"
+corridor_count = 3
+half_width = 1
+
+[[variants]]
+name = "balanced-plant-territories"
+description = "Equal plant quotas lie near each team's starting assembly"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.plant_layout]
+mode = "territories"
+radius = 4
+
+[[variants]]
+name = "favored-team-zero-plants"
+description = "Plants favor team zero to measure sensitivity to ecological asymmetry"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.plant_layout]
+mode = "favored_territory"
+team = 0
+radius = 4
+
+[[variants]]
+name = "islands-and-corridors"
+description = "Cross separated plant islands with loose-energy corridors"
+[variants.scenario]
+starting_cell_layout = "block"
+[variants.scenario.plant_layout]
+mode = "islands"
+island_count = 4
+radius = 2
+minimum_separation = 7
+[variants.scenario.scattered_energy_layout]
+mode = "corridors"
+corridor_count = 3
+half_width = 1

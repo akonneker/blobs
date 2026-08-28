@@ -70,7 +70,7 @@ team_loses = -10.0            # big penalty for losing
 
 # ── Self-Play Curriculum ──
 [self_play]
-start_after_timesteps = 50_000       # start self-play at 50K (half of total)
+start_after_sim_time_quanta_per_env = 2_097_152
 opponent_update_interval = 25        # snapshot opponent policy every 25 updates
 max_opponent_pool = 5                # keep 5 past opponents
 baseline_probability = 0.2

@@ -65,7 +65,7 @@ move_toward_enemy = 0.0       # disabled — board is small enough
 proximity_search_radius = 5
 
 [self_play]
-start_after_timesteps = 500_000
+start_after_sim_time_quanta_per_env = 2_097_152
 opponent_update_interval = 50
 max_opponent_pool = 10
 baseline_probability = 0.2

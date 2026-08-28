@@ -20,7 +20,7 @@ use crate::viability_matrix::{
     ViabilityMatrixOptions,
 };
 
-pub const VIABILITY_PREFLIGHT_SCHEMA_VERSION: u32 = 1;
+pub const VIABILITY_PREFLIGHT_SCHEMA_VERSION: u32 = 2;
 const MAX_PREFLIGHT_CONFIG_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -29,6 +29,7 @@ pub struct ViabilityPreflightOptions {
     pub opponents: Vec<OpponentProfile>,
     pub baseline_variant: Option<String>,
     pub matrix_max_parallel: usize,
+    pub matrix_max_micro_actions: usize,
     pub gate_spec_file: PathBuf,
     pub execute_training: Option<SweepExecutorOptions>,
 }
@@ -104,6 +105,9 @@ pub fn run_viability_preflight(
 ) -> Result<ViabilityPreflightReport, String> {
     if options.matrix_max_parallel == 0 {
         return Err("matrix_max_parallel must be positive".into());
+    }
+    if options.matrix_max_micro_actions == 0 {
+        return Err("matrix_max_micro_actions must be positive".into());
     }
     let candidates = canonical_profiles("candidate profile", &options.candidates)?;
     let opponents = canonical_profiles("opponent profile", &options.opponents)?;
@@ -198,6 +202,7 @@ pub fn run_viability_preflight(
             || matrix.baseline_variant != baseline_variant
             || matrix.candidates != candidates
             || matrix.opponents != opponents
+            || matrix.ecological_options.max_micro_actions != options.matrix_max_micro_actions
         {
             return Err("existing viability matrix does not match requested preflight".into());
         }
@@ -210,6 +215,7 @@ pub fn run_viability_preflight(
                 opponents: opponents.clone(),
                 baseline_variant: Some(baseline_variant),
                 max_parallel: options.matrix_max_parallel,
+                max_micro_actions: options.matrix_max_micro_actions,
             },
         )?;
         publish_viability_matrix_report(&matrix_file, &matrix)?;
@@ -339,13 +345,14 @@ mod tests {
             opponents: vec![OpponentProfile::Wait],
             baseline_variant: None,
             matrix_max_parallel: 2,
+            matrix_max_micro_actions: 1_000,
             gate_spec_file: gates,
             execute_training: None,
         }
     }
 
     const PASSING_POLICY: &str = r#"
-        schema_version = 1
+        schema_version = 2
         [absolute]
         max_timeout_rate = 1.0
         min_candidate_survival_rate = 0.0
@@ -410,7 +417,7 @@ mod tests {
         let (spec, gates) = write_inputs(
             temporary.path(),
             r#"
-            schema_version = 1
+            schema_version = 2
             [absolute]
             min_applied_damage_per_episode_for_combat_profiles = 1.0e300
             "#,

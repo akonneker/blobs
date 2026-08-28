@@ -1,0 +1,16 @@
+# Re-run the three specialist-distillation seeds after compact, disjoint
+# teacher-row routing. Scientific configuration is identical to the prior
+# specialist-distillation variant; the execution contract's trainer hash
+# distinguishes this implementation benchmark.
+
+base_config = "competitive_transfer_large_specialist_distillation.toml"
+output_dir = "../../sweeps/specialist-distillation-partitioned-inference-v1"
+seeds = [42, 43, 44]
+
+[[variants]]
+name = "partitioned-teacher-inference"
+description = "Each rollout row is evaluated by exactly one applicable teacher"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.10
+combat_coeff = 0.10

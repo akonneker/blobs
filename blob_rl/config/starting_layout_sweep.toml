@@ -1,0 +1,52 @@
+# Paired scenario controls for separating founder competence, assembly geometry,
+# and globally distributed starts. These are initialization treatments only;
+# Minds receive no layout label or privileged coordinate.
+base_config = "objective_large_draw_smoke.toml"
+output_dir = "../../sweeps/starting-layout-controls-v1"
+seeds = [6101, 6201, 6301, 6401]
+
+[[variants]]
+name = "single-on-plant"
+description = "One founder per team, each standing on an identical plant"
+[variants.scenario]
+cells_per_team = 1
+starting_cell_layout = "block"
+num_scattered_energy = 0
+num_plants = 0
+resource_placement = "on_all_cells"
+
+[[variants]]
+name = "tight-block"
+description = "Dense square assembly at opposed territorial anchors"
+[variants.scenario]
+starting_cell_layout = "block"
+
+[[variants]]
+name = "tight-line"
+description = "Contiguous horizontal assembly at opposed territorial anchors"
+[variants.scenario]
+starting_cell_layout = "line"
+
+[[variants]]
+name = "loose-checkerboard"
+description = "Spaced square lattice with one vacant tile between founders"
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+
+[[variants]]
+name = "loose-ring"
+description = "Founders distributed evenly around a square perimeter"
+[variants.scenario]
+starting_cell_layout = "ring"
+
+[[variants]]
+name = "loose-random"
+description = "Seeded random positions inside a compact territorial radius"
+[variants.scenario]
+starting_cell_layout = "loose_random"
+
+[[variants]]
+name = "global-random"
+description = "Every founder sampled uniformly from all vacant world tiles"
+[variants.scenario]
+starting_cell_layout = "random"

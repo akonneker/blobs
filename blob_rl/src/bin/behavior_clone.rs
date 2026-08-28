@@ -4,16 +4,37 @@
 use std::path::PathBuf;
 
 use blob_rl::behavior_cloning::{
-    behavior_clone, behavior_clone_artifact_sha256, load_dataset_directories,
-    publish_behavior_clone, BehaviorCloningConfig, DatasetSamplingStrategy,
+    behavior_clone_artifact_sha256, behavior_clone_from_model, load_dataset_directories,
+    publish_behavior_clone, verify_behavior_clone_artifact, ActionBalancingStrategy,
+    BehaviorCloningConfig, DatasetSamplingStrategy,
 };
 use blob_rl::config::TrainingConfig;
+use blob_rl::model::PolicyValueNetConfig;
+use burn::module::Module;
+use burn::record::CompactRecorder;
 use clap::{Parser, ValueEnum};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Sampling {
     Balanced,
     Proportional,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ActionBalancing {
+    None,
+    Family,
+    Label,
+}
+
+impl From<ActionBalancing> for ActionBalancingStrategy {
+    fn from(value: ActionBalancing) -> Self {
+        match value {
+            ActionBalancing::None => Self::None,
+            ActionBalancing::Family => Self::Family,
+            ActionBalancing::Label => Self::Label,
+        }
+    }
 }
 
 impl From<Sampling> for DatasetSamplingStrategy {
@@ -49,6 +70,10 @@ struct Args {
     #[arg(long)]
     output: PathBuf,
 
+    /// Verified behavior-cloning artifact used to initialize this stage.
+    #[arg(long)]
+    initial_behavior_clone: Option<PathBuf>,
+
     #[arg(long, default_value_t = 10)]
     epochs: usize,
 
@@ -69,6 +94,10 @@ struct Args {
     #[arg(long, value_enum, default_value_t = Sampling::Balanced)]
     dataset_sampling: Sampling,
 
+    /// Explicit positive dataset sampling weights, one per --dataset in order.
+    #[arg(long, value_delimiter = ',')]
+    dataset_weight: Vec<f64>,
+
     /// Maximum consecutive decisions per cell in one recurrent graph.
     #[arg(long, default_value_t = 16)]
     recurrent_unroll_steps: usize,
@@ -76,6 +105,18 @@ struct Args {
     /// Exclude abstract labels whose full action/memory decision does not round-trip.
     #[arg(long)]
     exact_round_trip_only: bool,
+
+    /// Reweight the supervised action loss to counter catalog imbalance.
+    #[arg(long, value_enum, default_value_t = ActionBalancing::None)]
+    action_balancing: ActionBalancing,
+
+    /// Inverse-frequency weighting exponent in [0, 1].
+    #[arg(long, default_value_t = 1.0)]
+    action_balance_exponent: f64,
+
+    /// Cap the largest represented action weight to this multiple of the smallest.
+    #[arg(long)]
+    action_balance_max_ratio: Option<f64>,
 }
 
 fn main() {
@@ -88,15 +129,28 @@ fn main() {
         .unwrap_or_else(|error| panic!("failed to load {}: {error}", args.config.display()));
     let datasets = load_dataset_directories(&args.dataset)
         .unwrap_or_else(|error| panic!("failed to load demonstrations: {error}"));
+    let initial_artifact_sha256 = args.initial_behavior_clone.as_ref().map(|directory| {
+        behavior_clone_artifact_sha256(directory).unwrap_or_else(|error| {
+            panic!(
+                "failed to hash initial behavior clone {}: {error}",
+                directory.display()
+            )
+        })
+    });
     let cloning = BehaviorCloningConfig {
         seed: args.seed,
+        initial_artifact_sha256: initial_artifact_sha256.clone(),
         epochs: args.epochs,
         minibatch_size: args.minibatch_size,
         learning_rate: args.learning_rate,
         validation_fraction: args.validation_fraction,
         dataset_sampling: args.dataset_sampling.into(),
+        dataset_sampling_weights: args.dataset_weight,
         recurrent_unroll_steps: args.recurrent_unroll_steps,
         exact_round_trip_only: args.exact_round_trip_only,
+        action_balancing: args.action_balancing.into(),
+        action_balance_exponent: args.action_balance_exponent,
+        action_balance_max_ratio: args.action_balance_max_ratio,
     };
 
     #[cfg(feature = "wgpu")]
@@ -104,9 +158,32 @@ fn main() {
         use burn::backend::{Autodiff, Wgpu};
         type Backend = Autodiff<Wgpu>;
         let device = burn::backend::wgpu::WgpuDevice::default();
-        let (model, metrics) =
-            behavior_clone::<Backend>(&datasets, &training.model, &cloning, device)
-                .unwrap_or_else(|error| panic!("behavior cloning failed: {error}"));
+        let initial_model = args.initial_behavior_clone.as_ref().map(|directory| {
+            let model_path = verify_behavior_clone_artifact(
+                directory,
+                initial_artifact_sha256
+                    .as_deref()
+                    .expect("initial artifact hash was computed"),
+                &training.model,
+            )
+            .unwrap_or_else(|error| panic!("invalid initial behavior clone: {error}"));
+            PolicyValueNetConfig {
+                hidden1: training.model.hidden1,
+                hidden2: training.model.hidden2,
+                recurrent_size: training.model.recurrent_size,
+            }
+            .init::<Backend>(&device)
+            .load_file(model_path, &CompactRecorder::new(), &device)
+            .unwrap_or_else(|error| panic!("failed to load initial behavior clone: {error}"))
+        });
+        let (model, metrics) = behavior_clone_from_model::<Backend>(
+            &datasets,
+            &training.model,
+            &cloning,
+            initial_model,
+            device,
+        )
+        .unwrap_or_else(|error| panic!("behavior cloning failed: {error}"));
         publish_behavior_clone(
             &args.output,
             &model,
@@ -136,9 +213,32 @@ fn main() {
         use burn::backend::{Autodiff, NdArray};
         type Backend = Autodiff<NdArray<f32>>;
         let device = Default::default();
-        let (model, metrics) =
-            behavior_clone::<Backend>(&datasets, &training.model, &cloning, device)
-                .unwrap_or_else(|error| panic!("behavior cloning failed: {error}"));
+        let initial_model = args.initial_behavior_clone.as_ref().map(|directory| {
+            let model_path = verify_behavior_clone_artifact(
+                directory,
+                initial_artifact_sha256
+                    .as_deref()
+                    .expect("initial artifact hash was computed"),
+                &training.model,
+            )
+            .unwrap_or_else(|error| panic!("invalid initial behavior clone: {error}"));
+            PolicyValueNetConfig {
+                hidden1: training.model.hidden1,
+                hidden2: training.model.hidden2,
+                recurrent_size: training.model.recurrent_size,
+            }
+            .init::<Backend>(&device)
+            .load_file(model_path, &CompactRecorder::new(), &device)
+            .unwrap_or_else(|error| panic!("failed to load initial behavior clone: {error}"))
+        });
+        let (model, metrics) = behavior_clone_from_model::<Backend>(
+            &datasets,
+            &training.model,
+            &cloning,
+            initial_model,
+            device,
+        )
+        .unwrap_or_else(|error| panic!("behavior cloning failed: {error}"));
         publish_behavior_clone(
             &args.output,
             &model,

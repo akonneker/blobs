@@ -9,8 +9,8 @@ use blob_interface::reference_mind::ReferenceMemoryUpdate;
 use serde::{Deserialize, Serialize};
 
 use crate::action::{
-    decode_policy_choice, encode_decision, NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES,
-    NUM_SIGNAL_STRENGTH_CHOICES,
+    decode_policy_choice, encode_decision, policy_action_family, PolicyActionFamily, NUM_ACTIONS,
+    NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::config::{ScenarioProfile, TrainingConfig};
 use crate::control_matrix::MaintainedMindProfile;
@@ -19,7 +19,7 @@ use crate::observation::{Observation, OBS_DIM};
 use crate::sweep::sha256;
 use crate::viability::mind_abi_hash;
 
-pub const DEMONSTRATION_SCHEMA_VERSION: u32 = 7;
+pub const DEMONSTRATION_SCHEMA_VERSION: u32 = 9;
 const PAYLOAD_FILE: &str = "samples.mpk";
 const MANIFEST_FILE: &str = "manifest.json";
 const MAX_DATASET_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -84,6 +84,8 @@ pub struct DemonstrationManifest {
     pub samples: usize,
     pub exact_round_trip_samples: usize,
     pub memory_replacement_samples: usize,
+    /// Wait, guard, consume, move, attack, split, regurgitate, terrain, signal.
+    pub action_family_samples: [usize; PolicyActionFamily::COUNT],
     pub completed_episodes: usize,
     pub wins: usize,
     pub losses: usize,
@@ -125,6 +127,7 @@ pub fn generate_demonstrations(
     let mut samples = Vec::with_capacity(options.max_samples);
     let mut exact_round_trip_samples = 0usize;
     let mut memory_replacement_samples = 0usize;
+    let mut action_family_samples = [0usize; PolicyActionFamily::COUNT];
     let mut completed_episodes = 0usize;
     let mut wins = 0usize;
     let mut losses = 0usize;
@@ -180,6 +183,9 @@ pub fn generate_demonstrations(
                     let memory_replacement =
                         matches!(decision.memory_update, ReferenceMemoryUpdate::Replace(_));
                     memory_replacement_samples += usize::from(memory_replacement);
+                    let family = policy_action_family(choice.action)
+                        .expect("encoded teacher decision belongs to a policy family");
+                    action_family_samples[family.index()] += 1;
                     samples.push(DemonstrationSample {
                         source_seed: *seed,
                         source_cell: u64::try_from(cell_id.0).map_err(|_| {
@@ -261,6 +267,7 @@ pub fn generate_demonstrations(
         samples: payload.samples.len(),
         exact_round_trip_samples,
         memory_replacement_samples,
+        action_family_samples,
         completed_episodes,
         wins,
         losses,
@@ -290,6 +297,7 @@ fn validate_dataset(
     }
     let mut exact = 0usize;
     let mut memory_replacements = 0usize;
+    let mut action_families = [0usize; PolicyActionFamily::COUNT];
     for sample in &payload.samples {
         let action = usize::from(sample.action);
         let amount = usize::from(sample.amount);
@@ -315,9 +323,13 @@ fn validate_dataset(
         }
         exact += usize::from(sample.exact_round_trip);
         memory_replacements += usize::from(sample.memory_replacement);
+        let family = policy_action_family(action)
+            .ok_or_else(|| "demonstration action has no policy family".to_string())?;
+        action_families[family.index()] += 1;
     }
     if exact != manifest.exact_round_trip_samples
         || memory_replacements != manifest.memory_replacement_samples
+        || action_families != manifest.action_family_samples
     {
         return Err("demonstration representability count mismatch".into());
     }
@@ -465,10 +477,17 @@ mod tests {
         }));
         assert!(left.0.memory_replacement_samples > 0);
         assert!(left.0.exact_round_trip_samples < left.0.samples);
+        assert_eq!(
+            left.0.action_family_samples.iter().sum::<usize>(),
+            left.0.samples
+        );
 
         let mut wrong_seed = left.1.clone();
         wrong_seed.samples[0].source_seed = 999;
         assert!(validate_dataset(&left.0, &wrong_seed).is_err());
+        let mut wrong_families = left.0.clone();
+        wrong_families.action_family_samples[PolicyActionFamily::Attack.index()] += 1;
+        assert!(validate_dataset(&wrong_families, &left.1).is_err());
 
         let temporary = tempfile::tempdir().unwrap();
         let directory = temporary.path().join("dataset");
@@ -485,5 +504,39 @@ mod tests {
         assert!(load_demonstrations(&directory)
             .unwrap_err()
             .contains("SHA-256"));
+    }
+
+    #[test]
+    fn paired_contact_aggressive_teacher_produces_attack_dense_examples() {
+        let mut config = small_config();
+        config.env.world_size = 8;
+        config.env.cells_per_team = 1;
+        config.env.starting_cell_layout = blob_engine::engine::StartingCellLayout::PairedContact;
+        config.env.initial_energy = 180;
+        config.env.num_scattered_energy = 0;
+        config.env.num_plants = 0;
+        config.env.opponent = crate::config::OpponentProfile::Defensive;
+        let options = DemonstrationOptions {
+            teacher: MaintainedMindProfile::Aggressive,
+            seeds: vec![21, 22, 23, 24],
+            max_samples: 64,
+        };
+
+        let (manifest, payload) =
+            generate_demonstrations(&config, "contact-config".into(), &options).unwrap();
+        let attacks = manifest.action_family_samples[PolicyActionFamily::Attack.index()];
+        let exact_attacks = payload
+            .samples
+            .iter()
+            .filter(|sample| {
+                sample.exact_round_trip
+                    && policy_action_family(usize::from(sample.action))
+                        == Some(PolicyActionFamily::Attack)
+            })
+            .count();
+        assert!(attacks > 0);
+        assert!(attacks * 2 >= payload.samples.len());
+        assert!(exact_attacks > 0);
+        assert!(exact_attacks * 2 >= manifest.exact_round_trip_samples);
     }
 }

@@ -1,0 +1,81 @@
+# Fast end-to-end exercise of an explicitly experimental scale-transition job.
+# This is pipeline validation, not a selection-grade learning run.
+seed = 64001
+num_envs = 1
+rollout_length = 64
+total_timesteps = 64
+eval_interval = 0
+eval_episodes = 1
+checkpoint_interval = 1
+checkpoint_dir = "unused-scale-transition-smoke"
+
+[telemetry]
+enabled = true
+state_sample_interval_steps = 32
+max_state_samples_per_episode = 8
+episode_log_stride = 8
+
+[ppo]
+clip_epsilon = 0.2
+value_clip_epsilon = 0.2
+gamma = 0.99
+gae_lambda = 0.95
+epochs_per_update = 1
+minibatch_size = 128
+recurrent_unroll_steps = 16
+learning_rate = 3e-4
+entropy_coeff = 0.01
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+target_kl = 0.03
+
+[model]
+hidden1 = 128
+hidden2 = 64
+recurrent_size = 64
+
+[env]
+world_size = 64
+cells_per_team = 16
+starting_cell_layout = "block"
+max_episode_len = 1024
+num_teams = 2
+opponent = "wait"
+min_energy = 1
+initial_energy = 100
+num_scattered_energy = 128
+scattered_energy_amount = 20
+num_plants = 16
+plant_rate = 2
+plant_max_energy = 100
+
+[env.victory]
+immediate = "extermination"
+deadline = "draw"
+sim_time_limit_quanta = 1048576
+
+[reward]
+survive_tick = 0.0
+eat_energy = 0.002
+kill_enemy = 1.0
+cell_died = -1.0
+split_success = 0.2
+team_wins = 10.0
+team_loses = -10.0
+move_toward_food = 0.0
+move_toward_enemy = 0.0
+
+[reward.deadline]
+mode = "none"
+
+[self_play]
+start_after_sim_time_quanta_per_env = 2097152
+opponent_update_interval = 8
+max_opponent_pool = 0
+baseline_probability = 1.0
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

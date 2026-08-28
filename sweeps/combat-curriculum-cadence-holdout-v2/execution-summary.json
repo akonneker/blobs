@@ -1,0 +1,11 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "ce82a94fc6dc05010f1f98a546a5c1f4e156834ffbfe96d4217f89a4006f575e",
+  "execution_contract_sha256": "2bfb6e54a2015745fd3f8bfbb86e41900f2030d79e0549d8bf3c242551960b33",
+  "trainer_sha256": "ffaa62264e94228aa3fb98cc6c92f0d32000a4c5d23f4543f11532dafe422897",
+  "total_runs": 10,
+  "succeeded": 10,
+  "failed": 0,
+  "still_running": 0,
+  "aggregate_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-holdout-v2/aggregate.json"
+}

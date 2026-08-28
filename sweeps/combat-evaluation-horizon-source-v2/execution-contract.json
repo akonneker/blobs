@@ -1,0 +1,18 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "18df1942f7cd5d719c8ad95966b40d3849b57ae2e668aa5a27dd1d2f01997e20",
+  "trainer_sha256": "b869fb24d26322862ec8d43b564e6d5b9b4dc2634d7950594159e88cc30fc5e3",
+  "trainer_size_bytes": 11206224,
+  "trainer_container_digest": null,
+  "train_arguments": [
+    "--initial-policy",
+    "/Users/adam/code/blobs/training-output/warmstarts/skirmish-schema35/behavior-clone",
+    "--initial-policy-artifact-sha256",
+    "4244392609b76655df5a6884c8375494a8259ec8a19325f87871764f065eec45",
+    "--initial-policy-qualification",
+    "/Users/adam/code/blobs/training-output/warmstarts/skirmish-schema36/feeding-evaluation.json",
+    "--initial-policy-qualification-hash",
+    "5a6391a112ebba9fa0fab68a551c86c2c25ffa347818eb60d22a79f36dc8672c"
+  ],
+  "threads_per_run": 4
+}

@@ -10,12 +10,16 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{OpponentProfile, TrainingConfig};
+use crate::ecological_characterization::{
+    characterize_ecology, validate_ecological_characterization, EcologicalCharacterizationOptions,
+    EcologicalCharacterizationReport,
+};
 use crate::sweep_execution::load_validated_sweep;
 use crate::viability::{
     run_baseline_viability, validate_viability_report, ViabilityOutcome, ViabilityReport,
 };
 
-pub const VIABILITY_MATRIX_SCHEMA_VERSION: u32 = 2;
+pub const VIABILITY_MATRIX_SCHEMA_VERSION: u32 = 3;
 const MAX_VIABILITY_MATRIX_BYTES: u64 = 64 * 1024 * 1024;
 static MATRIX_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -25,9 +29,10 @@ pub struct ViabilityMatrixOptions {
     pub opponents: Vec<OpponentProfile>,
     pub baseline_variant: Option<String>,
     pub max_parallel: usize,
+    pub max_micro_actions: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ViabilityMatrixVariant {
     pub name: String,
@@ -35,6 +40,7 @@ pub struct ViabilityMatrixVariant {
     pub semantic_ruleset_hash: String,
     pub compiled_ruleset_hash: String,
     pub scenario_hash: String,
+    pub ecological_characterization: EcologicalCharacterizationReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -88,6 +94,7 @@ pub struct ViabilityMatrixReport {
     pub candidates: Vec<OpponentProfile>,
     pub opponents: Vec<OpponentProfile>,
     pub seeds: Vec<u64>,
+    pub ecological_options: EcologicalCharacterizationOptions,
     pub variants: Vec<ViabilityMatrixVariant>,
     pub matchups: Vec<ViabilityMatrixMatchup>,
     pub paired_comparisons: Vec<PairedViabilityComparison>,
@@ -101,6 +108,7 @@ struct MatrixIdentity<'a> {
     baseline_variant: &'a str,
     candidates: &'a [OpponentProfile],
     opponents: &'a [OpponentProfile],
+    ecological_options: &'a EcologicalCharacterizationOptions,
 }
 
 #[derive(Clone)]
@@ -253,6 +261,10 @@ pub fn validate_viability_matrix_report(report: &ViabilityMatrixReport) -> Resul
     if report.variants.is_empty() || report.seeds.is_empty() {
         return Err("viability matrix requires variants and seeds".into());
     }
+    report.ecological_options.validate()?;
+    if report.ecological_options.seeds != report.seeds {
+        return Err("viability matrix ecological seed suite mismatch".into());
+    }
     let mut variant_names = HashSet::with_capacity(report.variants.len());
     if report
         .variants
@@ -261,6 +273,21 @@ pub fn validate_viability_matrix_report(report: &ViabilityMatrixReport) -> Resul
         || !variant_names.contains(report.baseline_variant.as_str())
     {
         return Err("viability matrix variants are duplicated or omit the baseline".into());
+    }
+    for variant in &report.variants {
+        validate_ecological_characterization(&variant.ecological_characterization)
+            .map_err(|error| format!("variant {} ecology: {error}", variant.name))?;
+        let ecology = &variant.ecological_characterization;
+        if ecology.options != report.ecological_options
+            || ecology.semantic_ruleset_hash != variant.semantic_ruleset_hash
+            || ecology.compiled_ruleset_hash != variant.compiled_ruleset_hash
+            || ecology.scenario_hash != variant.scenario_hash
+        {
+            return Err(format!(
+                "variant {} ecological identity does not match the matrix",
+                variant.name
+            ));
+        }
     }
     let expected_matchups =
         report.variants.len() * report.candidates.len() * report.opponents.len();
@@ -337,6 +364,7 @@ pub fn validate_viability_matrix_report(report: &ViabilityMatrixReport) -> Resul
             baseline_variant: &report.baseline_variant,
             candidates: &report.candidates,
             opponents: &report.opponents,
+            ecological_options: &report.ecological_options,
         })
         .map_err(|error| format!("failed to encode viability matrix identity: {error}"))?,
     );
@@ -374,9 +402,16 @@ pub fn run_viability_matrix(
     if options.max_parallel == 0 {
         return Err("viability matrix max_parallel must be positive".into());
     }
+    if options.max_micro_actions == 0 {
+        return Err("viability matrix max_micro_actions must be positive".into());
+    }
     let candidates = canonical_profiles("candidate profile", &options.candidates)?;
     let opponents = canonical_profiles("opponent profile", &options.opponents)?;
     let sweep = load_validated_sweep(manifest_file)?;
+    let ecological_options = EcologicalCharacterizationOptions {
+        seeds: sweep.manifest.seeds.clone(),
+        max_micro_actions: options.max_micro_actions,
+    };
     let baseline_variant = options
         .baseline_variant
         .clone()
@@ -431,6 +466,10 @@ pub fn run_viability_matrix(
             semantic_ruleset_hash: representative_run.semantic_ruleset_hash.clone(),
             compiled_ruleset_hash: representative_run.compiled_ruleset_hash.clone(),
             scenario_hash: representative_run.scenario_hash.clone(),
+            ecological_characterization: characterize_ecology(
+                &representative_config.env,
+                &ecological_options,
+            )?,
         });
     }
 
@@ -539,6 +578,7 @@ pub fn run_viability_matrix(
             baseline_variant: &baseline_variant,
             candidates: &candidates,
             opponents: &opponents,
+            ecological_options: &ecological_options,
         })
         .map_err(|error| format!("failed to encode viability matrix identity: {error}"))?,
     );
@@ -554,6 +594,7 @@ pub fn run_viability_matrix(
         candidates,
         opponents,
         seeds: sweep.manifest.seeds,
+        ecological_options,
         variants,
         matchups,
         paired_comparisons,
@@ -681,6 +722,7 @@ mod tests {
             opponents: vec![OpponentProfile::Wait],
             baseline_variant: None,
             max_parallel,
+            max_micro_actions: 1_000,
         }
     }
 

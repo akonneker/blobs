@@ -1,0 +1,165 @@
+{
+  "schema_version": 6,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/combat_curriculum_cadence_sweep.toml",
+  "spec_sha256": "33f56e32d7b7f890198c9cbfd12347b319c990d809e0ed935ed65fec4f9fd0a3",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_skirmish.toml",
+  "base_config_sha256": "60c9d7b2487abd80e501adc6916b1893d3462f040c15cd2ce068f19e53fb1aed",
+  "output_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "variants": [
+    {
+      "name": "two-cycle-balanced",
+      "description": "Two 262,144-quanta cycles with equal contact and skirmish exposure",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {}
+    },
+    {
+      "name": "four-cycle-balanced",
+      "description": "Four 131,072-quanta cycles with the baseline stage proportions",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {
+        "adjacent_food_sim_time_quanta_per_cycle": 16384,
+        "contact_episode_sim_time_limit_quanta": 16384,
+        "contact_sim_time_quanta_per_cycle": 32768,
+        "cycle_sim_time_quanta_per_env": 131072,
+        "on_food_sim_time_quanta_per_cycle": 16384,
+        "retention_episode_sim_time_limit_quanta": 16384,
+        "skirmish_episode_sim_time_limit_quanta": 32768,
+        "skirmish_sim_time_quanta_per_cycle": 32768
+      }
+    },
+    {
+      "name": "four-cycle-skirmish-heavy",
+      "description": "Four cycles shifting half of contact exposure into 4v4 skirmishes",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {
+        "adjacent_food_sim_time_quanta_per_cycle": 16384,
+        "contact_episode_sim_time_limit_quanta": 16384,
+        "contact_sim_time_quanta_per_cycle": 16384,
+        "cycle_sim_time_quanta_per_env": 131072,
+        "on_food_sim_time_quanta_per_cycle": 16384,
+        "retention_episode_sim_time_limit_quanta": 16384,
+        "skirmish_episode_sim_time_limit_quanta": 49152,
+        "skirmish_sim_time_quanta_per_cycle": 49152
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "two-cycle-balanced",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "6d79ad7cf986e815b87d589ac3024d92857a9be45bea6145fca565c7803ce01b",
+      "config_file_sha256": "fae4b5ade09d355f471ffa23eb422f5acc61ed5dcef0831fcd1f14653bbab95b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/two-cycle-balanced/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/two-cycle-balanced/seed-42/config.toml"
+    },
+    {
+      "variant": "two-cycle-balanced",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a71700946ec0351631640bf0b5ae6312c6b3218da54220bfc5e8cc2dae5cc388",
+      "config_file_sha256": "fae9ab1c8615bcaf41ed57d107d552ee50f7d88e3bc25daa29916822ba878ed5",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/two-cycle-balanced/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/two-cycle-balanced/seed-43/config.toml"
+    },
+    {
+      "variant": "two-cycle-balanced",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "fceb06b37968a125c24a2cfb47f7d38d7685f3d7fdff5286bb78a67038d2ad3e",
+      "config_file_sha256": "82c70a1f2e498088d33d48dcb29d8f950e70c43118473eb8e3924597e8e05c1e",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/two-cycle-balanced/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/two-cycle-balanced/seed-44/config.toml"
+    },
+    {
+      "variant": "four-cycle-balanced",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "79ca8e91131bc79145e0bd4df014be5ff062437eb77c45025628c12989b2bdd4",
+      "config_file_sha256": "ba0503e28fe92d0ddc6d46574b91eaa8111ffcac4ddacf1b2c8f0ced773de3c9",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-balanced/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-balanced/seed-42/config.toml"
+    },
+    {
+      "variant": "four-cycle-balanced",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "305a36ce8ee4c635ac60283cb48622bea0675d4f501829279cfe642500cdd77b",
+      "config_file_sha256": "28554ecedfb4d2c450ed39258b10a267b2133009b9ee7d50184c5e67c3ebed5a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-balanced/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-balanced/seed-43/config.toml"
+    },
+    {
+      "variant": "four-cycle-balanced",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "eb8ef69587c1806abd2edd6b6b2f5936613dd6184e96c625c3478716a05f3ac9",
+      "config_file_sha256": "b6bd3208f3ef4479a1823b2b4afb4fe61a379efef5d4050f789fe5676b72311a",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-balanced/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-balanced/seed-44/config.toml"
+    },
+    {
+      "variant": "four-cycle-skirmish-heavy",
+      "replicate": 0,
+      "training_seed": 42,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a54c05f4784a73cd90e20b5ae0542a0690b381752cd2367e736a1e5d59781b5c",
+      "config_file_sha256": "46a6cb5edae69d2ccf16a5f86700967981fb2aaf0eaee1c9347fb3e196b7c7c0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-skirmish-heavy/seed-42",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-skirmish-heavy/seed-42/config.toml"
+    },
+    {
+      "variant": "four-cycle-skirmish-heavy",
+      "replicate": 1,
+      "training_seed": 43,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "bf20d6fd36b82eedbc8022dca862ec70effbb6742dbc87bba52bcee96390934e",
+      "config_file_sha256": "a83efb63435853f7f513f54d714c740d412fbbc5229d062d6d9b02c060aa3ff8",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-skirmish-heavy/seed-43",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-skirmish-heavy/seed-43/config.toml"
+    },
+    {
+      "variant": "four-cycle-skirmish-heavy",
+      "replicate": 2,
+      "training_seed": 44,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "a7bda1c93692d69aad3b6cc4592faaeb81995c1da1a5337ed2bc67f34050063f",
+      "config_file_sha256": "b42242b23ea04d166a27814f1cb30a42a29cc48c805345ca774304f746a02e43",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-skirmish-heavy/seed-44",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-curriculum-cadence-v1/four-cycle-skirmish-heavy/seed-44/config.toml"
+    }
+  ]
+}

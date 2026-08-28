@@ -1,0 +1,11 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "70b10a6a20bd0fff019d93880fa4878040bfcf0af47d6941bfc0605adab5c2ea",
+  "execution_contract_sha256": "21da73fa2f994ddf2a4040a6d69020fabd95442c1a5080d8aeacfb2677fae506",
+  "trainer_sha256": "b869fb24d26322862ec8d43b564e6d5b9b4dc2634d7950594159e88cc30fc5e3",
+  "total_runs": 5,
+  "succeeded": 0,
+  "failed": 5,
+  "still_running": 0,
+  "aggregate_file": null
+}

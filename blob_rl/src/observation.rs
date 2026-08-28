@@ -1,5 +1,6 @@
 //! Fixed-shape tensor projection of the canonical reference Mind input.
 
+use blob_interface::randomness::PRIVATE_RANDOM_BYTES;
 use blob_interface::reference_mind::{
     ReferenceActivity, ReferenceMindInput, ReferenceOutcomeStatus, ReferenceProgress,
     REFERENCE_MAX_LOCAL_SLOTS,
@@ -9,7 +10,10 @@ use crate::action::{
     policy_masks, NUM_ACTIONS, NUM_AMOUNT_CHOICES, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
 
-const HEADER_FEATURES: usize = 38;
+const STATE_HEADER_FEATURES: usize = 38;
+pub const OBS_RANDOMNESS_FEATURE_START: usize = STATE_HEADER_FEATURES;
+pub const OBS_RANDOMNESS_FEATURE_END: usize = STATE_HEADER_FEATURES + PRIVATE_RANDOM_BYTES;
+const HEADER_FEATURES: usize = STATE_HEADER_FEATURES + PRIVATE_RANDOM_BYTES;
 const SLOT_FEATURES: usize = 33;
 pub const OBS_DIM: usize = HEADER_FEATURES + REFERENCE_MAX_LOCAL_SLOTS * SLOT_FEATURES;
 
@@ -109,6 +113,9 @@ impl Observation {
         data[35] = f32::from(input.action_space.signal_enabled);
         data[36] = amount(input.action_space.terrain_mass_per_elevation);
         data[37] = amount(input.action_space.signal_emission_cost);
+        for (index, byte) in input.randomness.as_bytes().iter().copied().enumerate() {
+            data[OBS_RANDOMNESS_FEATURE_START + index] = f32::from(byte) / f32::from(u8::MAX);
+        }
 
         for slot in &input.slots {
             if usize::from(slot.slot) >= REFERENCE_MAX_LOCAL_SLOTS {
@@ -324,6 +331,30 @@ mod tests {
         assert_eq!(observation.data.len(), OBS_DIM);
         assert!(observation.data.iter().all(|value| value.is_finite()));
         assert!(observation.action_mask.iter().any(|allowed| *allowed));
+    }
+
+    #[test]
+    fn private_random_block_is_available_as_exact_cell_private_features() {
+        let baseline = Observation::from_reference(&input());
+        let mut randomized_input = input();
+        let bytes = std::array::from_fn(|index| (index * 7 + 3) as u8);
+        randomized_input.randomness = PrivateRandom::from_bytes(bytes);
+        let randomized = Observation::from_reference(&randomized_input);
+
+        assert_eq!(
+            &baseline.data[..OBS_RANDOMNESS_FEATURE_START],
+            &randomized.data[..OBS_RANDOMNESS_FEATURE_START]
+        );
+        for (index, byte) in bytes.into_iter().enumerate() {
+            assert_eq!(
+                randomized.data[OBS_RANDOMNESS_FEATURE_START + index],
+                f32::from(byte) / f32::from(u8::MAX)
+            );
+        }
+        assert_eq!(
+            &baseline.data[HEADER_FEATURES..],
+            &randomized.data[HEADER_FEATURES..]
+        );
     }
 
     #[test]

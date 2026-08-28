@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::{ScenarioProfile, TrainingConfig};
 
-pub const RULES_SWEEP_SCHEMA_VERSION: u32 = 3;
+pub const RULES_SWEEP_SCHEMA_VERSION: u32 = 7;
 static SWEEP_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -39,6 +39,16 @@ pub struct RulesSweepVariant {
     /// PPO settings, or opponent selection.
     #[serde(default)]
     pub scenario: toml::Table,
+    /// Strict partial override of the local-combat curriculum. This is kept
+    /// separate from rules and scenario controls so cadence/mixture sweeps
+    /// cannot change rewards, PPO, model capacity, or evaluation identity.
+    #[serde(default)]
+    pub combat_curriculum: toml::Table,
+    /// Strict partial override of host-only frontier-teacher distillation.
+    /// This enables paired retention experiments without exposing PPO or
+    /// physics as incidental sweep variables.
+    #[serde(default)]
+    pub specialist_distillation: toml::Table,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -239,11 +249,13 @@ fn stage_sweep(
     staging: &Path,
 ) -> Result<RulesSweepManifest, String> {
     let mut runs = Vec::with_capacity(spec.variants.len() * spec.seeds.len());
-    let mut gameplay_profiles = HashSet::new();
+    let mut experiment_profiles = HashSet::new();
     for variant in &spec.variants {
         let variant_config = base_config
             .with_rules_override(&variant.rules)?
-            .with_scenario_override(&variant.scenario)?;
+            .with_scenario_override(&variant.scenario)?
+            .with_combat_curriculum_override(&variant.combat_curriculum)?
+            .with_specialist_distillation_override(&variant.specialist_distillation)?;
         let semantic_hash = variant_config.env.rules.semantic_hash().to_string();
         let scenario_hash = ScenarioProfile::from(&variant_config.env).semantic_hash()?;
         let compiled_hash = ReferenceSimulation::new(
@@ -254,13 +266,9 @@ fn stage_sweep(
         .map_err(|error| format!("variant {} is invalid: {error}", variant.name))?
         .compiled_ruleset_hash()
         .to_string();
-        if !gameplay_profiles.insert((
-            semantic_hash.clone(),
-            compiled_hash.clone(),
-            scenario_hash.clone(),
-        )) {
+        if !experiment_profiles.insert(experiment_config_hash(&variant_config)?) {
             return Err(format!(
-                "variant {} duplicates another variant's expanded rules, neighborhood, and scenario",
+                "variant {} duplicates another variant's complete expanded experiment",
                 variant.name
             ));
         }
@@ -415,12 +423,18 @@ mod tests {
             description = "Change only the initial ecology"
             [variants.scenario]
             num_plants = 4
+
+            [[variants]]
+            name = "short-cycle"
+            description = "Change only the disabled curriculum profile"
+            [variants.combat_curriculum]
+            cycle_sim_time_quanta_per_env = 131072
             "#,
         )
         .unwrap();
 
         let manifest = publish_rules_sweep(&spec).unwrap();
-        assert_eq!(manifest.runs.len(), 9);
+        assert_eq!(manifest.runs.len(), 12);
         assert!(Path::new(&manifest.output_directory).is_absolute());
         assert!(manifest
             .runs
@@ -438,6 +452,7 @@ mod tests {
         let baseline = &manifest.runs[0];
         let changed = &manifest.runs[3];
         let scenario_changed = &manifest.runs[6];
+        let curriculum_changed = &manifest.runs[9];
         assert_ne!(
             baseline.semantic_ruleset_hash,
             changed.semantic_ruleset_hash
@@ -455,12 +470,22 @@ mod tests {
         let baseline_config = TrainingConfig::from_file(&baseline.config_file).unwrap();
         let changed_config = TrainingConfig::from_file(&changed.config_file).unwrap();
         let scenario_config = TrainingConfig::from_file(&scenario_changed.config_file).unwrap();
+        let curriculum_config = TrainingConfig::from_file(&curriculum_changed.config_file).unwrap();
         assert_eq!(baseline_config.reward, changed_config.reward);
         assert_eq!(baseline_config.reward, scenario_config.reward);
         assert_eq!(baseline_config.ppo, scenario_config.ppo);
         assert_eq!(baseline_config.env.opponent, scenario_config.env.opponent);
         assert_eq!(changed_config.env.rules.digestion_rate_numerator, 2);
         assert_eq!(scenario_config.env.num_plants, 4);
+        assert_eq!(
+            curriculum_config
+                .combat_curriculum
+                .cycle_sim_time_quanta_per_env,
+            131_072
+        );
+        assert_eq!(curriculum_config.env, baseline_config.env);
+        assert_eq!(curriculum_config.reward, baseline_config.reward);
+        assert_eq!(curriculum_config.ppo, baseline_config.ppo);
         assert!(temporary.path().join("planned/manifest.json").is_file());
         assert!(publish_rules_sweep(&spec)
             .unwrap_err()
@@ -494,6 +519,437 @@ mod tests {
     }
 
     #[test]
+    fn documented_combat_cadence_sweep_changes_only_schedule_and_is_paired() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/combat_curriculum_cadence_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![42, 43, 44]);
+        assert_eq!(spec.variants.len(), 3);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .map(|config| (variant.name.as_str(), config))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        for (_, config) in &expanded {
+            assert_eq!(config.env, base.env);
+            assert_eq!(config.reward, base.reward);
+            assert_eq!(config.ppo, base.ppo);
+            assert_eq!(config.model, base.model);
+            assert_eq!(config.evaluation_seed, base.evaluation_seed);
+            assert_eq!(config.total_simulation_quanta_per_env, Some(524_288));
+            assert_eq!(config.combat_curriculum.min_skirmish_kills_for_promotion, 1);
+            let cycles = 524_288 / config.combat_curriculum.cycle_sim_time_quanta_per_env;
+            assert_eq!(
+                cycles * config.combat_curriculum.on_food_sim_time_quanta_per_cycle,
+                65_536
+            );
+            assert_eq!(
+                cycles
+                    * config
+                        .combat_curriculum
+                        .adjacent_food_sim_time_quanta_per_cycle,
+                65_536
+            );
+        }
+        assert_eq!(
+            expanded[0]
+                .1
+                .combat_curriculum
+                .contact_sim_time_quanta_per_cycle,
+            65_536
+        );
+        assert_eq!(
+            expanded[1]
+                .1
+                .combat_curriculum
+                .contact_sim_time_quanta_per_cycle,
+            32_768
+        );
+        assert_eq!(
+            expanded[2]
+                .1
+                .combat_curriculum
+                .skirmish_sim_time_quanta_per_cycle,
+            49_152
+        );
+    }
+
+    #[test]
+    fn documented_combat_cadence_holdout_is_strict_and_uses_new_seeds() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/combat_curriculum_cadence_holdout_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![45, 46, 47, 48, 49]);
+        assert_eq!(spec.variants.len(), 2);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(expanded[0], base);
+        for config in &expanded {
+            assert!(!config.specialist_distillation.enabled);
+            assert_eq!(config.env, base.env);
+            assert_eq!(config.reward, base.reward);
+            assert_eq!(config.ppo, base.ppo);
+            assert_eq!(config.model, base.model);
+            assert_eq!(config.evaluation_seed, base.evaluation_seed);
+            assert_eq!(config.total_simulation_quanta_per_env, Some(524_288));
+            let cycles = 524_288 / config.combat_curriculum.cycle_sim_time_quanta_per_env;
+            assert_eq!(
+                cycles * config.combat_curriculum.on_food_sim_time_quanta_per_cycle,
+                65_536
+            );
+            assert_eq!(
+                cycles
+                    * config
+                        .combat_curriculum
+                        .adjacent_food_sim_time_quanta_per_cycle,
+                65_536
+            );
+            assert_eq!(
+                cycles * config.combat_curriculum.contact_sim_time_quanta_per_cycle,
+                131_072
+            );
+            assert_eq!(
+                cycles * config.combat_curriculum.skirmish_sim_time_quanta_per_cycle,
+                131_072
+            );
+        }
+        assert_eq!(
+            expanded[0].combat_curriculum.cycle_sim_time_quanta_per_env,
+            262_144
+        );
+        assert_eq!(
+            expanded[1].combat_curriculum.cycle_sim_time_quanta_per_env,
+            131_072
+        );
+    }
+
+    #[test]
+    fn documented_isolated_cadence_sweep_keeps_evaluation_horizons_fixed() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/combat_curriculum_cadence_isolated_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![45, 46, 47, 48, 49]);
+        assert_eq!(spec.variants.len(), 2);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish_frequent.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(expanded[0], base);
+        for config in &expanded {
+            assert_eq!(
+                config
+                    .combat_curriculum
+                    .retention_episode_sim_time_limit_quanta,
+                16_384
+            );
+            assert_eq!(
+                config
+                    .combat_curriculum
+                    .contact_episode_sim_time_limit_quanta,
+                16_384
+            );
+            assert_eq!(
+                config
+                    .combat_curriculum
+                    .skirmish_episode_sim_time_limit_quanta,
+                32_768
+            );
+            assert_eq!(
+                config
+                    .combat_curriculum
+                    .contact_evaluation_sim_time_limit_quanta,
+                16_384
+            );
+            assert_eq!(
+                config
+                    .combat_curriculum
+                    .skirmish_evaluation_sim_time_limit_quanta,
+                32_768
+            );
+            let cycles = 524_288 / config.combat_curriculum.cycle_sim_time_quanta_per_env;
+            assert_eq!(
+                cycles * config.combat_curriculum.on_food_sim_time_quanta_per_cycle,
+                65_536
+            );
+            assert_eq!(
+                cycles
+                    * config
+                        .combat_curriculum
+                        .adjacent_food_sim_time_quanta_per_cycle,
+                65_536
+            );
+            assert_eq!(
+                cycles * config.combat_curriculum.contact_sim_time_quanta_per_cycle,
+                131_072
+            );
+            assert_eq!(
+                cycles * config.combat_curriculum.skirmish_sim_time_quanta_per_cycle,
+                131_072
+            );
+        }
+        assert_eq!(
+            expanded[0].combat_curriculum.cycle_sim_time_quanta_per_env,
+            131_072
+        );
+        assert_eq!(
+            expanded[1].combat_curriculum.cycle_sim_time_quanta_per_env,
+            262_144
+        );
+    }
+
+    #[test]
+    fn documented_specialist_sweep_changes_only_distillation() {
+        let spec: RulesSweepSpec =
+            toml::from_str(include_str!("../config/specialist_distillation_sweep.toml")).unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![42, 43, 44]);
+        assert_eq!(spec.variants.len(), 2);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish_frequent.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!expanded[0].specialist_distillation.enabled);
+        assert!(expanded[1].specialist_distillation.enabled);
+        assert_eq!(expanded[1].specialist_distillation.ecology_coeff, 0.1);
+        assert_eq!(expanded[1].specialist_distillation.combat_coeff, 0.1);
+
+        let mut normalized = expanded[1].clone();
+        normalized.specialist_distillation = expanded[0].specialist_distillation.clone();
+        assert_eq!(normalized, expanded[0]);
+    }
+
+    #[test]
+    fn documented_partitioned_teacher_sweep_reuses_the_exact_scientific_profile() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/specialist_distillation_partitioned_inference_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![42, 43, 44]);
+        assert_eq!(spec.variants.len(), 1);
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_specialist_distillation.toml"
+        ))
+        .unwrap();
+        let variant = &spec.variants[0];
+        let expanded = base
+            .with_rules_override(&variant.rules)
+            .and_then(|config| config.with_scenario_override(&variant.scenario))
+            .and_then(|config| config.with_combat_curriculum_override(&variant.combat_curriculum))
+            .and_then(|config| {
+                config.with_specialist_distillation_override(&variant.specialist_distillation)
+            })
+            .unwrap();
+        assert_eq!(expanded.specialist_distillation.ecology_coeff, 0.10);
+        assert_eq!(expanded.specialist_distillation.combat_coeff, 0.10);
+        let mut normalized = expanded;
+        normalized.specialist_distillation = base.specialist_distillation.clone();
+        assert_eq!(normalized, base);
+    }
+
+    #[test]
+    fn documented_specialist_coefficient_sweep_changes_only_coefficients() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/specialist_distillation_coefficient_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![42, 43, 44]);
+        assert_eq!(spec.variants.len(), 3);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_specialist_distillation.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        for (config, expected) in expanded.iter().zip([0.05, 0.10, 0.20]) {
+            assert!(config.specialist_distillation.enabled);
+            assert_eq!(config.specialist_distillation.ecology_coeff, expected);
+            assert_eq!(config.specialist_distillation.combat_coeff, expected);
+
+            let mut normalized = config.clone();
+            normalized.specialist_distillation = base.specialist_distillation.clone();
+            assert_eq!(normalized, base);
+        }
+    }
+
+    #[test]
+    fn documented_specialist_holdout_sweep_is_paired_and_uses_new_seeds() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/specialist_distillation_holdout_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![45, 46, 47, 48, 49]);
+        assert_eq!(spec.variants.len(), 2);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish_frequent.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(expanded[0], base);
+        assert!(expanded[1].specialist_distillation.enabled);
+        assert_eq!(expanded[1].specialist_distillation.ecology_coeff, 0.05);
+        assert_eq!(expanded[1].specialist_distillation.combat_coeff, 0.05);
+        let mut normalized = expanded[1].clone();
+        normalized.specialist_distillation = expanded[0].specialist_distillation.clone();
+        assert_eq!(normalized, expanded[0]);
+    }
+
+    #[test]
+    fn documented_combat_precursor_sweep_changes_only_the_fallback_threshold() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/specialist_distillation_precursor_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![45, 46, 47, 48, 49]);
+        assert_eq!(spec.variants.len(), 2);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_specialist_distillation.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(expanded[0], base);
+        assert_eq!(
+            expanded[1]
+                .specialist_distillation
+                .combat_precursor_min_skirmish_damage,
+            Some(1)
+        );
+        let mut normalized = expanded[1].clone();
+        normalized
+            .specialist_distillation
+            .combat_precursor_min_skirmish_damage = None;
+        assert_eq!(normalized, expanded[0]);
+    }
+
+    #[test]
     fn documented_signal_sweep_expands_every_strict_override() {
         let spec: RulesSweepSpec =
             toml::from_str(include_str!("../config/signal_rule_sweep.toml")).unwrap();
@@ -506,6 +962,9 @@ mod tests {
             .map(|variant| {
                 base.with_rules_override(&variant.rules)
                     .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
                     .map(|config| (variant.name.as_str(), config))
             })
             .collect::<Result<Vec<_>, _>>()
@@ -535,6 +994,108 @@ mod tests {
             cardinal.1.env.rules.neighborhood.observations.signal.bits(),
             90
         );
+    }
+
+    #[test]
+    fn documented_starting_layout_sweep_covers_founder_and_assembly_controls() {
+        let spec: RulesSweepSpec =
+            toml::from_str(include_str!("../config/starting_layout_sweep.toml")).unwrap();
+        validate_spec(&spec).unwrap();
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/objective_large_draw_smoke.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_scenario_override(&variant.scenario)
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .map(|config| (variant.name.as_str(), config))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(expanded.len(), 7);
+
+        let single = expanded
+            .iter()
+            .find(|(name, _)| *name == "single-on-plant")
+            .unwrap();
+        assert_eq!(single.1.env.cells_per_team, 1);
+        assert_eq!(
+            single.1.env.resource_placement,
+            crate::config::ResourcePlacement::OnAllCells
+        );
+        assert_eq!(
+            single.1.env.starting_cell_layout,
+            blob_engine::engine::StartingCellLayout::Block
+        );
+
+        let layouts = expanded
+            .iter()
+            .map(|(_, config)| config.env.starting_cell_layout)
+            .collect::<HashSet<_>>();
+        assert_eq!(layouts.len(), 6);
+    }
+
+    #[test]
+    fn documented_resource_layout_sweep_crosses_independent_ecology_controls() {
+        let spec: RulesSweepSpec =
+            toml::from_str(include_str!("../config/resource_layout_sweep.toml")).unwrap();
+        validate_spec(&spec).unwrap();
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/objective_large_draw_smoke.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_scenario_override(&variant.scenario)
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .map(|config| (variant.name.as_str(), config))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(expanded.len(), 8);
+
+        let identities = expanded
+            .iter()
+            .map(|(_, config)| ScenarioProfile::from(&config.env).semantic_hash().unwrap())
+            .collect::<HashSet<_>>();
+        assert_eq!(identities.len(), expanded.len());
+        assert!(expanded.iter().any(|(name, config)| {
+            *name == "plant-islands"
+                && matches!(
+                    config.env.plant_layout,
+                    blob_engine::world_gen::ResourceLayout::Islands { .. }
+                )
+                && matches!(
+                    config.env.scattered_energy_layout,
+                    blob_engine::world_gen::ResourceLayout::Uniform
+                )
+        }));
+        assert!(expanded.iter().any(|(name, config)| {
+            *name == "islands-and-corridors"
+                && matches!(
+                    config.env.plant_layout,
+                    blob_engine::world_gen::ResourceLayout::Islands { .. }
+                )
+                && matches!(
+                    config.env.scattered_energy_layout,
+                    blob_engine::world_gen::ResourceLayout::Corridors { .. }
+                )
+        }));
+
+        for (_, config) in expanded {
+            for seed in &spec.seeds {
+                crate::env::BlobEnv::new(config.env.clone(), config.reward.clone(), *seed);
+            }
+        }
     }
 
     #[test]

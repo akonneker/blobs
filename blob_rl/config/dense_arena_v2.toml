@@ -64,7 +64,7 @@ move_toward_enemy = 0.0
 proximity_search_radius = 5
 
 [self_play]
-start_after_timesteps = 25_000_000
+start_after_sim_time_quanta_per_env = 8_388_608
 opponent_update_interval = 50
 max_opponent_pool = 10
 baseline_probability = 0.2
