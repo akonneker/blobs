@@ -1,0 +1,110 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/combat_retention_stage_capture_sweep.toml",
+  "spec_sha256": "9c0d57a4df59058c8da60c4fd5ff3f58ed758d8c3611d453d5eca2c6d4c8162f",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/competitive_transfer_large_skirmish_stage_evaluation.toml",
+  "base_config_sha256": "a528a0b4ed65f7bbb6383a9dad233d5d9616f334ceb570bbdf3f418bf045a633",
+  "output_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1",
+  "seeds": [
+    47,
+    48,
+    49
+  ],
+  "variants": [
+    {
+      "name": "control",
+      "description": "Stage-boundary measurement without specialist distillation",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {}
+    },
+    {
+      "name": "stage-capture-distillation",
+      "description": "Stage-boundary capture with coefficient 0.05 specialist teachers",
+      "rules": {},
+      "scenario": {},
+      "combat_curriculum": {},
+      "specialist_distillation": {
+        "combat_coeff": 0.05,
+        "ecology_coeff": 0.05,
+        "enabled": true
+      }
+    }
+  ],
+  "runs": [
+    {
+      "variant": "control",
+      "replicate": 0,
+      "training_seed": 47,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "227c0d56593c5e3bf04633285117dbdc9b1902c2b42d0f2ad4db26c3880ccf36",
+      "config_file_sha256": "5aa4bfce4366350e8d16a79c8454bf8c297ec5f29d14f0b6b7d00b987b23791d",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/control/seed-47",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/control/seed-47/config.toml"
+    },
+    {
+      "variant": "control",
+      "replicate": 1,
+      "training_seed": 48,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "578af828516ee59dc569469beb449482fa2c6bdf9d766ea51e30d9b06a68e954",
+      "config_file_sha256": "99aaf24be7efb9994bedbc1e5a290e50b1da9adbfa7facf7aaec8f65d9a37b01",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/control/seed-48",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/control/seed-48/config.toml"
+    },
+    {
+      "variant": "control",
+      "replicate": 2,
+      "training_seed": 49,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "98ec0596d4cc74732cf042deba4648b85b34161c7746b88f30a0d3cc8a516c46",
+      "config_file_sha256": "aa4aa3ba505a8917e1f710900ba556f034d326e330be36714c48ca333c44d7af",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/control/seed-49",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/control/seed-49/config.toml"
+    },
+    {
+      "variant": "stage-capture-distillation",
+      "replicate": 0,
+      "training_seed": 47,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "75e04fa1606ed85d2a73ce68d7c6020fa5945889cb930b0f41111207a1be84c0",
+      "config_file_sha256": "e2cd5ac7c4aa7fb52a6118aeace362b80c32ed4afebac310fdc959f4b9b4cab3",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-47",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-47/config.toml"
+    },
+    {
+      "variant": "stage-capture-distillation",
+      "replicate": 1,
+      "training_seed": 48,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "e8b2600105eab32cd90dc6b8f3b14d73a58ac5bb17855e21994bc63ef08d3073",
+      "config_file_sha256": "7f9bd44b73a09d77d472a81e18ceec3ff52eb9446797940a67f4ec5126141123",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-48",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-48/config.toml"
+    },
+    {
+      "variant": "stage-capture-distillation",
+      "replicate": 2,
+      "training_seed": 49,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "432534b556cf962b6145ef60e1049ce23c13226506b479d050b6e7c77ccaa4a2",
+      "scenario_hash": "eb0379fd87aad65c1d39946edf5e7a86952e3b5cf12f183194287792f24cdae5",
+      "experiment_config_sha256": "e7e42bdd65040ea9d171adc2f09a4d30e5994ddde6365f2f4024c3762e0a3a07",
+      "config_file_sha256": "1b22b14144229a860a6b232de0c46c9a179d6352551bbce2276a1cf42482a6cf",
+      "run_directory": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-49",
+      "config_file": "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-49/config.toml"
+    }
+  ]
+}

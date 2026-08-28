@@ -1654,6 +1654,49 @@ explicitly as a diagnostic rather than a promotion candidate. The next combat
 experiment should narrow the distribution gap with intermediate skirmishes,
 not tighten this constraint further.
 
+Training artifact schema 37 makes competency timing a first-class scientific
+axis. Combat curricula may declare ordered
+`competency_evaluation_frontiers_sim_time_quanta_per_cycle`; the trainer runs
+the complete fixed, feeding-retention, and combat suites at the first PPO
+boundary whose minimum per-environment clock crosses each periodic frontier.
+The trigger is based on canonical simulation time, not population-dependent
+action count. A rollout that crosses multiple frontiers has only one new model
+to inspect, so it records the latest crossed frontier rather than duplicating
+identical evidence. The exact requested frontier and observed minimum,
+maximum, and total clocks are written to `competency-timeline.csv`.
+
+Every world-time measurement publishes an immutable checkpoint even when it is
+dominated and later omitted from the bounded frontier index. Checkpoint
+metadata now exposes and hash-verifies the three world-time counters against
+the exact resume sidecar; competency-frontier schema 2 repeats and verifies
+them against the referenced checkpoint. Update-count evaluation remains
+available and composes with the new trigger. World-time-only schedules are
+also treated as evaluation-enabled by config validation, snapshot loading,
+terminal-suite publication, and sweep aggregation rather than relying on the
+old `eval_interval > 0` shortcut.
+
+The paired diagnostic is published under
+[`sweeps/combat-retention-stage-capture-v1`](../sweeps/combat-retention-stage-capture-v1/README.md).
+It evaluated seeds 47–49 after the contact and skirmish portions of all four
+cycles, yielding eight scheduled measurements plus the terminal policy per
+run. All 3/3 controls and all 3/3 coefficient-0.05 distillation runs contained
+a jointly qualified checkpoint. Control seed 49, which the former sparse
+update cadence classified as a failure, qualified near 102,144 and 214,016
+minimum simulation quanta. Sparse observation was therefore responsible for
+at least one false negative; the maintained workflow should preserve qualified
+world-time frontier checkpoints instead of trusting a terminal policy.
+
+The finer trace also rejects stage-local distillation as a reliable retention
+solution. Both arms produced eight jointly qualified measurements across 27
+measurements. Distillation helped seed 47 reacquire kills in later cycles and
+left seed 49 combat-qualified at terminal, but control alone reacquired combat
+on seed 48. Terminal combat retention was 0/3 for control and 1/3 for
+distillation. Coefficient 0.05 remains opt-in. The better next experiment is a
+bounded cross-stage rehearsal buffer or post-update functional-regression
+constraint using already qualified combat evidence, because a teacher applied
+only on combat transitions cannot stop ecology or competitive updates from
+overwriting the skill.
+
 After every rollout environment reaches
 `self_play.start_after_sim_time_quanta_per_env`, promotion is considered every
 `opponent_update_interval` PPO updates. The first eligible evaluated checkpoint

@@ -18,7 +18,7 @@ use crate::contact_evaluation::ContactEvaluationReport;
 use crate::evaluation::EvaluationMetrics;
 use crate::feeding_curriculum::FeedingPromotionReport;
 
-pub const COMPETENCY_FRONTIER_SCHEMA_VERSION: u32 = 1;
+pub const COMPETENCY_FRONTIER_SCHEMA_VERSION: u32 = 2;
 pub const MAX_COMPETENCY_FRONTIER_ENTRIES: usize = 32;
 const MAX_FRONTIER_BYTES: u64 = 1024 * 1024;
 static FRONTIER_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -143,6 +143,9 @@ pub struct CompetencyFrontierEntry {
     pub checkpoint: String,
     pub update: usize,
     pub actions: u64,
+    pub minimum_sim_time_quanta_per_env: u64,
+    pub maximum_sim_time_quanta_per_env: u64,
+    pub total_sim_time_quanta: u128,
     pub metrics: CompetencyMetrics,
 }
 
@@ -426,6 +429,9 @@ pub fn validate_competency_frontier(frontier: &CompetencyFrontier) -> Result<(),
         .ok_or("frontier checkpoint has incomplete competency evidence")?;
         if metadata.update != entry.update
             || metadata.actions != entry.actions
+            || metadata.minimum_sim_time_quanta_per_env != entry.minimum_sim_time_quanta_per_env
+            || metadata.maximum_sim_time_quanta_per_env != entry.maximum_sim_time_quanta_per_env
+            || metadata.total_sim_time_quanta != entry.total_sim_time_quanta
             || metrics != entry.metrics
         {
             return Err("competency frontier entry does not match its immutable checkpoint".into());
@@ -518,6 +524,9 @@ mod tests {
             checkpoint: format!("checkpoint-{update:08}"),
             update,
             actions: update as u64 * 10,
+            minimum_sim_time_quanta_per_env: update as u64 * 100,
+            maximum_sim_time_quanta_per_env: update as u64 * 100,
+            total_sim_time_quanta: update as u128 * 400,
             metrics,
         }
     }

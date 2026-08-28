@@ -24,7 +24,7 @@ use crate::feeding_curriculum::FeedingPromotionReport;
 use crate::model::{PolicyValueNet, PolicyValueNetConfig};
 use crate::telemetry::TrainingTelemetryState;
 
-pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 36;
+pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 37;
 const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_RESUME_STATE_BYTES: u64 = 512 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -40,6 +40,12 @@ pub struct CheckpointMetadata {
     pub training_backend: String,
     pub update: usize,
     pub actions: u64,
+    /// Exact canonical world-time exposure at this update boundary. These
+    /// counters make competency timing inspectable without decoding the much
+    /// larger exact-resume sidecar.
+    pub minimum_sim_time_quanta_per_env: u64,
+    pub maximum_sim_time_quanta_per_env: u64,
+    pub total_sim_time_quanta: u128,
     pub training_seed: u64,
     pub compiled_ruleset_hash: String,
     pub model_file: String,
@@ -270,6 +276,11 @@ fn verified_metadata(directory: &Path) -> Result<CheckpointMetadata, String> {
         .config
         .validate()
         .map_err(|error| format!("checkpoint contains an invalid training config: {error}"))?;
+    if metadata.minimum_sim_time_quanta_per_env > metadata.maximum_sim_time_quanta_per_env
+        || metadata.total_sim_time_quanta < u128::from(metadata.maximum_sim_time_quanta_per_env)
+    {
+        return Err("checkpoint metadata contains invalid simulation-time exposure".into());
+    }
     if metadata.model_file != "model.mpk"
         || metadata.optimizer_file != "optimizer.mpk"
         || metadata.resume_file != "resume.mpk"
@@ -447,6 +458,23 @@ where
     O: Optimizer<PolicyValueNet<B>, B>,
 {
     validate_specialist_teacher_selection(resume_state, &config.specialist_distillation)?;
+    let minimum_sim_time_quanta_per_env = resume_state
+        .cumulative_sim_time_quanta
+        .iter()
+        .copied()
+        .min()
+        .unwrap_or(0);
+    let maximum_sim_time_quanta_per_env = resume_state
+        .cumulative_sim_time_quanta
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(0);
+    let total_sim_time_quanta = resume_state
+        .cumulative_sim_time_quanta
+        .iter()
+        .map(|quanta| u128::from(*quanta))
+        .sum();
     fs::create_dir_all(root)
         .map_err(|error| format!("failed to create artifact root {}: {error}", root.display()))?;
     let directory_name = format!("checkpoint-{update:08}");
@@ -496,6 +524,9 @@ where
         training_backend: training_backend_id::<B>().to_string(),
         update,
         actions,
+        minimum_sim_time_quanta_per_env,
+        maximum_sim_time_quanta_per_env,
+        total_sim_time_quanta,
         training_seed: config.seed,
         compiled_ruleset_hash: compiled_ruleset_hash.to_string(),
         model_file: "model.mpk".into(),
@@ -572,6 +603,26 @@ where
     if resume_state.schema_version != TRAINING_ARTIFACT_SCHEMA_VERSION
         || resume_state.total_timesteps != metadata.actions
         || resume_state.update_count != metadata.update
+        || resume_state
+            .cumulative_sim_time_quanta
+            .iter()
+            .copied()
+            .min()
+            .unwrap_or(0)
+            != metadata.minimum_sim_time_quanta_per_env
+        || resume_state
+            .cumulative_sim_time_quanta
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0)
+            != metadata.maximum_sim_time_quanta_per_env
+        || resume_state
+            .cumulative_sim_time_quanta
+            .iter()
+            .map(|quanta| u128::from(*quanta))
+            .sum::<u128>()
+            != metadata.total_sim_time_quanta
     {
         return Err("resume state counters do not match checkpoint metadata".into());
     }
@@ -927,6 +978,9 @@ mod tests {
             serde_json::from_slice(&fs::read(checkpoint.join("metadata.json")).unwrap()).unwrap();
         assert_eq!(metadata.update, 7);
         assert_eq!(metadata.actions, 1234);
+        assert_eq!(metadata.minimum_sim_time_quanta_per_env, 111);
+        assert_eq!(metadata.maximum_sim_time_quanta_per_env, 222);
+        assert_eq!(metadata.total_sim_time_quanta, 333);
         assert_eq!(
             metadata.training_backend,
             training_backend_id::<TestBackend>()

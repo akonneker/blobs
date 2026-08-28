@@ -861,7 +861,7 @@ fn collect_result(
     let artifact_root = Path::new(&config.checkpoint_dir);
     let training = training_tail(&artifact_root.join("metrics.csv"))?;
     verify_training_completion(&training, config)?;
-    let evaluation = if config.eval_interval > 0 {
+    let evaluation = if config.fixed_evaluation_enabled() {
         let evaluation =
             evaluation_tail(&artifact_root.join("evaluation.csv"))?.ok_or_else(|| {
                 "evaluation was enabled but no complete suite row was published".to_string()
@@ -2189,6 +2189,38 @@ mod tests {
         assert!((difference.training_average_reward.mean - 0.1).abs() < 1.0e-12);
         assert!((difference.evaluation_win_rate.as_ref().unwrap().mean - 0.1).abs() < 1.0e-12);
         assert_eq!(difference.training_average_reward.samples, 3);
+    }
+
+    #[test]
+    fn world_time_only_evaluation_is_required_in_sweep_results() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut config = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish_stage_evaluation.toml"
+        ))
+        .unwrap();
+        config.total_timesteps = 8;
+        config.total_simulation_quanta_per_env = None;
+        config.telemetry.enabled = false;
+        config.checkpoint_dir = temporary.path().join("artifacts").display().to_string();
+        assert_eq!(config.eval_interval, 0);
+        assert!(config.fixed_evaluation_enabled());
+        write_complete_metrics(&config, 0.0);
+
+        let run = RulesSweepRun {
+            variant: "world-time".into(),
+            replicate: 0,
+            training_seed: config.seed,
+            semantic_ruleset_hash: "rules".into(),
+            compiled_ruleset_hash: "compiled".into(),
+            scenario_hash: "scenario".into(),
+            experiment_config_sha256: "experiment".into(),
+            config_file_sha256: "config".into(),
+            run_directory: temporary.path().display().to_string(),
+            config_file: temporary.path().join("config.toml").display().to_string(),
+        };
+        let result = collect_result("manifest", "contract", "trainer", &run, &config).unwrap();
+        assert!(result.evaluation.is_some());
+        assert_eq!(result.evaluation.unwrap().actions, 8);
     }
 
     #[test]

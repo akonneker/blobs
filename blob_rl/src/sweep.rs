@@ -905,6 +905,54 @@ mod tests {
     }
 
     #[test]
+    fn documented_stage_capture_sweep_changes_only_distillation() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/combat_retention_stage_capture_sweep.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        assert_eq!(spec.seeds, vec![47, 48, 49]);
+        assert_eq!(spec.variants.len(), 2);
+
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/competitive_transfer_large_skirmish_stage_evaluation.toml"
+        ))
+        .unwrap();
+        assert_eq!(base.eval_interval, 0);
+        assert_eq!(base.checkpoint_interval, 0);
+        assert_eq!(
+            base.combat_curriculum
+                .competency_evaluation_frontiers_sim_time_quanta_per_cycle,
+            vec![65_536, 98_304]
+        );
+
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_rules_override(&variant.rules)
+                    .and_then(|config| config.with_scenario_override(&variant.scenario))
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+                    .and_then(|config| {
+                        config
+                            .with_specialist_distillation_override(&variant.specialist_distillation)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(expanded[0], base);
+        assert!(expanded[1].specialist_distillation.enabled);
+        assert_eq!(expanded[1].specialist_distillation.ecology_coeff, 0.05);
+        assert_eq!(expanded[1].specialist_distillation.combat_coeff, 0.05);
+        let mut normalized = expanded[1].clone();
+        normalized.specialist_distillation = expanded[0].specialist_distillation.clone();
+        assert_eq!(normalized, expanded[0]);
+    }
+
+    #[test]
     fn documented_combat_precursor_sweep_changes_only_the_fallback_threshold() {
         let spec: RulesSweepSpec = toml::from_str(include_str!(
             "../config/specialist_distillation_precursor_sweep.toml"

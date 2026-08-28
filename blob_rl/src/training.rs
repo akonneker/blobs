@@ -595,12 +595,14 @@ fn checkpoint_publication_due(
     promote_to_rollout_pool: bool,
     terminal_boundary: bool,
     competency_frontier_changed: bool,
+    world_time_competency_evaluation: bool,
 ) -> bool {
     periodic_checkpoint
         || is_new_best
         || promote_to_rollout_pool
         || terminal_boundary
         || competency_frontier_changed
+        || world_time_competency_evaluation
 }
 
 fn self_play_promotion_due(
@@ -742,6 +744,42 @@ fn write_contact_evaluation_rows(
         .map_err(|error| format!("failed to flush contact evaluation: {error}"))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn write_competency_timeline_row(
+    file: &mut File,
+    update: usize,
+    actions: u64,
+    minimum_sim_time_quanta_per_env: u64,
+    maximum_sim_time_quanta_per_env: u64,
+    total_sim_time_quanta: u128,
+    scheduled_world_time_frontier: Option<u64>,
+    trigger: &str,
+    metrics: &CompetencyMetrics,
+) -> Result<(), String> {
+    writeln!(
+        file,
+        "{update},{actions},{minimum_sim_time_quanta_per_env},{maximum_sim_time_quanta_per_env},{total_sim_time_quanta},{},{trigger},{},{},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{},{:.6},{:.6},{:.6}",
+        scheduled_world_time_frontier.map_or_else(String::new, |value| value.to_string()),
+        metrics.configured_feeding_passed,
+        metrics.retention_feeding_passed,
+        metrics.on_food_survival_rate,
+        metrics.adjacent_food_survival_rate,
+        metrics.on_food_intake_per_initial_cell,
+        metrics.adjacent_food_intake_per_initial_cell,
+        metrics.combat_passed,
+        metrics.contact_damage,
+        metrics.contact_kills,
+        metrics.skirmish_damage,
+        metrics.skirmish_kills,
+        metrics.fixed_worst_case_win_rate,
+        metrics.fixed_win_rate,
+        metrics.fixed_average_reward,
+    )
+    .map_err(|error| format!("failed to write competency timeline: {error}"))?;
+    file.flush()
+        .map_err(|error| format!("failed to flush competency timeline: {error}"))
+}
+
 /// Run the full training loop.
 ///
 /// - `load_model_path`: If Some, load weights from this path to continue training.
@@ -802,7 +840,8 @@ pub fn train<B: AutodiffBackend>(
     let load_model_path = load_model_path
         .map(PathBuf::from)
         .or(configured_initial_model);
-    let evaluation_snapshots = if config.eval_interval > 0 || config.self_play.max_opponent_pool > 0
+    let evaluation_snapshots = if config.fixed_evaluation_enabled()
+        || config.self_play.max_opponent_pool > 0
     {
         config
             .evaluation_snapshots
@@ -1173,6 +1212,13 @@ pub fn train<B: AutodiffBackend>(
         "update,actions,stage,cells_per_team,initial_energy,opponent,episodes,wins,losses,timeouts,safety_aborts,attacking_episodes,damaging_episodes,attacks_committed,attacks_succeeded,damage_dealt,kills,attacks_frustrated,attacks_interrupted,attacking_episode_rate,damaging_episode_rate,attack_success_rate,seed_count",
     )
     .expect("failed to initialize contact evaluation metrics");
+    let competency_timeline_path = artifact_root.join("competency-timeline.csv");
+    let mut competency_timeline_file = open_metrics_file(
+        &competency_timeline_path,
+        resume_checkpoint.is_some(),
+        "update,actions,min_sim_time_quanta_per_env,max_sim_time_quanta_per_env,total_sim_time_quanta,scheduled_world_time_frontier,trigger,configured_feeding_passed,retention_feeding_passed,on_food_survival_rate,adjacent_food_survival_rate,on_food_intake_per_initial_cell,adjacent_food_intake_per_initial_cell,combat_passed,contact_damage,contact_kills,skirmish_damage,skirmish_kills,fixed_worst_case_win_rate,fixed_win_rate,fixed_average_reward",
+    )
+    .expect("failed to initialize competency timeline");
     let evaluation_seeds = (0..config.eval_episodes)
         .map(|index| config.evaluation_seed.wrapping_add(index as u64))
         .collect::<Vec<_>>();
@@ -1194,6 +1240,11 @@ pub fn train<B: AutodiffBackend>(
     );
 
     while !training_budget_complete(&config, total_timesteps, &cumulative_sim_time_quanta) {
+        let minimum_sim_time_before_update = cumulative_sim_time_quanta
+            .iter()
+            .copied()
+            .min()
+            .unwrap_or(0);
         let mut rollout = RolloutBuffer::new();
         // One open action interval per cell. Rewards from every intervening
         // event frontier accrue here until that same cell decides again or
@@ -1834,8 +1885,18 @@ pub fn train<B: AutodiffBackend>(
                 self_play_promotion_due(&config, minimum_sim_time_quanta, update_count);
             let terminal_boundary =
                 training_budget_complete(&config, total_timesteps, &cumulative_sim_time_quanta);
-            let regular_evaluation_due = config.eval_interval > 0
-                && (update_count.is_multiple_of(config.eval_interval) || terminal_boundary);
+            let update_interval_evaluation_due =
+                config.eval_interval > 0 && update_count.is_multiple_of(config.eval_interval);
+            let scheduled_world_time_frontier = config
+                .combat_curriculum
+                .crossed_competency_evaluation_frontier(
+                    minimum_sim_time_before_update,
+                    minimum_sim_time_quanta,
+                );
+            let world_time_competency_evaluation = scheduled_world_time_frontier.is_some();
+            let regular_evaluation_due = update_interval_evaluation_due
+                || world_time_competency_evaluation
+                || (terminal_boundary && config.fixed_evaluation_enabled());
             let (evaluation, feeding_evaluation, retention_feeding_evaluation, contact_evaluation) =
                 if regular_evaluation_due || promotion_due {
                     let valid_model = model.valid();
@@ -1968,7 +2029,7 @@ pub fn train<B: AutodiffBackend>(
                     (None, None, None, None)
                 };
 
-            let competency_candidate = evaluation.as_ref().and_then(|evaluation| {
+            let competency_metrics = evaluation.as_ref().and_then(|evaluation| {
                 CompetencyMetrics::from_reports(
                     evaluation,
                     feeding_evaluation.as_ref()?,
@@ -1976,13 +2037,43 @@ pub fn train<B: AutodiffBackend>(
                     contact_evaluation.as_ref()?,
                     &config.combat_curriculum,
                 )
-                .map(|metrics| CompetencyFrontierEntry {
-                    checkpoint_directory: frontier_checkpoint_directory.clone(),
-                    checkpoint: format!("checkpoint-{update_count:08}"),
-                    update: update_count,
-                    actions: total_timesteps,
+            });
+            if let Some(metrics) = competency_metrics.as_ref() {
+                let mut triggers = Vec::with_capacity(4);
+                if update_interval_evaluation_due {
+                    triggers.push("update_interval");
+                }
+                if world_time_competency_evaluation {
+                    triggers.push("world_time_frontier");
+                }
+                if promotion_due {
+                    triggers.push("promotion");
+                }
+                if terminal_boundary {
+                    triggers.push("terminal");
+                }
+                write_competency_timeline_row(
+                    &mut competency_timeline_file,
+                    update_count,
+                    total_timesteps,
+                    minimum_sim_time_quanta,
+                    maximum_sim_time_quanta,
+                    total_sim_time_quanta,
+                    scheduled_world_time_frontier,
+                    &triggers.join("+"),
                     metrics,
-                })
+                )
+                .expect("failed to publish competency timeline");
+            }
+            let competency_candidate = competency_metrics.map(|metrics| CompetencyFrontierEntry {
+                checkpoint_directory: frontier_checkpoint_directory.clone(),
+                checkpoint: format!("checkpoint-{update_count:08}"),
+                update: update_count,
+                actions: total_timesteps,
+                minimum_sim_time_quanta_per_env: minimum_sim_time_quanta,
+                maximum_sim_time_quanta_per_env: maximum_sim_time_quanta,
+                total_sim_time_quanta,
+                metrics,
             });
             let mut next_competency_frontier = competency_frontier.clone();
             let competency_frontier_changed = competency_candidate
@@ -2145,6 +2236,7 @@ pub fn train<B: AutodiffBackend>(
                 promote_to_rollout_pool,
                 terminal_boundary,
                 competency_frontier_changed,
+                world_time_competency_evaluation,
             ) {
                 let resume_state = TrainingResumeState {
                     schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
@@ -2277,7 +2369,7 @@ pub fn train<B: AutodiffBackend>(
         }
     }
 
-    if config.eval_interval > 0 && last_fixed_evaluation_actions != Some(total_timesteps) {
+    if config.fixed_evaluation_enabled() && last_fixed_evaluation_actions != Some(total_timesteps) {
         let valid_model = model.valid();
         let evaluation = evaluate_policy_suite(
             &valid_model,
@@ -2921,10 +3013,17 @@ mod tests {
 
     #[test]
     fn terminal_boundary_is_checkpointed_even_when_not_periodic_best_or_promoted() {
-        assert!(checkpoint_publication_due(false, false, false, true, false));
-        assert!(checkpoint_publication_due(false, false, false, false, true));
+        assert!(checkpoint_publication_due(
+            false, false, false, true, false, false
+        ));
+        assert!(checkpoint_publication_due(
+            false, false, false, false, true, false
+        ));
+        assert!(checkpoint_publication_due(
+            false, false, false, false, false, true
+        ));
         assert!(!checkpoint_publication_due(
-            false, false, false, false, false
+            false, false, false, false, false, false
         ));
     }
 
@@ -3163,8 +3262,8 @@ mod tests {
             seed: 76,
             num_envs: 1,
             rollout_length: 4,
-            total_timesteps: 4,
-            eval_interval: 1,
+            total_timesteps: 8,
+            eval_interval: 0,
             eval_episodes: 1,
             evaluation_opponents: vec![crate::config::OpponentProfile::Wait],
             checkpoint_interval: 0,
@@ -3193,6 +3292,9 @@ mod tests {
         config
             .combat_curriculum
             .skirmish_episode_sim_time_limit_quanta = 1_024;
+        config
+            .combat_curriculum
+            .competency_evaluation_frontiers_sim_time_quanta_per_cycle = vec![1];
 
         let evaluation_seed = config.evaluation_seed;
         train::<TestBackend>(config, Default::default(), None, None, None);
@@ -3201,25 +3303,39 @@ mod tests {
             .expect("contact metrics should be published");
         assert_eq!(
             csv.lines().skip(1).count(),
-            2 * 3 * 2,
-            "every stage/energy/opponent variant needs its own evidence row"
+            2 * 2 * 3 * 2,
+            "both world-time and terminal evaluations need every combat variant"
         );
         let checkpoint = temporary.path().join("checkpoint-00000001");
         let metadata = crate::artifact::verify_checkpoint_metadata(&checkpoint).unwrap();
         let report = metadata
             .contact_evaluation
+            .as_ref()
             .expect("evaluated combat checkpoint must embed contact evidence");
         assert_eq!(report.seeds, vec![evaluation_seed]);
         assert_eq!(report.variants.len(), 12);
         assert!(!report.is_active());
+        assert!(metadata.minimum_sim_time_quanta_per_env >= 1);
+        let timeline = std::fs::read_to_string(temporary.path().join("competency-timeline.csv"))
+            .expect("world-time competency timeline should be published");
+        let first_measurement = timeline
+            .lines()
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .collect::<Vec<_>>();
+        assert_eq!(first_measurement[5], "1");
+        assert!(first_measurement[6].contains("world_time_frontier"));
         assert!(!temporary.path().join("best.json").exists());
         let frontier = crate::competency_frontier::load_competency_frontier(
             &temporary.path().join("competency-frontier.json"),
         )
         .unwrap();
-        assert_eq!(frontier.entries.len(), 1);
-        assert_eq!(frontier.entries[0].checkpoint, "checkpoint-00000001");
-        assert!(!frontier.entries[0].metrics.joint_qualified());
+        assert!(!frontier.entries.is_empty());
+        assert!(frontier
+            .entries
+            .iter()
+            .all(|entry| !entry.metrics.joint_qualified()));
         let mut tampered = frontier;
         tampered.entries[0].metrics.skirmish_damage += 1;
         std::fs::write(

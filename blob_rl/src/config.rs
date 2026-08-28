@@ -646,6 +646,12 @@ pub struct CombatCurriculumConfig {
     pub contact_evaluation_sim_time_limit_quanta: u64,
     /// Independent held-out local-skirmish gate horizon.
     pub skirmish_evaluation_sim_time_limit_quanta: u64,
+    /// Ordered world-time offsets within each curriculum cycle that trigger a
+    /// complete held-out competency evaluation. Empty preserves update-based
+    /// evaluation only. A boundary is observed at the first PPO update whose
+    /// minimum per-environment clock reaches or crosses the offset.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub competency_evaluation_frontiers_sim_time_quanta_per_cycle: Vec<u64>,
     /// Training-only legal-action-kind mixture used during contact episodes.
     /// Stored on each transition so PPO recomputes the exact behavior policy.
     pub contact_action_kind_exploration_floor: f32,
@@ -683,6 +689,7 @@ impl Default for CombatCurriculumConfig {
             skirmish_episode_sim_time_limit_quanta: 65_536,
             contact_evaluation_sim_time_limit_quanta: 32_768,
             skirmish_evaluation_sim_time_limit_quanta: 65_536,
+            competency_evaluation_frontiers_sim_time_quanta_per_cycle: Vec::new(),
             contact_action_kind_exploration_floor: 0.50,
             skirmish_action_kind_exploration_floor: 0.25,
             contact_initial_policy_anchor_coeff: None,
@@ -697,6 +704,36 @@ impl Default for CombatCurriculumConfig {
 }
 
 impl CombatCurriculumConfig {
+    /// Return the latest configured periodic world-time frontier crossed in
+    /// `(previous, current]`. At most one evaluation is useful at an update
+    /// boundary even when an unusually large rollout crosses several points.
+    pub fn crossed_competency_evaluation_frontier(
+        &self,
+        previous: u64,
+        current: u64,
+    ) -> Option<u64> {
+        if !self.enabled || current <= previous || self.cycle_sim_time_quanta_per_env == 0 {
+            return None;
+        }
+        self.competency_evaluation_frontiers_sim_time_quanta_per_cycle
+            .iter()
+            .filter_map(|offset| {
+                let cycle = if previous < *offset {
+                    0
+                } else {
+                    previous
+                        .saturating_sub(*offset)
+                        .checked_div(self.cycle_sim_time_quanta_per_env)?
+                        .saturating_add(1)
+                };
+                let boundary = cycle
+                    .checked_mul(self.cycle_sim_time_quanta_per_env)?
+                    .checked_add(*offset)?;
+                (boundary > previous && boundary <= current).then_some(boundary)
+            })
+            .max()
+    }
+
     pub fn stage(
         &self,
         feeding: &FeedingCurriculumConfig,
@@ -1331,6 +1368,17 @@ impl Default for SelfPlayConfig {
 }
 
 impl TrainingConfig {
+    /// Whether this run has a configured held-out evaluation schedule. World-
+    /// time competency frontiers are first-class evaluation triggers even
+    /// when the legacy update-count interval is disabled.
+    pub fn fixed_evaluation_enabled(&self) -> bool {
+        self.eval_interval > 0
+            || !self
+                .combat_curriculum
+                .competency_evaluation_frontiers_sim_time_quanta_per_cycle
+                .is_empty()
+    }
+
     pub fn rollout_stage(&self, simulation_time_quanta: u64) -> FeedingCurriculumStage {
         self.combat_curriculum
             .stage(&self.feeding_curriculum, simulation_time_quanta)
@@ -1603,6 +1651,15 @@ impl TrainingConfig {
             );
         }
         if combat.enabled {
+            let competency_frontiers_valid = combat
+                .competency_evaluation_frontiers_sim_time_quanta_per_cycle
+                .iter()
+                .copied()
+                .all(|frontier| frontier > 0 && frontier < combat.cycle_sim_time_quanta_per_env)
+                && combat
+                    .competency_evaluation_frontiers_sim_time_quanta_per_cycle
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1]);
             let scheduled = combat
                 .on_food_sim_time_quanta_per_cycle
                 .checked_add(combat.adjacent_food_sim_time_quanta_per_cycle)
@@ -1620,6 +1677,7 @@ impl TrainingConfig {
                 || combat.skirmish_episode_sim_time_limit_quanta == 0
                 || combat.contact_evaluation_sim_time_limit_quanta == 0
                 || combat.skirmish_evaluation_sim_time_limit_quanta == 0
+                || !competency_frontiers_valid
                 || !combat.contact_action_kind_exploration_floor.is_finite()
                 || !(0.0..1.0).contains(&combat.contact_action_kind_exploration_floor)
                 || !combat.skirmish_action_kind_exploration_floor.is_finite()
@@ -1653,6 +1711,14 @@ impl TrainingConfig {
                         .into(),
                 );
             }
+        } else if !combat
+            .competency_evaluation_frontiers_sim_time_quanta_per_cycle
+            .is_empty()
+        {
+            return Err(
+                "competency evaluation frontiers require the combat curriculum to be enabled"
+                    .into(),
+            );
         }
         if let Some(initial) = &self.initial_policy {
             if initial.directory.trim().is_empty()
@@ -1684,13 +1750,13 @@ impl TrainingConfig {
                 }
             }
         }
-        if self.eval_interval > 0 && self.eval_episodes == 0 {
+        if self.fixed_evaluation_enabled() && self.eval_episodes == 0 {
             return Err("eval_episodes must be positive when evaluation is enabled".into());
         }
         if self.self_play.max_opponent_pool > 0 && self.eval_episodes == 0 {
             return Err("eval_episodes must be positive when self-play is enabled".into());
         }
-        if self.eval_interval > 0
+        if self.fixed_evaluation_enabled()
             && self.evaluation_opponents.is_empty()
             && self.evaluation_snapshots.is_empty()
         {
@@ -2250,6 +2316,57 @@ mod tests {
         );
         assert_eq!(skirmish_rollout.victory.sim_time_limit_quanta, 2_048);
         assert_eq!(skirmish_evaluation.victory.sim_time_limit_quanta, 8_192);
+    }
+
+    #[test]
+    fn combat_competency_frontiers_are_periodic_strict_and_world_time_based() {
+        let mut config = TrainingConfig {
+            eval_interval: 0,
+            ..TrainingConfig::default()
+        };
+        config.feeding_curriculum.enabled = true;
+        config.combat_curriculum.enabled = true;
+        config
+            .combat_curriculum
+            .competency_evaluation_frontiers_sim_time_quanta_per_cycle = vec![65_536, 98_304];
+        config.validate().unwrap();
+        assert!(config.fixed_evaluation_enabled());
+
+        let mut missing_suite = config.clone();
+        missing_suite.eval_episodes = 0;
+        assert!(missing_suite.validate().is_err());
+        let mut missing_opponents = config.clone();
+        missing_opponents.evaluation_opponents.clear();
+        assert!(missing_opponents.validate().is_err());
+
+        let combat = &config.combat_curriculum;
+        assert_eq!(
+            combat.crossed_competency_evaluation_frontier(65_535, 65_536),
+            Some(65_536)
+        );
+        assert_eq!(
+            combat.crossed_competency_evaluation_frontier(65_536, 98_400),
+            Some(98_304)
+        );
+        assert_eq!(
+            combat.crossed_competency_evaluation_frontier(98_304, 327_680),
+            Some(327_680)
+        );
+        assert_eq!(
+            combat.crossed_competency_evaluation_frontier(327_680, 327_680),
+            None
+        );
+
+        config
+            .combat_curriculum
+            .competency_evaluation_frontiers_sim_time_quanta_per_cycle = vec![98_304, 65_536];
+        assert!(config.validate().is_err());
+        config
+            .combat_curriculum
+            .competency_evaluation_frontiers_sim_time_quanta_per_cycle = vec![262_144];
+        assert!(config.validate().is_err());
+        config.combat_curriculum.enabled = false;
+        assert!(config.validate().is_err());
     }
 
     #[test]

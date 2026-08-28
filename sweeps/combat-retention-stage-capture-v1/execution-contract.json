@@ -1,0 +1,18 @@
+{
+  "schema_version": 8,
+  "manifest_sha256": "74f5476d3342dc55ddce8fb56c3fbfc9e60d62e710b4223ddeed48e13b4f6786",
+  "trainer_sha256": "c0c3851425656337bd412a98429fea8228a48566121a0ed09572fc61e3a5df90",
+  "trainer_size_bytes": 11062272,
+  "trainer_container_digest": null,
+  "train_arguments": [
+    "--initial-policy",
+    "training-output/warmstarts/skirmish-schema35/behavior-clone",
+    "--initial-policy-artifact-sha256",
+    "4244392609b76655df5a6884c8375494a8259ec8a19325f87871764f065eec45",
+    "--initial-policy-qualification",
+    "training-output/warmstarts/skirmish-schema36/feeding-evaluation.json",
+    "--initial-policy-qualification-hash",
+    "5a6391a112ebba9fa0fab68a551c86c2c25ffa347818eb60d22a79f36dc8672c"
+  ],
+  "threads_per_run": 4
+}

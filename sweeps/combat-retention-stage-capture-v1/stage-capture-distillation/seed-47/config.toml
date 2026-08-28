@@ -1,0 +1,318 @@
+seed = 47
+num_envs = 4
+rollout_length = 64
+total_timesteps = 200000
+total_simulation_quanta_per_env = 524288
+eval_interval = 0
+eval_episodes = 8
+evaluation_opponents = [
+    "wait",
+    "random",
+    "aggressive",
+]
+evaluation_snapshots = []
+evaluation_seed = 1000000000
+checkpoint_interval = 0
+checkpoint_dir = "/Users/adam/code/blobs/sweeps/combat-retention-stage-capture-v1/stage-capture-distillation/seed-47/artifacts"
+
+[ppo]
+clip_epsilon = 0.20000000298023224
+value_clip_epsilon = 0.20000000298023224
+gamma = 0.9900000095367432
+gae_lambda = 0.949999988079071
+epochs_per_update = 4
+minibatch_size = 128
+recurrent_unroll_steps = 16
+learning_rate = 0.00001
+entropy_coeff = 0.009999999776482582
+action_kind_exploration_floor = 0.10000000149011612
+value_loss_coeff = 0.5
+max_grad_norm = 0.5
+target_kl = 0.029999999329447746
+initial_policy_anchor_coeff = 0.25
+
+[model]
+hidden1 = 256
+hidden2 = 128
+recurrent_size = 128
+
+[env]
+world_size = 64
+cells_per_team = 12
+starting_cell_layout = "loose_random"
+max_episode_len = 4096
+num_teams = 2
+opponent = "aggressive"
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+min_attack_power = 5
+max_attack_power = 50
+max_energy_for_attack_scaling = 200
+num_scattered_energy = 500
+scattered_energy_amount = 25
+num_plants = 200
+plant_rate = 3
+plant_max_energy = 100
+resource_placement = "random"
+
+[env.victory]
+immediate = "extermination"
+deadline = "draw"
+sim_time_limit_quanta = 131072
+
+[env.rules]
+move_effort_base = 1
+move_mass_units_per_effort = 100
+attack_effort_base = 2
+guard_effort_base = 1
+consume_effort_base = 1
+split_effort_base = 2
+regurgitate_effort_base = 1
+excavate_effort_base = 2
+deposit_terrain_effort_base = 2
+bite_capacity = 16
+gut_capacity = 64
+digestion_rate_numerator = 1
+digestion_rate_denominator = 256
+metabolism_rate_numerator = 1
+metabolism_rate_denominator = 1024
+signal_emission_cost = 1
+signal_decay_rate_numerator = 1
+signal_decay_rate_denominator = 1024
+diffusion_interval_quanta = 1024
+diffusion_rate_numerator = 1
+diffusion_rate_denominator = 4
+diffusion_targets = 90
+terrain_mass_per_elevation = 10
+minimum_survival_energy = 1
+child_core_mass = 10
+maximum_elevation_delta = 1
+guard_damage_numerator = 1
+guard_damage_denominator = 2
+attack_payload_damage_numerator = 1
+attack_payload_damage_denominator = 1
+attack_mass_damage_numerator = 0
+attack_mass_damage_denominator = 1
+apparent_mass_bucket_width = 32
+max_private_memory_bytes = 2048
+
+[env.rules.neighborhood]
+target_masks = [
+    255,
+    255,
+    255,
+    255,
+]
+diagonal_corner_rule = "allow"
+boundary_rule = "wrap"
+max_radius = 1
+
+[[env.rules.neighborhood.slots]]
+dx = -1
+dy = -1
+distance_cost_q10 = 1448
+
+[[env.rules.neighborhood.slots]]
+dx = 0
+dy = -1
+distance_cost_q10 = 1024
+
+[[env.rules.neighborhood.slots]]
+dx = 1
+dy = -1
+distance_cost_q10 = 1448
+
+[[env.rules.neighborhood.slots]]
+dx = -1
+dy = 0
+distance_cost_q10 = 1024
+
+[[env.rules.neighborhood.slots]]
+dx = 1
+dy = 0
+distance_cost_q10 = 1024
+
+[[env.rules.neighborhood.slots]]
+dx = -1
+dy = 1
+distance_cost_q10 = 1448
+
+[[env.rules.neighborhood.slots]]
+dx = 0
+dy = 1
+distance_cost_q10 = 1024
+
+[[env.rules.neighborhood.slots]]
+dx = 1
+dy = 1
+distance_cost_q10 = 1448
+
+[env.rules.neighborhood.observations]
+occupancy = 255
+marker = 255
+apparent_mass = 255
+activity = 255
+terrain = 255
+energy = 255
+signal = 255
+
+[env.rules.time]
+arithmetic_quanta_per_unit = 1024
+completion_bucket = 64
+decision_interval_floor = 1024
+
+[[env.rules.effort_profiles]]
+cost_numerator = 1
+cost_denominator = 2
+duration_numerator = 5
+duration_denominator = 4
+
+[[env.rules.effort_profiles]]
+cost_numerator = 1
+cost_denominator = 1
+duration_numerator = 1
+duration_denominator = 1
+
+[[env.rules.effort_profiles]]
+cost_numerator = 2
+cost_denominator = 1
+duration_numerator = 3
+duration_denominator = 4
+
+[env.rules.wait_duration]
+base_quanta = 1024
+mass_quanta_numerator = 0
+mass_units_denominator = 1
+
+[env.rules.move_duration]
+base_quanta = 768
+mass_quanta_numerator = 4
+mass_units_denominator = 1
+
+[env.rules.attack_duration]
+base_quanta = 640
+mass_quanta_numerator = 3
+mass_units_denominator = 1
+
+[env.rules.consume_duration]
+base_quanta = 768
+mass_quanta_numerator = 1
+mass_units_denominator = 1
+
+[env.rules.split_duration]
+base_quanta = 1024
+mass_quanta_numerator = 2
+mass_units_denominator = 1
+
+[env.rules.regurgitate_duration]
+base_quanta = 768
+mass_quanta_numerator = 1
+mass_units_denominator = 1
+
+[env.rules.excavate_duration]
+base_quanta = 1024
+mass_quanta_numerator = 2
+mass_units_denominator = 1
+
+[env.rules.deposit_terrain_duration]
+base_quanta = 1024
+mass_quanta_numerator = 2
+mass_units_denominator = 1
+
+[env.scattered_energy_layout]
+mode = "uniform"
+
+[env.plant_layout]
+mode = "uniform"
+
+[reward]
+survive_tick = 0.009999999776482582
+eat_energy = 0.004999999888241291
+damage_enemy = 0.019999999552965164
+kill_enemy = 2.0
+cell_died = -1.0
+split_success = 3.0
+team_wins = 10.0
+team_loses = -10.0
+move_toward_food = 0.05000000074505806
+move_toward_enemy = 0.019999999552965164
+proximity_search_radius = 10
+
+[reward.deadline]
+mode = "none"
+core_basis_points = 0
+assimilated_basis_points = 0
+gut_basis_points = 0
+carried_material_basis_points = 0
+payload_escrow_basis_points = 0
+minimum_margin_mass_energy = 0
+
+[self_play]
+start_after_sim_time_quanta_per_env = 2097152
+opponent_update_interval = 50
+max_opponent_pool = 0
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5
+
+[feeding_curriculum]
+enabled = true
+rollout_stages_enabled = false
+on_food_until_sim_time_quanta_per_env = 524288
+adjacent_food_until_sim_time_quanta_per_env = 1572864
+
+[feeding_curriculum.promotion]
+min_on_food_episode_success_rate = 0.95
+min_adjacent_episode_success_rate = 0.8
+min_survival_rate = 0.8
+min_consumed_energy_per_initial_cell = 1.0
+evaluation_max_episode_len = 4096
+evaluation_sim_time_limit_quanta = 65536
+
+[combat_curriculum]
+enabled = true
+cycle_sim_time_quanta_per_env = 131072
+on_food_sim_time_quanta_per_cycle = 16384
+adjacent_food_sim_time_quanta_per_cycle = 16384
+contact_sim_time_quanta_per_cycle = 32768
+skirmish_sim_time_quanta_per_cycle = 32768
+retention_episode_sim_time_limit_quanta = 16384
+contact_episode_sim_time_limit_quanta = 16384
+skirmish_episode_sim_time_limit_quanta = 32768
+contact_evaluation_sim_time_limit_quanta = 16384
+skirmish_evaluation_sim_time_limit_quanta = 32768
+competency_evaluation_frontiers_sim_time_quanta_per_cycle = [
+    65536,
+    98304,
+]
+contact_action_kind_exploration_floor = 0.5
+skirmish_action_kind_exploration_floor = 0.25
+contact_cells_per_team = 1
+skirmish_cells_per_team = 4
+contact_initial_energies = [
+    60,
+    100,
+    180,
+]
+contact_opponents = [
+    "aggressive",
+    "defensive",
+]
+min_contact_kills_for_promotion = 0
+min_skirmish_kills_for_promotion = 1
+
+[specialist_distillation]
+enabled = true
+ecology_coeff = 0.05000000074505806
+combat_coeff = 0.05000000074505806
+
+[telemetry]
+enabled = true
+state_sample_interval_steps = 32
+max_state_samples_per_episode = 64
+episode_log_stride = 1

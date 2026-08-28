@@ -1,0 +1,19 @@
+# Paired test of early specialist capture on seeds that previously retained
+# combat at update 16 and forgot it by update 32. Both arms use identical
+# world-time competency measurements; only stage-local distillation differs.
+
+base_config = "competitive_transfer_large_skirmish_stage_evaluation.toml"
+output_dir = "../../sweeps/combat-retention-stage-capture-v1"
+seeds = [47, 48, 49]
+
+[[variants]]
+name = "control"
+description = "Stage-boundary measurement without specialist distillation"
+
+[[variants]]
+name = "stage-capture-distillation"
+description = "Stage-boundary capture with coefficient 0.05 specialist teachers"
+[variants.specialist_distillation]
+enabled = true
+ecology_coeff = 0.05
+combat_coeff = 0.05
