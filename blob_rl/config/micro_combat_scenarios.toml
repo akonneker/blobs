@@ -1,0 +1,76 @@
+# Small, local held-out scenarios. These labels and objectives remain host-side
+# evaluation metadata and are never projected into a Mind observation.
+
+schema_version = 1
+
+[[scenarios]]
+name = "one-v-one-aggressor-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 100
+starting_layout = "paired_contact"
+opponent = "aggressive"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-one-stochastic-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 100
+starting_layout = "paired_contact"
+opponent = "stochastic_aggressive"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-two-aggressor-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 2
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "aggressive"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-three-stochastic-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 3
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "stochastic_aggressive"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-one-defender-breach"
+objective = "elimination"
+world_size = 7
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 180
+opponent_initial_energy = 100
+starting_layout = "paired_contact"
+opponent = "defensive"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "two-v-one-local-elimination"
+objective = "elimination"
+world_size = 7
+training_cells = 2
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 100
+starting_layout = "opposed_lines"
+opponent = "aggressive"
+sim_time_limit_quanta = 8192

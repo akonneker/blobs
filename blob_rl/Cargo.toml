@@ -84,6 +84,10 @@ name = "contact-evaluation"
 path = "src/bin/contact_evaluation.rs"
 
 [[bin]]
+name = "micro-combat-evaluation"
+path = "src/bin/micro_combat_evaluation.rs"
+
+[[bin]]
 name = "demonstration-overlap"
 path = "src/bin/demonstration_overlap.rs"
 

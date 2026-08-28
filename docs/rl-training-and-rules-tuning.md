@@ -1697,6 +1697,60 @@ constraint using already qualified combat evidence, because a teacher applied
 only on combat transitions cannot stop ecology or competitive updates from
 overwriting the skill.
 
+### Asymmetric micro-combat evaluation
+
+The maintained
+[`micro_combat_scenarios.toml`](../blob_rl/config/micro_combat_scenarios.toml)
+suite isolates the local decisions that colony matches conflate. It contains
+paired 1v1 survival against a deterministic aggressor and a private-random
+stochastic aggressor, 1v2 and 1v3 survival, a 1v1 defender-breach objective,
+and 2v1 elimination. Opposed-line placement makes every 1vN participant a
+local neighbor at the start. Scenarios contain no plants or loose food, use
+the canonical resolver and simulation clock, and may assign different initial
+population and energy to the two teams before authoritative execution begins.
+Those asymmetries are host-side initial conditions; they neither alter the
+Mind ABI nor expose team identity, objective labels, opponent policy, or
+privileged state to a cell.
+
+`StochasticAggressive` is intentionally different from the generic random
+baseline. It always closes on an enemy and ordinarily attacks an adjacent
+enemy, but uses only the existing private random input block to vary waits and
+attack payload. Identical inputs therefore remain deterministic and replayable.
+The suite itself is strict, versioned, and semantically hashed; ambiguous
+paired layouts, unbounded line populations, invalid energy, unsupported
+opponents, duplicate labels, and unknown fields fail closed.
+
+Run a frozen behavior clone with:
+
+```sh
+cargo run -p blob_rl --no-default-features --features ndarray \
+  --bin micro-combat-evaluation -- \
+  --config blob_rl/config/competitive_transfer_large_skirmish_stage_evaluation.toml \
+  --scenarios blob_rl/config/micro_combat_scenarios.toml \
+  --behavior-clone training-output/warmstarts/skirmish-schema35/behavior-clone \
+  --seeds 1000000000,1000000001,1000000002,1000000003 \
+  --output training-output/micro-combat/evidence.json
+```
+
+Publication is create-only and records the evaluator package version while
+binding the exact training config, scenario bytes, scenario semantics,
+behavior-clone metadata/model, compiled ruleset, and ordered seeds.
+Per-scenario evidence reports outcome, alive-at-end and
+scientific-survival rates, objective success, canonical survival time, final
+population and assimilated-plus-gut energy, attacks, guards, attributed damage,
+mitigation, and kills. Survival and elimination remain separate objectives:
+an evasive survivor is not rejected for doing no damage, while a timed-out
+turtle is not counted as an offensive success. Safety aborts never count as
+scientific survival. `--require-all-objectives` is a coarse CI check, not a
+training or promotion threshold.
+
+This slice supplies held-out evaluation and the asymmetric environment seam;
+it does not yet change PPO rollout sampling or existing combat-promotion
+gates. The next training slice should sample these named scenarios with a
+balanced, exact-resume schedule and preserve independent survival and
+elimination gates so the much larger colony distribution cannot hide a failed
+local skill.
+
 After every rollout environment reaches
 `self_play.start_after_sim_time_quanta_per_env`, promotion is considered every
 `opponent_update_interval` PPO updates. The first eligible evaluated checkpoint

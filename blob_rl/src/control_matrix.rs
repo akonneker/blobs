@@ -573,6 +573,7 @@ fn run_matchup(
                 seed,
                 opponent_factory,
                 None,
+                None,
             );
             env.enable_telemetry(telemetry_config.clone());
             let mut initial = env

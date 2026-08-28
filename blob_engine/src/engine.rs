@@ -1167,6 +1167,24 @@ impl Engine {
         team_id: TeamId,
         minds: Vec<Box<dyn ReferenceMind>>,
     ) -> Result<(), String> {
+        self.add_team_with_boxed_minds_and_starting_state(
+            team_id,
+            minds,
+            self.cell_config.starting_cells_per_team,
+            self.cell_config.initial_energy,
+        )
+    }
+
+    /// Add a team with scenario-specific starting population and energy.
+    /// These values affect only pre-match placement; they are not exposed to
+    /// Minds and do not change the canonical resolver rules after import.
+    pub fn add_team_with_boxed_minds_and_starting_state(
+        &mut self,
+        team_id: TeamId,
+        minds: Vec<Box<dyn ReferenceMind>>,
+        starting_cells: usize,
+        initial_energy: u32,
+    ) -> Result<(), String> {
         if self.reference_simulation.is_some() || self.iteration != 0 {
             return Err("cannot add a team after authoritative execution starts".into());
         }
@@ -1176,8 +1194,13 @@ impl Engine {
         if self.reference_minds.contains_key(&team_id) {
             return Err("team already has a Mind pool".into());
         }
+        if initial_energy < self.cell_config.min_energy
+            || initial_energy > self.cell_config.max_energy
+        {
+            return Err("team starting energy is outside the configured cell bounds".into());
+        }
         self.reference_minds.insert(team_id, minds);
-        if let Err(error) = self.place_starting_team(team_id) {
+        if let Err(error) = self.place_starting_team(team_id, starting_cells, initial_energy) {
             self.reference_minds.remove(&team_id);
             self.team_spawn_centers.remove(&team_id);
             return Err(error);
@@ -1203,9 +1226,13 @@ impl Engine {
         self.add_team_with_minds(team_id, minds)
     }
 
-    fn place_starting_team(&mut self, team_id: TeamId) -> Result<(), String> {
+    fn place_starting_team(
+        &mut self,
+        team_id: TeamId,
+        num_cells: usize,
+        initial_energy: u32,
+    ) -> Result<(), String> {
         let (width, height) = self.world.dimensions;
-        let num_cells = self.cell_config.starting_cells_per_team;
         if num_cells == 0 {
             return Ok(());
         }
@@ -1259,7 +1286,7 @@ impl Engine {
             let cell = Cell::new(
                 cell_id,
                 team_id,
-                self.cell_config.initial_energy,
+                initial_energy,
                 self.cell_config.min_energy,
             );
             self.cells.insert(cell_id, cell);
@@ -3111,6 +3138,54 @@ mod tests {
         assert!(error.contains("already has a Mind pool"));
         assert_eq!(engine.cells.len(), cells_before);
         assert_eq!(engine.reference_minds.len(), 1);
+    }
+
+    #[test]
+    fn asymmetric_starting_state_is_pre_match_only_and_exact() {
+        let mut engine = Engine::new(
+            7,
+            7,
+            10,
+            CellConfig::default(),
+            Some(808),
+            ReferenceRuleset::default(),
+        );
+        engine
+            .set_starting_cell_layout(StartingCellLayout::OpposedLines)
+            .unwrap();
+        engine
+            .add_team_with_boxed_minds_and_starting_state(
+                TeamId(0),
+                vec![Box::new(RandomMind::new())],
+                1,
+                80,
+            )
+            .unwrap();
+        engine
+            .add_team_with_boxed_minds_and_starting_state(
+                TeamId(1),
+                vec![Box::new(RandomMind::new())],
+                3,
+                150,
+            )
+            .unwrap();
+
+        let team_zero = engine
+            .cells
+            .values()
+            .filter(|cell| cell.team_id == TeamId(0))
+            .collect::<Vec<_>>();
+        let team_one = engine
+            .cells
+            .values()
+            .filter(|cell| cell.team_id == TeamId(1))
+            .collect::<Vec<_>>();
+        assert_eq!(team_zero.len(), 1);
+        assert_eq!(team_one.len(), 3);
+        assert!(team_zero.iter().all(|cell| cell.energy == 80));
+        assert!(team_one.iter().all(|cell| cell.energy == 150));
+        assert_eq!(engine.cell_config.starting_cells_per_team, 12);
+        assert_eq!(engine.cell_config.initial_energy, 100);
     }
 
     #[test]

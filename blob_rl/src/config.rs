@@ -22,16 +22,18 @@ pub enum OpponentProfile {
     Forager,
     #[default]
     Aggressive,
+    StochasticAggressive,
     Defensive,
 }
 
 impl OpponentProfile {
     pub const DEFAULT_EVALUATION: [Self; 3] = [Self::Wait, Self::Random, Self::Aggressive];
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Wait,
         Self::Random,
         Self::Forager,
         Self::Aggressive,
+        Self::StochasticAggressive,
         Self::Defensive,
     ];
 
@@ -41,12 +43,16 @@ impl OpponentProfile {
             Self::Random => "random",
             Self::Forager => "forager",
             Self::Aggressive => "aggressive",
+            Self::StochasticAggressive => "stochastic_aggressive",
             Self::Defensive => "defensive",
         }
     }
 
     pub const fn can_attack(self) -> bool {
-        matches!(self, Self::Random | Self::Aggressive)
+        matches!(
+            self,
+            Self::Random | Self::Aggressive | Self::StochasticAggressive
+        )
     }
 }
 
@@ -1702,7 +1708,9 @@ impl TrainingConfig {
                 || combat.contact_opponents.iter().any(|opponent| {
                     !matches!(
                         opponent,
-                        OpponentProfile::Aggressive | OpponentProfile::Defensive
+                        OpponentProfile::Aggressive
+                            | OpponentProfile::StochasticAggressive
+                            | OpponentProfile::Defensive
                     )
                 })
             {

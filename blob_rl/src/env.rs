@@ -35,6 +35,15 @@ use crate::telemetry::{EcologySample, StepTelemetry, TelemetryConfig, TelemetryS
 pub(crate) type OpponentMindFactory = Arc<dyn Fn() -> Box<dyn ReferenceMind> + Send + Sync>;
 type OpponentBatchPolicyFactory = Arc<dyn Fn() -> Box<dyn SnapshotBatchPolicy> + Send + Sync>;
 
+/// Host-only pre-match override for asymmetric evaluation scenarios. The
+/// resulting cells enter the same canonical state and receive the same Mind
+/// inputs as cells created through the symmetric environment constructor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpponentStartingState {
+    pub cells_per_team: usize,
+    pub initial_energy: u32,
+}
+
 /// Exact update-boundary state for one RL environment. Canonical physics stays
 /// in the engine checkpoint; host cells preserve team ownership and private
 /// dispatch/randomness metadata that intentionally is not part of the Mind ABI.
@@ -65,6 +74,7 @@ pub struct BlobEnv {
     opponent_mind_factory: OpponentMindFactory,
     opponent_batch_policy_factory: Option<OpponentBatchPolicyFactory>,
     opponent_batch_policy: Option<Box<dyn SnapshotBatchPolicy>>,
+    opponent_starting_state: Option<OpponentStartingState>,
     telemetry: Option<EnvTelemetryRuntime>,
     match_explorer: Option<MatchExplorerRecorder>,
 }
@@ -164,71 +174,8 @@ impl ReferenceMind for ActionBufferMind {
                     }
                 }
             }
-            OpponentProfile::Aggressive => {
-                if input.self_state.assimilated_energy < 40
-                    && input.action_space.consume_enabled
-                    && input.action_space.max_consume_amount > 0
-                    && input.current_tile.plant_energy + input.current_tile.loose_energy > 0
-                {
-                    ReferenceMindAction::Consume {
-                        amount: input.action_space.max_consume_amount,
-                    }
-                } else if let Some(target) = input.slots.iter().find(|slot| {
-                    slot.neighbor.is_some()
-                        && slot.reachable
-                        && ReferenceActionSpace::allows_target(
-                            input.action_space.attack_targets,
-                            slot.slot,
-                        )
-                }) {
-                    let payload = input
-                        .self_state
-                        .assimilated_energy
-                        .saturating_sub(input.action_space.minimum_survival_energy)
-                        / 8;
-                    if payload > 0 {
-                        ReferenceMindAction::Attack {
-                            target_slot: target.slot,
-                            effort: ReferenceEffort::Standard,
-                            payload,
-                        }
-                    } else {
-                        ReferenceMindAction::Wait
-                    }
-                } else if let Some(target) = input.slots.iter().max_by_key(|slot| {
-                    let energy = slot.plant_energy.unwrap_or(0)
-                        + slot.loose_energy.unwrap_or(0)
-                        + if slot.plant_growth_rate.unwrap_or(0) > 0 {
-                            slot.diffuse_energy.unwrap_or(0)
-                        } else {
-                            0
-                        };
-                    let allowed = slot.reachable
-                        && slot.neighbor.is_none()
-                        && ReferenceActionSpace::allows_target(
-                            input.action_space.move_targets,
-                            slot.slot,
-                        );
-                    (allowed, energy)
-                }) {
-                    if target.reachable
-                        && target.neighbor.is_none()
-                        && ReferenceActionSpace::allows_target(
-                            input.action_space.move_targets,
-                            target.slot,
-                        )
-                    {
-                        ReferenceMindAction::Move {
-                            target_slot: target.slot,
-                            effort: ReferenceEffort::Standard,
-                        }
-                    } else {
-                        ReferenceMindAction::Wait
-                    }
-                } else {
-                    ReferenceMindAction::Wait
-                }
-            }
+            OpponentProfile::Aggressive => aggressive_action(input, false),
+            OpponentProfile::StochasticAggressive => aggressive_action(input, true),
             OpponentProfile::Defensive => {
                 let threatened = input.slots.iter().any(|slot| slot.neighbor.is_some());
                 if threatened {
@@ -262,6 +209,77 @@ impl ReferenceMind for ActionBufferMind {
     fn reset(&mut self) -> Result<(), String> {
         Ok(())
     }
+}
+
+fn aggressive_action(input: &ReferenceMindInput, stochastic: bool) -> ReferenceMindAction {
+    if input.self_state.assimilated_energy < 40
+        && input.action_space.consume_enabled
+        && input.action_space.max_consume_amount > 0
+        && input.current_tile.plant_energy + input.current_tile.loose_energy > 0
+    {
+        return ReferenceMindAction::Consume {
+            amount: input.action_space.max_consume_amount,
+        };
+    }
+    if let Some(target) = input.slots.iter().find(|slot| {
+        slot.neighbor.is_some()
+            && slot.reachable
+            && ReferenceActionSpace::allows_target(input.action_space.attack_targets, slot.slot)
+    }) {
+        let sample = input.randomness.sample_u64(1);
+        if stochastic && sample.is_multiple_of(4) {
+            return ReferenceMindAction::Wait;
+        }
+        let divisor = if stochastic {
+            match (sample / 4) % 3 {
+                0 => 16,
+                1 => 8,
+                _ => 4,
+            }
+        } else {
+            8
+        };
+        let payload = input
+            .self_state
+            .assimilated_energy
+            .saturating_sub(input.action_space.minimum_survival_energy)
+            / divisor;
+        return if payload > 0 {
+            ReferenceMindAction::Attack {
+                target_slot: target.slot,
+                effort: ReferenceEffort::Standard,
+                payload,
+            }
+        } else {
+            ReferenceMindAction::Wait
+        };
+    }
+    let target = input.slots.iter().max_by_key(|slot| {
+        let energy = slot.plant_energy.unwrap_or(0)
+            + slot.loose_energy.unwrap_or(0)
+            + if slot.plant_growth_rate.unwrap_or(0) > 0 {
+                slot.diffuse_energy.unwrap_or(0)
+            } else {
+                0
+            };
+        let allowed = slot.reachable
+            && slot.neighbor.is_none()
+            && ReferenceActionSpace::allows_target(input.action_space.move_targets, slot.slot);
+        (allowed, energy)
+    });
+    target.map_or(ReferenceMindAction::Wait, |target| {
+        if target.reachable
+            && target.neighbor.is_none()
+            && ReferenceActionSpace::allows_target(input.action_space.move_targets, target.slot)
+        {
+            ReferenceMindAction::Move {
+                target_slot: target.slot,
+                effort: ReferenceEffort::Standard,
+            }
+        } else {
+            ReferenceMindAction::Wait
+        }
+    })
 }
 
 fn forager_move(input: &ReferenceMindInput) -> ReferenceMindAction {
@@ -507,6 +525,29 @@ impl BlobEnv {
             seed,
             opponent_mind_factory,
             None,
+            None,
+        )
+    }
+
+    /// Create an otherwise ordinary environment with an explicit opponent
+    /// starting population and energy. Intended for strict host-side micro
+    /// scenarios; no scenario identity is projected into policy input.
+    pub fn new_with_opponent_starting_state(
+        env_config: EnvConfig,
+        reward_config: RewardConfig,
+        seed: u64,
+        opponent_starting_state: OpponentStartingState,
+    ) -> Self {
+        let profile = env_config.opponent;
+        let opponent_mind_factory: OpponentMindFactory =
+            Arc::new(move || Box::new(ActionBufferMind::new_opponent(profile)));
+        Self::new_with_opponent_factory(
+            env_config,
+            reward_config,
+            seed,
+            opponent_mind_factory,
+            None,
+            Some(opponent_starting_state),
         )
     }
 
@@ -553,6 +594,7 @@ impl BlobEnv {
             seed,
             opponent_mind_factory,
             Some(opponent_batch_policy_factory),
+            None,
         )
     }
 
@@ -562,6 +604,7 @@ impl BlobEnv {
         seed: u64,
         opponent_mind_factory: OpponentMindFactory,
         opponent_batch_policy_factory: Option<OpponentBatchPolicyFactory>,
+        opponent_starting_state: Option<OpponentStartingState>,
     ) -> Self {
         let cell_config = CellConfig {
             starting_cells_per_team: env_config.cells_per_team,
@@ -595,9 +638,19 @@ impl BlobEnv {
 
         // Opponent team(s)
         for i in 1..env_config.num_teams {
-            engine
-                .add_team_with_boxed_minds(TeamId(i), vec![opponent_mind_factory()])
-                .unwrap();
+            let minds = vec![opponent_mind_factory()];
+            if let Some(starting_state) = opponent_starting_state {
+                engine
+                    .add_team_with_boxed_minds_and_starting_state(
+                        TeamId(i),
+                        minds,
+                        starting_state.cells_per_team,
+                        starting_state.initial_energy,
+                    )
+                    .unwrap();
+            } else {
+                engine.add_team_with_boxed_minds(TeamId(i), minds).unwrap();
+            }
         }
         configure_episode_resources(&mut engine, &env_config, seed)
             .expect("validated RL resource placement failed");
@@ -618,6 +671,7 @@ impl BlobEnv {
             opponent_mind_factory,
             opponent_batch_policy_factory,
             opponent_batch_policy,
+            opponent_starting_state,
             telemetry: None,
             match_explorer: None,
         }
@@ -1259,9 +1313,19 @@ impl BlobEnv {
             .add_team_with_minds(TeamId(0), vec![ActionBufferMind::new_training()])
             .unwrap();
         for i in 1..self.env_config.num_teams {
-            engine
-                .add_team_with_boxed_minds(TeamId(i), vec![(self.opponent_mind_factory)()])
-                .unwrap();
+            let minds = vec![(self.opponent_mind_factory)()];
+            if let Some(starting_state) = self.opponent_starting_state {
+                engine
+                    .add_team_with_boxed_minds_and_starting_state(
+                        TeamId(i),
+                        minds,
+                        starting_state.cells_per_team,
+                        starting_state.initial_energy,
+                    )
+                    .unwrap();
+            } else {
+                engine.add_team_with_boxed_minds(TeamId(i), minds).unwrap();
+            }
         }
         configure_episode_resources(&mut engine, &self.env_config, seed)
             .expect("validated RL resource placement failed");
@@ -2039,6 +2103,27 @@ mod tests {
         assert_eq!(aggressive.memory_update, ReferenceMemoryUpdate::Retain);
 
         input.self_state.assimilated_energy = 100;
+        let stochastic_actions = (0_u8..32)
+            .map(|seed| {
+                let mut randomized = input.clone();
+                let mut bytes = [0_u8; 32];
+                bytes[8] = seed;
+                randomized.randomness = PrivateRandom::from_bytes(bytes);
+                let left = ActionBufferMind::new_opponent(OpponentProfile::StochasticAggressive)
+                    .decide(&randomized);
+                let right = ActionBufferMind::new_opponent(OpponentProfile::StochasticAggressive)
+                    .decide(&randomized);
+                assert_eq!(left, right);
+                left.action
+            })
+            .collect::<Vec<_>>();
+        assert!(stochastic_actions
+            .iter()
+            .any(|action| matches!(action, ReferenceMindAction::Wait)));
+        assert!(stochastic_actions
+            .iter()
+            .any(|action| matches!(action, ReferenceMindAction::Attack { .. })));
+
         let defensive = ActionBufferMind::new_opponent(OpponentProfile::Defensive).decide(&input);
         assert!(matches!(
             defensive.action,
@@ -2046,6 +2131,46 @@ mod tests {
                 effort: ReferenceEffort::Standard
             }
         ));
+    }
+
+    #[test]
+    fn asymmetric_opponent_setup_survives_reset_without_mind_privilege() {
+        let config = EnvConfig {
+            world_size: 7,
+            cells_per_team: 1,
+            initial_energy: 80,
+            starting_cell_layout: blob_engine::engine::StartingCellLayout::OpposedLines,
+            num_scattered_energy: 0,
+            num_plants: 0,
+            ..EnvConfig::default()
+        };
+        let setup = OpponentStartingState {
+            cells_per_team: 3,
+            initial_energy: 150,
+        };
+        let mut env =
+            BlobEnv::new_with_opponent_starting_state(config, RewardConfig::default(), 919, setup);
+        for seed in [919, 920] {
+            if seed != 919 {
+                env.reset(seed);
+            }
+            let training = env
+                .engine
+                .cells
+                .values()
+                .filter(|cell| cell.team_id == TeamId(0))
+                .collect::<Vec<_>>();
+            let opponents = env
+                .engine
+                .cells
+                .values()
+                .filter(|cell| cell.team_id == TeamId(1))
+                .collect::<Vec<_>>();
+            assert_eq!(training.len(), 1);
+            assert_eq!(opponents.len(), 3);
+            assert!(training.iter().all(|cell| cell.energy == 80));
+            assert!(opponents.iter().all(|cell| cell.energy == 150));
+        }
     }
 
     #[test]
@@ -2248,7 +2373,7 @@ mod tests {
             ))
         });
         let mut scalar =
-            BlobEnv::new_with_opponent_factory(config, reward, 808, scalar_factory, None);
+            BlobEnv::new_with_opponent_factory(config, reward, 808, scalar_factory, None, None);
 
         for _ in 0..4 {
             let actions = batched
@@ -2322,7 +2447,8 @@ mod tests {
                 device,
             ))
         });
-        let scalar = BlobEnv::new_with_opponent_factory(config, reward, 909, scalar_factory, None);
+        let scalar =
+            BlobEnv::new_with_opponent_factory(config, reward, 909, scalar_factory, None, None);
 
         let steps = 100;
         let (batched_seconds, calls, rows) = run(batched, steps);
