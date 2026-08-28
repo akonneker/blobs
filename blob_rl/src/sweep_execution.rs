@@ -1,6 +1,6 @@
 //! Bounded, resumable execution and paired aggregation for rules sweeps.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use crate::sweep::{
 use crate::telemetry::{ActionFamilyTelemetry, TrainingTelemetrySummary};
 use crate::viability_gate::{verify_viability_gate_requirement, ViabilityGateRequirement};
 
-pub const SWEEP_EXECUTION_SCHEMA_VERSION: u32 = 8;
+pub const SWEEP_EXECUTION_SCHEMA_VERSION: u32 = 9;
 const MAX_CONTROL_FILE_BYTES: u64 = 16 * 1024 * 1024;
 static EXECUTION_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -107,6 +107,9 @@ pub struct TrainingTailMetrics {
     pub maximum_sim_time_quanta: u64,
     pub total_sim_time_quanta: u128,
     pub simulation_quanta_per_second: f64,
+    /// Peak host resident set reported by the trainer. This excludes device
+    /// memory and is absent on platforms without `getrusage` support.
+    pub peak_resident_set_bytes: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -146,7 +149,26 @@ pub struct SweepRunResult {
     pub training: TrainingTailMetrics,
     pub evaluation: Option<EvaluationTailMetrics>,
     pub competency: Option<CompetencyRunMetrics>,
+    pub micro_combat: Option<MicroCombatRunMetrics>,
     pub telemetry: Option<TelemetryRunMetrics>,
+}
+
+/// Terminal and learning-speed evidence reconstructed from every complete
+/// held-out micro-combat evaluation boundary in a run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MicroCombatRunMetrics {
+    pub evaluations: usize,
+    pub final_survival_success_rate: f64,
+    pub final_elimination_success_rate: f64,
+    pub best_survival_success_rate: f64,
+    pub best_elimination_success_rate: f64,
+    /// Exactly 0.0 or 1.0 so it can share the paired-summary machinery.
+    pub qualification_reached: f64,
+    /// First qualifying action divided by the terminal action count. Runs
+    /// that never qualify are right-censored at 1.0.
+    pub normalized_actions_to_qualification_or_budget: f64,
+    pub first_qualified_actions: Option<u64>,
 }
 
 /// Independently verified best-checkpoint evidence for curricula that require
@@ -249,7 +271,20 @@ pub struct SweepMetricSummaries {
     /// Mean of exact 0/1 run outcomes, or candidate-minus-control for paired
     /// comparisons.
     pub joint_qualification_rate: Option<MetricSummary>,
+    pub peak_resident_set_bytes: Option<MetricSummary>,
+    pub micro_combat: Option<MicroCombatSweepMetricSummaries>,
     pub telemetry: Option<TelemetrySweepMetricSummaries>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MicroCombatSweepMetricSummaries {
+    pub final_survival_success_rate: MetricSummary,
+    pub final_elimination_success_rate: MetricSummary,
+    pub best_survival_success_rate: MetricSummary,
+    pub best_elimination_success_rate: MetricSummary,
+    pub qualification_rate: MetricSummary,
+    pub normalized_actions_to_qualification_or_budget: MetricSummary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -619,6 +654,19 @@ fn number<T: std::str::FromStr>(row: &HashMap<&str, &str>, name: &str) -> Result
         .map_err(|_| format!("metrics field {name} is invalid"))
 }
 
+fn optional_number<T: std::str::FromStr>(
+    row: &HashMap<&str, &str>,
+    name: &str,
+) -> Result<Option<T>, String> {
+    match row.get(name).copied().filter(|value| !value.is_empty()) {
+        Some(value) => value
+            .parse()
+            .map(Some)
+            .map_err(|_| format!("metrics field {name} is invalid")),
+        None => Ok(None),
+    }
+}
+
 fn csv_rows(content: &str) -> Result<Vec<HashMap<&str, &str>>, String> {
     let mut lines = content.lines();
     let headers = lines
@@ -640,6 +688,13 @@ fn training_tail(path: &Path) -> Result<TrainingTailMetrics, String> {
     let content = fs::read_to_string(path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
     let rows = csv_rows(&content)?;
+    let peak_resident_set_bytes = rows
+        .iter()
+        .map(|row| optional_number::<f64>(row, "peak_resident_set_bytes"))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .reduce(f64::max);
     let row = rows
         .last()
         .ok_or_else(|| format!("{} has no complete metric rows", path.display()))?;
@@ -667,7 +722,146 @@ fn training_tail(path: &Path) -> Result<TrainingTailMetrics, String> {
         maximum_sim_time_quanta: number(row, "max_sim_time_quanta")?,
         total_sim_time_quanta: number(row, "total_sim_time_quanta")?,
         simulation_quanta_per_second: number(row, "simulation_quanta_per_second")?,
+        peak_resident_set_bytes,
     })
+}
+
+#[derive(Debug, Clone, Default)]
+struct MicroCombatEvaluationPoint {
+    scenario_rows: HashMap<String, (String, usize, usize, usize)>,
+    survival_episodes: usize,
+    survival_successes: usize,
+    elimination_episodes: usize,
+    elimination_successes: usize,
+    safety_aborts: usize,
+}
+
+fn micro_combat_curve(
+    path: &Path,
+    config: &TrainingConfig,
+    terminal_actions: u64,
+) -> Result<Option<MicroCombatRunMetrics>, String> {
+    let micro = &config.combat_curriculum.micro_combat;
+    if !micro.enabled {
+        return Ok(None);
+    }
+    let expected_scenario_names = micro
+        .suite
+        .as_ref()
+        .ok_or("enabled micro-combat evaluation has no suite")?
+        .scenarios
+        .iter()
+        .map(|scenario| scenario.name.as_str())
+        .collect::<HashSet<_>>();
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let rows = csv_rows(&content)?;
+    let mut points = BTreeMap::<(usize, u64), MicroCombatEvaluationPoint>::new();
+    for row in rows {
+        let key = (number(&row, "update")?, number(&row, "actions")?);
+        let scenario = field(&row, "scenario")?.to_string();
+        let objective = field(&row, "objective")?.to_string();
+        let episodes: usize = number(&row, "episodes")?;
+        let successes: usize = number(&row, "objective_successes")?;
+        let safety_aborts: usize = number(&row, "safety_aborts")?;
+        let point = points.entry(key).or_default();
+        let identity = (objective.clone(), episodes, successes, safety_aborts);
+        if let Some(existing) = point.scenario_rows.get(&scenario) {
+            if existing != &identity {
+                return Err(format!(
+                    "micro-combat evaluation boundary contains inconsistent duplicate scenario {scenario}"
+                ));
+            }
+            continue;
+        }
+        point.scenario_rows.insert(scenario, identity);
+        point.safety_aborts = point.safety_aborts.saturating_add(safety_aborts);
+        match objective.as_str() {
+            "Survival" => {
+                point.survival_episodes = point.survival_episodes.saturating_add(episodes);
+                point.survival_successes = point.survival_successes.saturating_add(successes);
+            }
+            "Elimination" => {
+                point.elimination_episodes = point.elimination_episodes.saturating_add(episodes);
+                point.elimination_successes = point.elimination_successes.saturating_add(successes);
+            }
+            objective => return Err(format!("unknown micro-combat objective {objective}")),
+        }
+    }
+    if points.is_empty() {
+        return Err("micro-combat evaluation was enabled but no complete rows exist".into());
+    }
+    if points.values().any(|point| {
+        point.scenario_rows.len() != expected_scenario_names.len()
+            || point
+                .scenario_rows
+                .keys()
+                .any(|name| !expected_scenario_names.contains(name.as_str()))
+            || point.survival_episodes == 0
+            || point.elimination_episodes == 0
+    }) {
+        return Err(
+            "micro-combat learning curve contains an incomplete evaluation boundary".into(),
+        );
+    }
+    let rate = |successes: usize, episodes: usize| successes as f64 / episodes as f64;
+    let scored = points
+        .iter()
+        .map(|((_, actions), point)| {
+            (
+                *actions,
+                rate(point.survival_successes, point.survival_episodes),
+                rate(point.elimination_successes, point.elimination_episodes),
+                point.safety_aborts,
+            )
+        })
+        .collect::<Vec<_>>();
+    let &(final_actions, final_survival, final_elimination, _) = scored
+        .last()
+        .expect("nonempty micro-combat curve has a final point");
+    if final_actions != terminal_actions {
+        return Err(format!(
+            "terminal micro-combat evaluation covers {final_actions} actions but training completed at {terminal_actions}"
+        ));
+    }
+    let first_qualified_actions =
+        scored
+            .iter()
+            .find_map(|(actions, survival, elimination, aborts)| {
+                (*aborts == 0
+                    && *survival >= micro.min_survival_objective_success_rate
+                    && *elimination >= micro.min_elimination_objective_success_rate)
+                    .then_some(*actions)
+            });
+    let qualification_reached = if first_qualified_actions.is_some() {
+        1.0
+    } else {
+        0.0
+    };
+    let normalized_actions_to_qualification_or_budget =
+        first_qualified_actions.map_or(1.0, |actions| {
+            if terminal_actions == 0 {
+                1.0
+            } else {
+                actions as f64 / terminal_actions as f64
+            }
+        });
+    Ok(Some(MicroCombatRunMetrics {
+        evaluations: scored.len(),
+        final_survival_success_rate: final_survival,
+        final_elimination_success_rate: final_elimination,
+        best_survival_success_rate: scored
+            .iter()
+            .map(|(_, survival, _, _)| *survival)
+            .fold(0.0, f64::max),
+        best_elimination_success_rate: scored
+            .iter()
+            .map(|(_, _, elimination, _)| *elimination)
+            .fold(0.0, f64::max),
+        qualification_reached,
+        normalized_actions_to_qualification_or_budget,
+        first_qualified_actions,
+    }))
 }
 
 fn evaluation_tail(path: &Path) -> Result<Option<EvaluationTailMetrics>, String> {
@@ -877,6 +1071,11 @@ fn collect_result(
         None
     };
     let competency = collect_competency_metrics(artifact_root, config)?;
+    let micro_combat = micro_combat_curve(
+        &artifact_root.join("micro-combat-evaluation.csv"),
+        config,
+        training.actions,
+    )?;
     let telemetry = if config.telemetry.enabled {
         let summary: TrainingTelemetrySummary =
             read_json(&artifact_root.join("telemetry/summary.json"))?;
@@ -911,6 +1110,7 @@ fn collect_result(
         training,
         evaluation,
         competency,
+        micro_combat,
         telemetry,
     })
 }
@@ -1014,6 +1214,27 @@ fn result_matches_run(
         && result.scenario_hash == run.scenario_hash
         && result.experiment_config_sha256 == run.experiment_config_sha256
         && result.config_file_sha256 == run.config_file_sha256
+        && result
+            .training
+            .peak_resident_set_bytes
+            .is_none_or(|bytes| bytes.is_finite() && bytes >= 0.0)
+        && result.micro_combat.as_ref().is_none_or(|metrics| {
+            metrics.evaluations > 0
+                && [
+                    metrics.final_survival_success_rate,
+                    metrics.final_elimination_success_rate,
+                    metrics.best_survival_success_rate,
+                    metrics.best_elimination_success_rate,
+                    metrics.qualification_reached,
+                    metrics.normalized_actions_to_qualification_or_budget,
+                ]
+                .iter()
+                .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                && (metrics.qualification_reached == 0.0
+                    && metrics.first_qualified_actions.is_none()
+                    || metrics.qualification_reached == 1.0
+                        && metrics.first_qualified_actions.is_some())
+        })
         && result.competency.as_ref().is_none_or(|metrics| {
             (metrics.joint_qualified == 0.0
                 && metrics.best_update.is_none()
@@ -1058,6 +1279,7 @@ fn publish_or_verify_result(path: &Path, result: &SweepRunResult) -> Result<(), 
             },
         ) || existing.training != result.training
             || existing.evaluation != result.evaluation
+            || existing.micro_combat != result.micro_combat
             || existing.telemetry != result.telemetry
         {
             return Err(format!(
@@ -1586,6 +1808,35 @@ fn summaries(results: &[&SweepRunResult]) -> SweepMetricSummaries {
             mean_resource_concentration: summarize(|m| m.mean_resource_concentration),
         })
     }
+    fn micro_combat_summaries(
+        results: &[&SweepRunResult],
+    ) -> Option<MicroCombatSweepMetricSummaries> {
+        let micro = results
+            .iter()
+            .filter_map(|result| result.micro_combat.as_ref())
+            .collect::<Vec<_>>();
+        if micro.len() != results.len() {
+            return None;
+        }
+        let summarize = |select: fn(&MicroCombatRunMetrics) -> f64| {
+            metric_summary(
+                &micro
+                    .iter()
+                    .map(|metrics| select(metrics))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        Some(MicroCombatSweepMetricSummaries {
+            final_survival_success_rate: summarize(|m| m.final_survival_success_rate),
+            final_elimination_success_rate: summarize(|m| m.final_elimination_success_rate),
+            best_survival_success_rate: summarize(|m| m.best_survival_success_rate),
+            best_elimination_success_rate: summarize(|m| m.best_elimination_success_rate),
+            qualification_rate: summarize(|m| m.qualification_reached),
+            normalized_actions_to_qualification_or_budget: summarize(|m| {
+                m.normalized_actions_to_qualification_or_budget
+            }),
+        })
+    }
     SweepMetricSummaries {
         training_win_rate: summary_of(results, |result| result.training.win_rate),
         training_average_reward: summary_of(results, |result| result.training.average_reward),
@@ -1616,6 +1867,14 @@ fn summaries(results: &[&SweepRunResult]) -> SweepMetricSummaries {
                 .collect::<Vec<_>>();
             (values.len() == results.len()).then(|| metric_summary(&values))
         },
+        peak_resident_set_bytes: {
+            let values = results
+                .iter()
+                .filter_map(|result| result.training.peak_resident_set_bytes)
+                .collect::<Vec<_>>();
+            (values.len() == results.len()).then(|| metric_summary(&values))
+        },
+        micro_combat: micro_combat_summaries(results),
         telemetry: telemetry_summaries(results),
     }
 }
@@ -1751,6 +2010,14 @@ fn paired_differences(
                 total_sim_time_quanta: 0,
                 simulation_quanta_per_second: candidate.training.simulation_quanta_per_second
                     - base.training.simulation_quanta_per_second,
+                peak_resident_set_bytes: match (
+                    candidate.training.peak_resident_set_bytes,
+                    base.training.peak_resident_set_bytes,
+                ) {
+                    (Some(candidate), Some(base)) => Some(candidate - base),
+                    (None, None) => None,
+                    _ => return Err("paired runs disagree on peak-RSS availability".into()),
+                },
             },
             evaluation: match (&candidate.evaluation, &base.evaluation) {
                 (Some(candidate), Some(base)) => Some(EvaluationTailMetrics {
@@ -1783,6 +2050,29 @@ fn paired_differences(
                 }),
                 (None, None) => None,
                 _ => return Err("paired runs disagree on competency availability".into()),
+            },
+            micro_combat: match (&candidate.micro_combat, &base.micro_combat) {
+                (Some(candidate), Some(base)) => Some(MicroCombatRunMetrics {
+                    evaluations: 0,
+                    final_survival_success_rate: candidate.final_survival_success_rate
+                        - base.final_survival_success_rate,
+                    final_elimination_success_rate: candidate.final_elimination_success_rate
+                        - base.final_elimination_success_rate,
+                    best_survival_success_rate: candidate.best_survival_success_rate
+                        - base.best_survival_success_rate,
+                    best_elimination_success_rate: candidate.best_elimination_success_rate
+                        - base.best_elimination_success_rate,
+                    qualification_reached: candidate.qualification_reached
+                        - base.qualification_reached,
+                    normalized_actions_to_qualification_or_budget: candidate
+                        .normalized_actions_to_qualification_or_budget
+                        - base.normalized_actions_to_qualification_or_budget,
+                    first_qualified_actions: None,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err("paired runs disagree on micro-combat evidence availability".into())
+                }
             },
             telemetry: match (&candidate.telemetry, &base.telemetry) {
                 (Some(candidate), Some(base)) => Some(telemetry_difference(candidate, base)),
@@ -1838,6 +2128,17 @@ fn aggregate_validated_sweep(
         if result.competency != expected_competency {
             return Err(format!(
                 "run {} seed {} competency evidence mismatch",
+                run.variant, run.training_seed
+            ));
+        }
+        let expected_micro_combat = micro_combat_curve(
+            &Path::new(&sweep.configs[index].checkpoint_dir).join("micro-combat-evaluation.csv"),
+            &sweep.configs[index],
+            result.training.actions,
+        )?;
+        if result.micro_combat != expected_micro_combat {
+            return Err(format!(
+                "run {} seed {} micro-combat evidence mismatch",
                 run.variant, run.training_seed
             ));
         }
@@ -2293,6 +2594,48 @@ mod tests {
     }
 
     #[test]
+    fn micro_combat_curve_reports_terminal_skill_and_first_gate_crossing() {
+        let temporary = tempfile::tempdir().unwrap();
+        let config = TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_curriculum_256.toml"
+        ))
+        .unwrap();
+        let suite = config
+            .combat_curriculum
+            .micro_combat
+            .suite
+            .as_ref()
+            .unwrap();
+        let mut csv = String::from(
+            "update,actions,scenario,objective,episodes,wins,losses,timeouts,safety_aborts,alive_at_end,objective_successes,objective_success_rate,scientific_survival_rate,survival_time_quanta,attacks_committed,damage_dealt,damage_received,kills,seed_count\n",
+        );
+        for (update, actions, elimination_successes) in [(1, 100, 0), (2, 200, 2)] {
+            for scenario in &suite.scenarios {
+                let successes = match scenario.objective {
+                    crate::micro_combat::MicroCombatObjective::Survival => 3,
+                    crate::micro_combat::MicroCombatObjective::Elimination => elimination_successes,
+                };
+                csv.push_str(&format!(
+                    "{update},{actions},{},{:?},4,0,0,4,0,3,{successes},0,0,0,0,0,0,0,4\n",
+                    scenario.name, scenario.objective
+                ));
+            }
+        }
+        let path = temporary.path().join("micro-combat-evaluation.csv");
+        fs::write(&path, csv).unwrap();
+        let metrics = micro_combat_curve(&path, &config, 200).unwrap().unwrap();
+        assert_eq!(metrics.evaluations, 2);
+        assert_eq!(metrics.final_survival_success_rate, 0.75);
+        assert_eq!(metrics.final_elimination_success_rate, 0.5);
+        assert_eq!(metrics.qualification_reached, 1.0);
+        assert_eq!(metrics.first_qualified_actions, Some(200));
+        assert_eq!(metrics.normalized_actions_to_qualification_or_budget, 1.0);
+        assert!(micro_combat_curve(&path, &config, 201)
+            .unwrap_err()
+            .contains("terminal micro-combat evaluation"));
+    }
+
+    #[test]
     fn paired_competency_summary_uses_exact_binary_run_outcomes() {
         fn result(seed: u64, qualified: bool) -> SweepRunResult {
             SweepRunResult {
@@ -2333,6 +2676,7 @@ mod tests {
                     maximum_sim_time_quanta: 0,
                     total_sim_time_quanta: 0,
                     simulation_quanta_per_second: 0.0,
+                    peak_resident_set_bytes: None,
                 },
                 evaluation: None,
                 competency: Some(CompetencyRunMetrics {
@@ -2343,6 +2687,20 @@ mod tests {
                     adjacent_food_survival_rate: qualified.then_some(1.0),
                     skirmish_kills: qualified.then_some(1),
                     skirmish_damage: qualified.then_some(1),
+                }),
+                micro_combat: Some(MicroCombatRunMetrics {
+                    evaluations: 2,
+                    final_survival_success_rate: 1.0,
+                    final_elimination_success_rate: if qualified { 1.0 } else { 0.0 },
+                    best_survival_success_rate: 1.0,
+                    best_elimination_success_rate: if qualified { 1.0 } else { 0.0 },
+                    qualification_reached: if qualified { 1.0 } else { 0.0 },
+                    normalized_actions_to_qualification_or_budget: if qualified {
+                        0.5
+                    } else {
+                        1.0
+                    },
+                    first_qualified_actions: qualified.then_some(1),
                 }),
                 telemetry: None,
             }
@@ -2362,6 +2720,10 @@ mod tests {
         let (_, differences) = paired_differences(&control_refs, &candidate_refs).unwrap();
         assert_eq!(
             differences.joint_qualification_rate.unwrap().mean,
+            1.0 / 3.0
+        );
+        assert_eq!(
+            differences.micro_combat.unwrap().qualification_rate.mean,
             1.0 / 3.0
         );
     }

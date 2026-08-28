@@ -1,0 +1,18 @@
+# Paired three-seed A/B of micro-combat rehearsal on a 256x256 world.
+# The first variant is the aggregate baseline. Evaluation remains active in
+# both arms; only exposure to the named scenarios during PPO rollouts changes.
+base_config = "micro_combat_ablation_256_base.toml"
+output_dir = "../../sweeps/micro-combat-ablation-256-v1"
+seeds = [256201, 256202, 256203]
+
+[[variants]]
+name = "no-rehearsal"
+description = "Control: shared held-out micro-combat suite, no named-scenario rollout exposure"
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = false
+
+[[variants]]
+name = "balanced-rehearsal"
+description = "Treatment: stage-local round-robin micro-combat rollout exposure"
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = true

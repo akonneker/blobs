@@ -21,6 +21,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
 toml = "0.8"
 clap = { version = "4", features = ["derive"] }
+libc = "0.2"
 
 [features]
 default = ["wgpu"]

@@ -1147,6 +1147,54 @@ mod tests {
     }
 
     #[test]
+    fn documented_micro_combat_ablation_changes_only_rollout_exposure() {
+        let spec: RulesSweepSpec =
+            toml::from_str(include_str!("../config/micro_combat_ablation_256.toml")).unwrap();
+        validate_spec(&spec).unwrap();
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_ablation_256_base.toml"
+        ))
+        .unwrap();
+        base.validate().unwrap();
+        let maintained = TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_curriculum_256.toml"
+        ))
+        .unwrap();
+        assert_eq!(
+            base.combat_curriculum
+                .micro_combat
+                .suite
+                .as_ref()
+                .unwrap()
+                .semantic_hash()
+                .unwrap(),
+            maintained
+                .combat_curriculum
+                .micro_combat
+                .suite
+                .as_ref()
+                .unwrap()
+                .semantic_hash()
+                .unwrap()
+        );
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| base.with_combat_curriculum_override(&variant.combat_curriculum))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(spec.seeds.len(), 3);
+        assert_eq!(expanded.len(), 2);
+        assert_eq!(expanded[0].env.world_size, 256);
+        assert_eq!(expanded[0].total_simulation_quanta_per_env, Some(1_048_576));
+        assert!(!expanded[0].combat_curriculum.micro_combat.rollout_enabled);
+        assert!(expanded[1].combat_curriculum.micro_combat.rollout_enabled);
+        let mut normalized = expanded[1].clone();
+        normalized.combat_curriculum.micro_combat.rollout_enabled = false;
+        assert_eq!(normalized, expanded[0]);
+    }
+
+    #[test]
     fn experiment_identity_ignores_only_the_artifact_destination() {
         let mut config = TrainingConfig {
             checkpoint_dir: "/first/output".into(),

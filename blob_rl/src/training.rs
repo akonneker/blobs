@@ -57,6 +57,32 @@ struct PendingTransition {
     started_at: u64,
 }
 
+#[cfg(unix)]
+fn peak_resident_set_bytes() -> Option<u64> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: `getrusage` initializes the supplied `rusage` on success, and
+    // the pointer refers to writable storage of the exact C type.
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    // SAFETY: the successful call above initialized the structure.
+    let maximum = unsafe { usage.assume_init() }.ru_maxrss;
+    let maximum = u64::try_from(maximum).ok()?;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        Some(maximum)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        maximum.checked_mul(1024)
+    }
+}
+
+#[cfg(not(unix))]
+fn peak_resident_set_bytes() -> Option<u64> {
+    None
+}
+
 #[derive(Debug, Clone, Copy)]
 struct RolloutCurriculumAssignment {
     stage: FeedingCurriculumStage,
@@ -1385,7 +1411,7 @@ pub fn train<B: AutodiffBackend>(
     let mut metrics_file = open_metrics_file(
         &metrics_path,
         resume_checkpoint.is_some(),
-        "update,actions,policy_loss,value_loss,entropy,approx_kl,anchor_loss,clip_fraction,explained_variance,ppo_optimizer_steps,ppo_epochs_completed,kl_early_stop,ppo_recurrent_unroll_steps,ppo_recurrent_chunks,episodes,wins,losses,timeouts,win_rate,avg_ep_len,avg_reward,training_cells_alive,completed_transitions,discarded_tails,mean_elapsed_time,actions_per_second,min_sim_time_quanta,max_sim_time_quanta,total_sim_time_quanta,simulation_quanta_per_second,curriculum_stage",
+        "update,actions,policy_loss,value_loss,entropy,approx_kl,anchor_loss,clip_fraction,explained_variance,ppo_optimizer_steps,ppo_epochs_completed,kl_early_stop,ppo_recurrent_unroll_steps,ppo_recurrent_chunks,episodes,wins,losses,timeouts,win_rate,avg_ep_len,avg_reward,training_cells_alive,completed_transitions,discarded_tails,mean_elapsed_time,actions_per_second,min_sim_time_quanta,max_sim_time_quanta,total_sim_time_quanta,simulation_quanta_per_second,peak_resident_set_bytes,curriculum_stage",
     )
     .expect("failed to initialize training metrics");
     println!("  Logging metrics to: {}", metrics_path.display());
@@ -2044,6 +2070,8 @@ pub fn train<B: AutodiffBackend>(
                 .sum::<u128>();
             let simulation_quanta_per_second =
                 total_sim_time_quanta as f64 / start_time.elapsed().as_secs_f64();
+            let peak_resident_set_bytes =
+                peak_resident_set_bytes().map_or_else(String::new, |bytes| bytes.to_string());
 
             if update_count.is_multiple_of(10) || update_count <= 5 {
                 println!(
@@ -2063,7 +2091,7 @@ pub fn train<B: AutodiffBackend>(
             // Write metrics CSV row
             writeln!(
                 metrics_file,
-                "{},{},{:.6},{:.6},{:.4},{:.6},{:.6},{:.4},{:.4},{},{},{},{},{},{},{},{},{},{:.4},{:.1},{:.4},{},{},{},{:.4},{:.1},{},{},{},{:.1},{}",
+                "{},{},{:.6},{:.6},{:.4},{:.6},{:.6},{:.4},{:.4},{},{},{},{},{},{},{},{},{},{:.4},{:.1},{:.4},{},{},{},{:.4},{:.1},{},{},{},{:.1},{},{}",
                 update_count,
                 total_timesteps,
                 ppo_metrics.policy_loss,
@@ -2094,6 +2122,7 @@ pub fn train<B: AutodiffBackend>(
                 maximum_sim_time_quanta,
                 total_sim_time_quanta,
                 simulation_quanta_per_second,
+                peak_resident_set_bytes,
                 config.rollout_stage(minimum_sim_time_quanta),
             )
             .unwrap();
@@ -2900,6 +2929,12 @@ fn sample_action(probs: &[f32], rng: &mut impl Rng) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn host_peak_resident_set_is_available_for_training_cost_comparisons() {
+        assert!(peak_resident_set_bytes().is_some_and(|bytes| bytes > 0));
+    }
     use crate::artifact::RolloutSnapshotDescriptor;
     use crate::evaluation::OpponentEvaluationMetrics;
     use burn::backend::{Autodiff, NdArray};
@@ -3368,6 +3403,7 @@ mod tests {
         assert!(micro_combat_gate_passed(&disabled, None));
         let enabled = MicroCombatTrainingConfig {
             enabled: true,
+            rollout_enabled: true,
             suite: Some(
                 crate::micro_combat::MicroCombatSuiteConfig::from_toml_str(include_str!(
                     "../config/micro_combat_scenarios.toml"
@@ -3388,6 +3424,7 @@ mod tests {
         let mut config = TrainingConfig::default();
         config.combat_curriculum.micro_combat = crate::micro_combat::MicroCombatTrainingConfig {
             enabled: true,
+            rollout_enabled: true,
             suite: Some(suite),
             min_survival_objective_success_rate: 0.75,
             min_elimination_objective_success_rate: 0.25,
@@ -3512,6 +3549,7 @@ mod tests {
         config.combat_curriculum.contact_opponents = vec![OpponentProfile::Aggressive];
         config.combat_curriculum.micro_combat = MicroCombatTrainingConfig {
             enabled: true,
+            rollout_enabled: true,
             suite: Some(suite),
             min_survival_objective_success_rate: 1.0,
             min_elimination_objective_success_rate: 1.0,

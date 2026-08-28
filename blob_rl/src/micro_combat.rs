@@ -56,7 +56,12 @@ pub struct MicroCombatSuiteConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct MicroCombatTrainingConfig {
+    /// Publish held-out evidence and enforce the independent promotion gates.
     pub enabled: bool,
+    /// Rehearse the inline scenarios during contact/skirmish rollout blocks.
+    /// Keeping this separate lets an A/B control use the identical held-out
+    /// suite without receiving micro-combat training exposure.
+    pub rollout_enabled: bool,
     pub suite: Option<MicroCombatSuiteConfig>,
     pub min_survival_objective_success_rate: f64,
     pub min_elimination_objective_success_rate: f64,
@@ -66,6 +71,7 @@ impl Default for MicroCombatTrainingConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            rollout_enabled: false,
             suite: None,
             min_survival_objective_success_rate: 0.8,
             min_elimination_objective_success_rate: 0.25,
@@ -76,6 +82,9 @@ impl Default for MicroCombatTrainingConfig {
 impl MicroCombatTrainingConfig {
     pub fn validate_against(&self, base: &EnvConfig) -> Result<(), String> {
         if !self.enabled {
+            if self.rollout_enabled {
+                return Err("micro-combat rollout requires held-out evaluation".into());
+            }
             if self.suite.is_some() {
                 return Err("disabled micro-combat training cannot retain a scenario suite".into());
             }
@@ -153,7 +162,7 @@ impl MicroCombatTrainingConfig {
         stage: FeedingCurriculumStage,
         cursor: u64,
     ) -> Option<usize> {
-        if !self.enabled {
+        if !self.rollout_enabled {
             return None;
         }
         let indices = self.scenario_indices(stage);
@@ -697,6 +706,7 @@ mod tests {
         .unwrap();
         let config = MicroCombatTrainingConfig {
             enabled: true,
+            rollout_enabled: true,
             suite: Some(maintained),
             min_survival_objective_success_rate: 0.75,
             min_elimination_objective_success_rate: 0.25,
@@ -751,6 +761,52 @@ mod tests {
     }
 
     #[test]
+    fn rehearsal_can_be_disabled_without_changing_held_out_evidence() {
+        let treatment = crate::config::TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_curriculum_256.toml"
+        ))
+        .unwrap();
+        let patch: toml::Table = toml::from_str(
+            r#"
+            [micro_combat]
+            rollout_enabled = false
+            "#,
+        )
+        .unwrap();
+        let control = treatment.with_combat_curriculum_override(&patch).unwrap();
+        assert!(control.combat_curriculum.micro_combat.enabled);
+        assert!(!control.combat_curriculum.micro_combat.rollout_enabled);
+        assert_eq!(
+            control.combat_curriculum.micro_combat.suite,
+            treatment.combat_curriculum.micro_combat.suite
+        );
+        let mut expected = treatment;
+        expected.combat_curriculum.micro_combat.rollout_enabled = false;
+        assert_eq!(control, expected);
+        let mut rotation = MicroCombatRotationState::default();
+        assert_eq!(
+            rotation.assign(
+                &control.combat_curriculum.micro_combat,
+                FeedingCurriculumStage::Contact
+            ),
+            None
+        );
+        assert_eq!(rotation, MicroCombatRotationState::default());
+    }
+
+    #[test]
+    fn rehearsal_cannot_run_without_held_out_evaluation() {
+        let config = MicroCombatTrainingConfig {
+            rollout_enabled: true,
+            ..MicroCombatTrainingConfig::default()
+        };
+        assert!(config
+            .validate_against(&EnvConfig::default())
+            .unwrap_err()
+            .contains("requires held-out evaluation"));
+    }
+
+    #[test]
     fn survival_and_elimination_gates_are_independent() {
         let report = MicroCombatEvaluationReport {
             schema_version: MICRO_COMBAT_EVALUATION_SCHEMA_VERSION,
@@ -782,6 +838,7 @@ mod tests {
         };
         let mut config = MicroCombatTrainingConfig {
             enabled: true,
+            rollout_enabled: true,
             suite: Some(suite()),
             min_survival_objective_success_rate: 0.75,
             min_elimination_objective_success_rate: 0.5,

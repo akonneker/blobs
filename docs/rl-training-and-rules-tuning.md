@@ -1784,10 +1784,45 @@ cargo run --release -p blob_rl --bin train -- \
 ```
 
 The initial thresholds are 75% survival and 25% elimination. They are explicit
-calibration targets, not established optima. The next experiment should run a
-bounded small-world smoke job to verify scenario exposure and gradient health,
-then compare the maintained 256×256 profile against the same schedule with
-micro-combat disabled before promoting either distribution.
+calibration targets, not established optima. Held-out evaluation/gating and
+rollout rehearsal have separate switches: `enabled = true` retains the exact
+suite and gates, while `rollout_enabled` controls whether named scenarios enter
+the contact/skirmish rollout rotation. Rehearsal is invalid unless evaluation
+is enabled. This separation makes the no-rehearsal control scientifically
+useful rather than exempting it from the test it is meant to compare.
+
+The bounded A/B plan is published at
+[`sweeps/micro-combat-ablation-256-v1`](../sweeps/micro-combat-ablation-256-v1/README.md).
+It contains three paired seeds and two 256×256 arms. Every environment must
+reach 1,048,576 authoritative simulation quanta across four full curriculum
+cycles; 20 million actions is only the safety ceiling. Both arms retain the
+same suite, thresholds, held-out seeds, rules, reward, model, PPO, population,
+and schedule. After normalizing each run's artifact destination, the sole
+within-pair intervention is `rollout_enabled`.
+
+Training-artifact schema 39 and checkpoint-evaluation schema 6 bind the split
+evaluation/rehearsal contract. Sweep-execution schema 9 reconstructs every complete micro-combat evaluation
+boundary and binds terminal/best survival and elimination, joint-gate reach,
+and normalized actions to first qualification into each immutable result and
+paired aggregate. A run that never qualifies is right-censored at its full
+budget rather than disappearing from the learning-speed statistic. Trainer
+metrics also report peak host resident-set bytes; aggregation takes the maximum
+across resumed attempts. This intentionally excludes GPU device memory, which
+must be characterized separately for deployment sizing. Throughput remains
+reported as actions and authoritative simulation quanta per second.
+
+Build and execute serially on one GPU with:
+
+```sh
+cargo build --release -p blob_rl --bin train --bin rules-sweep-run
+target/release/rules-sweep-run \
+  sweeps/micro-combat-ablation-256-v1/manifest.json \
+  --max-parallel 1
+```
+
+Three pairs are a directional experiment, not a final selection study. Expand
+the seed set if the paired confidence intervals overlap materially or if only
+one arm reaches the joint gate.
 
 After every rollout environment reaches
 `self_play.start_after_sim_time_quanta_per_env`, promotion is considered every
