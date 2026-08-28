@@ -16,7 +16,10 @@ state sequences.
 
 ## Missing deterministic tests
 
-### Required before viability sweeps
+### Implemented viability-sweep gates
+
+The following requirements are implemented and retained here as regression
+expectations rather than outstanding work:
 
 - Baseline-versus-baseline episodes must be reproducible from the same scenario
   and seed, and changing a seed must be able to change a stochastic profile's
@@ -30,13 +33,12 @@ state sequences.
 - Scenario sweep overrides must reject unknown and non-scenario keys, preserve
   reward/PPO/opponent settings, alter the experiment and scenario hashes, and
   continue to pair identical seeds across variants.
-- Scenario validation needs boundary cases for world area, starting
-  population, resource counts and values, initial/core energy relationships,
-  and arithmetic overflow. Some of these values are currently accepted before
-  world construction proves they are usable.
-- Sweep aggregation should eventually expose every action family's
-  selection/success/interruption rates and every tracked energy compartment;
-  tests should fail when a compact aggregate silently drops a promised field.
+- Scenario validation covers world area, starting population, resource counts
+  and values, initial/core energy relationships, and arithmetic overflow before
+  a sweep run is admitted.
+- Sweep aggregation exposes every action family's selection, success, and
+  interruption rates plus the tracked energy compartments; schema tests fail
+  when a compact aggregate drops a promised field.
 
 ### Required before final RL claims
 

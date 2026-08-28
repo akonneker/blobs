@@ -1,166 +1,195 @@
 # Blob Game
 
-A programming game where teams of cells, controlled by WebAssembly modules, compete in a 2D world. The concept has lived in my mind for years, since I first saw [this blog post](https://phonons.wordpress.com/2010/06/01/cells-a-massively-multi-agent-python-programming-game/). I didn't really consult it in this implementation, since I had my own ideas. The primary difference is in sandboxing the minds, and removing any global interactions between agents. I think this will make for more interesting emergent behaviors eventually, but it's early days now. Everything is a janky mess.
+Blob Game is a deterministic, mass-energy-conserving programming game and
+multi-agent reinforcement-learning testbed. Teams are colonies of cells in a
+2D world. Every ready cell receives its own bounded local observation and asks
+a WebAssembly **Mind** for one action; the resolver then commits simultaneous
+interactions in a canonical order.
 
-## Overview
+The project is built around one operational principle: cells controlled by the
+same Mind do not gain hidden shared state. A cell has no public identity, team
+identifier, absolute coordinates, global clock, shared random seed, or host
+communication channel. Coordination must emerge through inherited private
+memory, visible behavior, environmental changes, and four anonymous conserved
+signal fields.
 
-This project is a simulation of a 2D world where blobs compete for resources. Each blob is controlled by a "mind", which is a WebAssembly (WASM) module. The game is written in Rust and uses the `egui` library for the GUI. The minds are loaded at runtime by the game engine.
+The simulation, replay/verification kernel, RL pipeline, local observatory, and
+remote training images are implemented and extensively tested. Learned policy
+quality and the default physics profile are still research work: current
+policies acquire basic competencies but do not yet retain robust long-horizon
+combat behavior. The hosted submission service and public leaderboard are not
+production deployments yet.
 
-The core idea is to provide a platform for developing and testing different AI strategies for the blobs. The game is highly customizable, allowing you to change the world generation, cell properties, and more.
+## What is implemented
 
-The small sample Minds are intentionally limited behavioral controls. The
-stateful `colony_mind` is the first heterogeneous strategy prototype. See the
-[Mind audit and colony roadmap](docs/mind-audit-and-colony-roadmap.md) for what
-each artifact is useful for and which coordination guarantees the isolated
-Mind ABI deliberately does not provide.
+- A fixed-point event-time resolver with immutable completion snapshots,
+  deterministic conflict adjudication, reversible deltas, and worker-count
+  invariant outcomes.
+- Conserved mass-energy across cells, digestion, plants, loose environmental
+  energy, attacks, regurgitation, terrain material, and signals.
+- Ten primary actions: Wait, Move, Attack, Guard, Consume, Split, Regurgitate,
+  Signal, Excavate, and DepositTerrain. Ordinary actions may also emit one
+  variable-strength signal; the explicit Signal action writes all four
+  channels independently.
+- Configurable local observation and action neighborhoods without exposing
+  global state.
+- Mind ABI v8, encoded with Cap'n Proto, with explicit cell-private memory and
+  engine-derived private random bytes.
+- Fresh-instance WASM isolation through stock Extism and a restricted
+  Extism-compatible Wasmtime executor. Maintained AssemblyScript and TinyGo
+  artifacts exercise the cross-language PDK boundary.
+- Canonical checkpoints, replay archives and segments, incremental hashes,
+  server re-execution of submitted artifacts, Ed25519 attestations, and signed
+  score publications.
+- Recurrent PPO and behavior cloning, deterministic resume, curricula,
+  competency/promotion gates, rated self-play, specialist distillation,
+  viability sweeps, ecological characterization, and large-world scale gates.
+- CPU and Vulkan/WGPU training backends, reproducible Docker runners, and a
+  local browser observatory for telemetry and complete match histories.
 
-## Project Structure
+## Workspace map
 
-The project is structured as a Cargo workspace with the following main components:
+| Path | Responsibility |
+|---|---|
+| `blob_engine` | Canonical simulation, resolution, hashing, replay, verification, and online service primitives |
+| `blob_interface` | Mind ABI v8 types, Cap'n Proto schema, bounded converters, and structural WASM admission |
+| `blob_game` | CLI/GUI host, Mind execution pools, checkpoint envelopes, and projected renderer state |
+| `blob_rl` | Native environment, policy models, training, evaluation, calibration, sweeps, and telemetry |
+| `blob_web` | Browser replay WASM package and dependency-free local observatory components |
+| `minds/` | Behavioral controls, the stateful colony prototype, and runtime/isolation canaries |
+| `sweeps/` | Versioned experiment manifests, compact results, and interpretation notes |
+| `docs/` | Design contracts, performance history, RL methodology, deployment, and test roadmaps |
 
--   `blob_game`: The main game engine and GUI. It's responsible for running the simulation, rendering the world, and loading the minds.
--   `blob_interface`: This crate defines the interface between the game and the minds. It uses Cap'n Proto for serialization to communicate with the WASM modules.
--   `minds/`: This directory contains behavioral proxies, runtime canaries, and
-    the stateful `colony_mind` prototype.
+`blob_engine` is authoritative. `blob_game` and `blob_rl` drive that same
+resolver rather than maintaining alternate physics implementations.
 
-## How to Build and Run
+## Build and test
 
-1.  **Build the minds:** Each mind is a separate crate that needs to be compiled to the `wasm32-unknown-unknown` target.
+Install a current Rust toolchain plus the `wasm32-unknown-unknown` target. The
+complete local gate also expects Cap'n Proto, Node.js, TinyGo, and the
+AssemblyScript toolchain described by the language-Mind build script.
 
-    ```bash
-    cargo build --target wasm32-unknown-unknown -p <mind_name>
-    ```
-
-    For example, to build the `simple_mind`:
-
-    ```bash
-    cargo build --target wasm32-unknown-unknown -p simple_mind
-    ```
-
-    The compiled WASM file will be located at `target/wasm32-unknown-unknown/debug/<mind_name>.wasm`.
-
-2.  **Run the game:** The `blob_game` executable takes the paths to the mind WASM files as arguments.
-
-    To run the game with a GUI, use the `--gui` flag:
-
-    ```bash
-    cargo run -p blob_game -- --gui <path_to_mind1>.wasm <path_to_mind2>.wasm
-    ```
-
-    For example, to run a game with `simple_mind` and `aggressive_mind`:
-
-    ```bash
-    cargo run -p blob_game -- --gui target/wasm32-unknown-unknown/debug/simple_mind.wasm target/wasm32-unknown-unknown/debug/aggressive_mind.wasm
-    ```
-
-    You can also run the game in headless mode by omitting the `--gui` flag. For more options, run `cargo run -p blob_game -- --help`.
-
-## Remote RL training
-
-Portable CPU and NVIDIA Vulkan/WGPU trainers, plus the rules-sweep planner and
-bounded sweep executor, are available through `Dockerfile.training`. See
-[docs/docker-training.md](docs/docker-training.md) for image construction,
-detached remote jobs, GPU prerequisites, checkpoint resume, Compose, resource
-sizing, and sweep execution.
-
-## How to Create a Mind
-
-To create your own mind, you can start by copying one of the existing minds
-(for example, `simple_mind`). A mind compiles to WASM and exports
-`reference_mind_function`, which is called once for each ready cell.
-
-The function receives canonical Cap'n Proto bytes for one isolated cell and
-returns a complete action, optional anonymous signal, and explicit private-
-memory operation. The schema and bounded converters live in `blob_interface`.
-
-Your `Cargo.toml` should be configured to produce a `cdylib` library type:
-
-```toml
-[lib]
-crate-type = ["cdylib"]
+```sh
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-### Using Extism and Other Languages
+Run the complete cross-language and browser conformance gate with:
 
-Mind authors continue to use an [Extism PDK](https://extism.org/docs/category/pdk-documentation),
-so they are not tied to the host's Rust implementation. The default host is
-Extism. An experimental `memory.wasm_executor = "extism_compat"` host executes
-the same byte-oriented PDK contract directly with Wasmtime and avoids much of
-Extism's per-instance host setup. Its workers share one immutable engine,
-compiled module, link plan, and deadline ticker per team pool. Every cell
-decision still creates a fresh store, guest instance, guest memory, and host
-byte arena. The fresh host arena keeps ordinary decision bytes and allocation
-metadata inline, spilling to bounded heap storage for larger PDK calls; that
-storage is never shared across decisions. Stock Extism keeps a worker-local
-compiled descriptor because its
-public compiled type can contain non-thread-safe host user data; no unsafe
-sharing wrapper is used.
+```sh
+scripts/conformance.sh
+```
 
-The restricted host admits the deterministic PDK memory/input/output imports
-only. It deliberately rejects WASI, configuration, variables, HTTP, custom
-host functions, and logging. A Mind using one of those capabilities is invalid,
-not silently given a shared or persistent resource. Stock Extism remains the
-compatibility oracle. Maintained AssemblyScript and TinyGo artifacts are
-admitted and executed through both hosts in conformance testing.
+Build two example Minds and launch a local match:
 
-Online submissions bind the named `extism_pdk_deterministic_v1` profile into
-the signed verification manifest. Admission parses the artifact before
-compilation and rejects modules whose typed imports, required export, memory,
-or table shape falls outside that profile. Executor choice and worker count do
-not enter the canonical match contract.
+```sh
+cargo build --release --target wasm32-unknown-unknown \
+  -p simple_mind -p aggressive_mind
 
-Extism publishes PDKs for languages including:
+cargo run --release -p blob_game -- --gui \
+  target/wasm32-unknown-unknown/release/simple_mind.wasm \
+  target/wasm32-unknown-unknown/release/aggressive_mind.wasm
+```
 
--   Rust
--   JavaScript/TypeScript
--   Go
--   Haskell
--   Zig
--   AssemblyScript (TypeScript-like)
--   C/C++
--   C#/F# through the experimental .NET PDK
+Omit `--gui` for a headless match. Use `cargo run -p blob_game -- --help` for
+world, seed, configuration, step, and checkpoint options.
 
-Language-PDK conformance backlog:
+## Writing a Mind
 
--   [ ] Rust reference Mind
--   [ ] C reference Mind, then compile the same implementation as C++
--   [ ] Zig reference Mind
--   [ ] [JavaScript/TypeScript](https://github.com/extism/js-pdk) reference Mind
--   [ ] Haskell reference Mind
--   [ ] C# and F# reference Minds after the experimental
-    [.NET PDK](https://github.com/extism/dotnet-pdk) is stable
--   [ ] [Python](https://github.com/extism/python-pdk) experimental canary
--   [ ] [MoonBit](https://github.com/extism/moonbit-pdk) experimental canary
+A Mind is an Extism-PDK module exporting `reference_mind_function`. The host
+calls it independently for each ready cell with canonical Mind ABI v8 bytes.
+The result contains one primary action, an optional anonymous signal sidecar,
+and an explicit private-memory operation.
 
-Each example must build without WASI, pass structural admission, produce the
-same canonical decision through stock Extism and `extism_compat`, and join
-`scripts/conformance.sh` before it is described as maintained.
+Mind authors may use any language whose PDK can satisfy the deterministic
+profile. The submitted module must avoid WASI, HTTP, configuration, variables,
+logging, custom host functions, and any other ambient capability. Structural
+admission rejects modules outside `extism_pdk_deterministic_v1`; the stock
+Extism host is the compatibility oracle.
 
-To create a Mind in another language, use that language's PDK to export
-`reference_mind_function: () -> i32`, decode and encode
-`blob_interface/interface/reference_mind.capnp`, and restrict imports to the
-deterministic PDK memory contract. The same artifact can run on stock Extism;
-it does not target a project-specific Wasmtime SDK.
+The Rust examples in `minds/` are the easiest starting points:
 
-Run `scripts/build_language_minds.sh` to build the maintained AssemblyScript
-and Go canaries. The Go target is TinyGo `wasm-unknown`; ordinary
-`GOOS=wasip1` output is rejected because WASI is outside the deterministic
-profile. The build pins TinyGo 0.41.1, which requires Go 1.19 through 1.26;
-set `TINYGO_BIN` and `GO_BIN` when those toolchains are not the system defaults.
+- `simple_mind`, `aggressive_mind`, `defensive_mind`, and `explorer_mind` are
+  deliberately limited experimental controls.
+- `colony_mind` is a heterogeneous heuristic prototype with feeders,
+  explorers, builders, defenders, attackers, lineage-local maps, and local
+  signaling. It does not currently embed learned RL weights.
+- `isolation_canary` and `invalid_mind_canary` test the host boundary and are
+  not playable strategies.
 
-## The `blob_interface` API
+See [the Mind audit and colony roadmap](docs/mind-audit-and-colony-roadmap.md)
+for the behavioral limits of each maintained artifact.
 
-The communication boundary is Mind ABI v8 in
-`blob_interface/interface/reference_mind.capnp`. It contains one cell's own
-state, bounded anonymous local observations, action availability, explicit
-private memory, and private random bytes. Outputs cover Wait, Move, Attack,
-Guard, Consume, Split, Regurgitate, Excavate, and DepositTerrain. Local slot
-visibility uses explicit presence bits plus inline scalar values, preserving
-hidden-versus-visible-zero semantics without pointer-backed option objects.
-The local action space also carries compact effort-cost coefficients, allowing
-native and Wasm policies to reproduce exact commit affordability from only
-their own state and local slot distances.
+## RL, calibration, and large worlds
 
-## Contributing
+The default RL feature is WGPU. For a portable CPU run, select the ndarray
+backend explicitly:
 
-Contributions are welcome! If you have an idea for a new feature or have found a bug, please open an issue or submit a pull request.
+```sh
+cargo run --release -p blob_rl --no-default-features --features ndarray \
+  --bin train -- --config blob_rl/config/default.toml --seed 42
+```
+
+The repository includes commands for non-learning viability checks, physics
+calibration, ecological micro-characterization, behavior-cloning datasets,
+checkpoint promotion, contact/feeding/combat evaluation, scale qualification,
+and bounded sweep execution. The methodology and artifact contracts are in
+[RL training and rules tuning](docs/rl-training-and-rules-tuning.md).
+
+Large-world profiles cover 256x256, 512x512, and 1024x1024 simulations. Start
+with calibration and scale qualification before committing a long training
+run; a configuration that merely fits in memory is not evidence of a useful
+learning horizon.
+
+For remote jobs, `Dockerfile.training` provides separate portable CPU and
+NVIDIA Vulkan/WGPU images. See [Dockerized remote training](docs/docker-training.md)
+for immutable image identity, resource limits, checkpoints, and GPU preflight.
+
+## Local match explorer
+
+Start the dependency-free observatory:
+
+```sh
+scripts/serve_telemetry_viewer.sh
+```
+
+Then open `http://localhost:4173/?view=match`. The match explorer can pan,
+zoom, follow individual cells, step or seek through a complete sparse history,
+inspect resolution outcomes, switch field layers, and plot team population,
+energy compartments, and selected-cell history. Other local views cover Mind
+controls, telemetry, and adjudication studies.
+
+The UI components use Shadow DOM and are intended to be embedded later in
+`tinker.ninja`. Browser-loaded JSON is deliberately labeled local and
+unverified. The browser replay package can verify a server attestation, but it
+cannot turn a locally generated score into an authoritative result.
+
+See [the browser package README](blob_web/README.md) for replay generation,
+the presentation sidecar boundary, and embedding details.
+
+## Trust model and online roadmap
+
+The intended online flow is:
+
+1. A server admits and stores the exact submitted WASM artifact.
+2. The server derives private randomness and runs the match under a frozen
+   ruleset, ABI, and runtime capability profile.
+3. Canonical replay hashes and the terminal result are signed.
+4. The browser verifies the replay and attestation with a trusted public key.
+
+This kernel exists. A production service still needs authenticated uploads,
+sandboxed compilation where source submissions are accepted, durable queues
+and workers, quotas, object storage and retention, season configuration,
+signing-key operations, leaderboard indexing/APIs, and site integration.
+
+## Design and performance references
+
+- [Simulation and resolution design](docs/simulation-resolution-design.md)
+- [Large-game optimization roadmap](docs/large-game-optimization-roadmap.md)
+- [Measured performance baseline](docs/performance-baseline.md)
+- [Testing and fuzzing roadmap](docs/testing-and-fuzzing-roadmap.md)
+
+Recorded optimized native profiles range from hundreds of thousands to low
+millions of cell actions per second depending on workload, population, host,
+integrity mode, and Mind execution path. Treat the checked-in measurements as
+comparative evidence, not a universal throughput promise.

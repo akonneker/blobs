@@ -22,7 +22,7 @@ and cheap control condition. The important correction is classification. In
 particular, `defensive_mind` and `explorer_mind` should not be used as evidence
 that territorial defense or mapping works.
 
-All Rust examples now use ABI-v7 exact affordability helpers. Attack payloads
+All Rust examples now use ABI-v8 exact affordability helpers. Attack payloads
 and split allocations reserve both the action effort and minimum survival
 energy, and final decisions are checked against the anonymous commit frontier.
 This prevents ruleset changes from turning a proxy's preferred action into a
