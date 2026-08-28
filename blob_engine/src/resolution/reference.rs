@@ -965,6 +965,10 @@ pub struct ActionOutcome {
     pub target: Option<TileIndex>,
     pub effort_spent: u64,
     pub payload: u64,
+    /// Exact plant-plus-loose energy transferred into the actor's gut by a
+    /// successful consume. Zero for every other action and for a consume that
+    /// found no remaining food at its completion snapshot.
+    pub consumed_energy: u64,
     /// Present only for a successful attack that reached a snapshot victim.
     pub attack_damage: Option<AttackDamage>,
     /// Present only for a successful terrain excavation or deposition.
@@ -4758,6 +4762,7 @@ impl ReferenceSimulation {
                         target: pending.target,
                         effort_spent: pending.effort_spent,
                         payload: pending.payload_escrow,
+                        consumed_energy: 0,
                         attack_damage: None,
                         terrain_change: None,
                     });
@@ -4817,6 +4822,18 @@ impl ReferenceSimulation {
                     target: intent.pending.target,
                     effort_spent: intent.pending.effort_spent,
                     payload: intent.pending.payload_escrow,
+                    consumed_energy: if status == OutcomeStatus::Success
+                        && matches!(intent.pending.request, ActionRequest::Consume { .. })
+                    {
+                        intent
+                            .consumed_plant
+                            .checked_add(intent.consumed_loose)
+                            .ok_or(ResolutionError::ArithmeticOverflow(
+                                "reporting consumed energy",
+                            ))?
+                    } else {
+                        0
+                    },
                     attack_damage,
                     terrain_change: terrain_change_by_intent
                         .as_ref()

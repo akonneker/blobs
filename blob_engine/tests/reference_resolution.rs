@@ -643,6 +643,7 @@ fn consume_moves_snapshot_energy_into_the_gut_plant_first() {
     let report = simulation.resolve_next_batch().unwrap();
 
     assert_eq!(statuses(&report)[&actor], OutcomeStatus::Success);
+    assert_eq!(report.outcomes[0].consumed_energy, 16);
     assert_eq!(simulation.cell(actor).unwrap().gut_energy, 16);
     assert_eq!(simulation.tile_state(tile).unwrap().plant_energy, 0);
     assert_eq!(simulation.tile_state(tile).unwrap().loose_energy, 8);

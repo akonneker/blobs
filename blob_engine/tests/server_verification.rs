@@ -283,7 +283,7 @@ fn manifests_are_bounded_canonical_and_integrity_checked() {
     let bytes = fixture.verification_manifest.to_bytes();
     assert_eq!(
         fixture.verification_manifest.manifest_hash().to_hex(),
-        "c7f51ca0fcb4d54cf9c33a8c2e0459c04bf7aa6d9bf0a26fbe59b629f1185389"
+        "d17f8a5b74e56d7aeeed3f80f13a5293654275278eda54d281b845d08d838059"
     );
     assert_eq!(bytes.len(), 365);
     let decoded = MatchVerificationManifest::from_bytes(bytes).unwrap();

@@ -5,7 +5,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use blob_interface::cell::Cell;
@@ -38,6 +38,34 @@ pub struct CellConfig {
     pub max_energy_for_attack_scaling: u32,
 }
 
+/// Deterministic pre-match placement policy for each team's initial cells.
+/// This is scenario state, not a Mind capability or resolver rule.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum StartingCellLayout {
+    /// Uniformly sample every starting cell from all currently vacant tiles.
+    Random,
+    /// Seeded loose cluster retained as the default hosted-game behavior.
+    #[default]
+    LooseRandom,
+    /// Dense square/rectangular assembly around the team's anchor.
+    Block,
+    /// One horizontal contiguous row. Population may not exceed board width.
+    Line,
+    /// Square assembly with one vacant tile between cells on both axes.
+    Checkerboard,
+    /// Cells distributed evenly around a square perimeter.
+    Ring,
+    /// Two-team curriculum layout pairing each cell with an adjacent opponent.
+    /// This is intentionally restricted to team IDs 0 and 1.
+    PairedContact,
+    /// Two adjacent opposing team lines for local multi-cell skirmishes.
+    /// This is intentionally restricted to team IDs 0 and 1.
+    OpposedLines,
+}
+
 impl Default for CellConfig {
     fn default() -> Self {
         CellConfig {
@@ -49,6 +77,40 @@ impl Default for CellConfig {
             max_attack_power: 50,
             max_energy_for_attack_scaling: 200,
         }
+    }
+}
+
+fn ceil_sqrt(value: usize) -> usize {
+    if value <= 1 {
+        return value;
+    }
+    let mut root = (value as f64).sqrt() as usize;
+    while root < value.div_ceil(root) {
+        root += 1;
+    }
+    root
+}
+
+fn toroidal_axis_distance(left: usize, right: usize, extent: usize) -> usize {
+    let direct = left.abs_diff(right);
+    direct.min(extent - direct)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn offset_coordinate(
+    center: Coordinate,
+    x_index: usize,
+    y_index: usize,
+    span_x: usize,
+    span_y: usize,
+    width: usize,
+    height: usize,
+) -> Coordinate {
+    Coordinate {
+        x: (center.x as isize + x_index as isize - (span_x / 2) as isize).rem_euclid(width as isize)
+            as usize,
+        y: (center.y as isize + y_index as isize - (span_y / 2) as isize)
+            .rem_euclid(height as isize) as usize,
     }
 }
 
@@ -189,6 +251,8 @@ pub struct Engine {
     pub cell_config: CellConfig,
     rng: StdRng,
     next_cell_id: usize,
+    starting_cell_layout: StartingCellLayout,
+    team_spawn_centers: HashMap<TeamId, Coordinate>,
     match_secret: [u8; 32],
     rules: ReferenceRuleset,
     /// Host execution policy only; absent from canonical state and replay.
@@ -250,6 +314,8 @@ impl Engine {
             cell_config,
             rng: StdRng::seed_from_u64(actual_seed),
             next_cell_id: 0,
+            starting_cell_layout: StartingCellLayout::default(),
+            team_spawn_centers: HashMap::new(),
             match_secret,
             rules,
             reference_parallel_threshold: Some(2_048),
@@ -314,6 +380,25 @@ impl Engine {
 
     pub const fn reference_host_mode(&self) -> ReferenceHostMode {
         self.reference_host_mode
+    }
+
+    /// Selects a pre-match cell layout. Layout changes after any team has been
+    /// registered would make placement depend on call order and are rejected.
+    pub fn set_starting_cell_layout(&mut self, layout: StartingCellLayout) -> Result<(), String> {
+        if self.reference_simulation.is_some()
+            || self.iteration != 0
+            || !self.reference_minds.is_empty()
+            || !self.cells.is_empty()
+        {
+            return Err("starting cell layout must be selected before adding teams".into());
+        }
+        self.starting_cell_layout = layout;
+        self.team_spawn_centers.clear();
+        Ok(())
+    }
+
+    pub const fn starting_cell_layout(&self) -> StartingCellLayout {
+        self.starting_cell_layout
     }
 
     /// Materializes the initial canonical state without committing an action.
@@ -1092,7 +1177,11 @@ impl Engine {
             return Err("team already has a Mind pool".into());
         }
         self.reference_minds.insert(team_id, minds);
-        self.place_team_cluster(team_id)?;
+        if let Err(error) = self.place_starting_team(team_id) {
+            self.reference_minds.remove(&team_id);
+            self.team_spawn_centers.remove(&team_id);
+            return Err(error);
+        }
         Ok(())
     }
 
@@ -1114,46 +1203,318 @@ impl Engine {
         self.add_team_with_minds(team_id, minds)
     }
 
-    fn place_team_cluster(&mut self, team_id: TeamId) -> Result<(), String> {
+    fn place_starting_team(&mut self, team_id: TeamId) -> Result<(), String> {
         let (width, height) = self.world.dimensions;
         let num_cells = self.cell_config.starting_cells_per_team;
-        let margin = num_cells.min(width / 4).max(1);
-        let center_x = self
-            .rng
-            .random_range(margin..width.saturating_sub(margin).max(margin + 1));
-        let center_y = self
-            .rng
-            .random_range(margin..height.saturating_sub(margin).max(margin + 1));
-        let radius = ((num_cells as f64).sqrt() * 1.5).ceil() as usize;
+        if num_cells == 0 {
+            return Ok(());
+        }
+        if width == 0 || height == 0 {
+            return Err("cannot place starting cells in an empty world".into());
+        }
 
-        let mut placed = 0;
-        let mut attempts = 0;
-        let max_attempts = num_cells * 20;
-
-        while placed < num_cells && attempts < max_attempts {
-            let dx = self.rng.random_range(0..=radius * 2) as isize - radius as isize;
-            let dy = self.rng.random_range(0..=radius * 2) as isize - radius as isize;
-            let x = (center_x as isize + dx).rem_euclid(width as isize) as usize;
-            let y = (center_y as isize + dy).rem_euclid(height as isize) as usize;
-            let coord = Coordinate { x, y };
-
-            if !self.coordinate_map.contains_key(&coord) {
-                let cell_id = CellId(self.next_cell_id);
-                self.next_cell_id += 1;
-                let cell = Cell::new(
-                    cell_id,
-                    team_id,
-                    self.cell_config.initial_energy,
-                    self.cell_config.min_energy,
-                );
-                self.cells.insert(cell_id, cell);
-                self.coordinate_map.insert(coord, cell_id);
-                self.inv_coordinate_map.insert(cell_id, coord);
-                placed += 1;
+        let coordinates = match self.starting_cell_layout {
+            StartingCellLayout::Random => self.random_starting_coordinates(num_cells)?,
+            StartingCellLayout::LooseRandom => {
+                self.loose_random_starting_coordinates(team_id, num_cells)?
             }
-            attempts += 1;
+            StartingCellLayout::Block => {
+                let center = self.team_spawn_center(team_id);
+                self.block_starting_coordinates(center, num_cells)?
+            }
+            StartingCellLayout::Line => {
+                let center = self.team_spawn_center(team_id);
+                self.line_starting_coordinates(center, num_cells)?
+            }
+            StartingCellLayout::Checkerboard => {
+                let center = self.team_spawn_center(team_id);
+                self.checkerboard_starting_coordinates(center, num_cells)?
+            }
+            StartingCellLayout::Ring => {
+                let center = self.team_spawn_center(team_id);
+                self.ring_starting_coordinates(center, num_cells)?
+            }
+            StartingCellLayout::PairedContact => {
+                self.paired_contact_starting_coordinates(team_id, num_cells)?
+            }
+            StartingCellLayout::OpposedLines => {
+                self.opposed_lines_starting_coordinates(team_id, num_cells)?
+            }
+        };
+        if coordinates.len() != num_cells
+            || coordinates.iter().copied().collect::<HashSet<_>>().len() != num_cells
+            || coordinates
+                .iter()
+                .any(|coordinate| self.coordinate_map.contains_key(coordinate))
+        {
+            return Err(format!(
+                "starting layout {:?} cannot place {num_cells} cells for team {} without overlap",
+                self.starting_cell_layout, team_id.0
+            ));
+        }
+
+        for coordinate in coordinates {
+            let cell_id = CellId(self.next_cell_id);
+            self.next_cell_id += 1;
+            let cell = Cell::new(
+                cell_id,
+                team_id,
+                self.cell_config.initial_energy,
+                self.cell_config.min_energy,
+            );
+            self.cells.insert(cell_id, cell);
+            self.coordinate_map.insert(coordinate, cell_id);
+            self.inv_coordinate_map.insert(cell_id, coordinate);
         }
         Ok(())
+    }
+
+    fn team_spawn_center(&mut self, team_id: TeamId) -> Coordinate {
+        if let Some(center) = self.team_spawn_centers.get(&team_id) {
+            return *center;
+        }
+        let (width, height) = self.world.dimensions;
+        let paired = TeamId(team_id.0 ^ 1);
+        let center = self.team_spawn_centers.get(&paired).map_or_else(
+            || Coordinate {
+                x: self.rng.random_range(0..width),
+                y: self.rng.random_range(0..height),
+            },
+            |paired| Coordinate {
+                x: (paired.x + width / 2) % width,
+                y: (paired.y + height / 2) % height,
+            },
+        );
+        self.team_spawn_centers.insert(team_id, center);
+        center
+    }
+
+    fn random_starting_coordinates(&mut self, count: usize) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        let mut vacant = (0..height)
+            .flat_map(|y| (0..width).map(move |x| Coordinate { x, y }))
+            .filter(|coordinate| !self.coordinate_map.contains_key(coordinate))
+            .collect::<Vec<_>>();
+        if vacant.len() < count {
+            return Err("not enough vacant tiles for random starting layout".into());
+        }
+        vacant.shuffle(&mut self.rng);
+        vacant.truncate(count);
+        Ok(vacant)
+    }
+
+    fn loose_random_starting_coordinates(
+        &mut self,
+        team_id: TeamId,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        let margin = count.min(width / 4).max(1);
+        let center = Coordinate {
+            x: self
+                .rng
+                .random_range(margin..width.saturating_sub(margin).max(margin + 1)),
+            y: self
+                .rng
+                .random_range(margin..height.saturating_sub(margin).max(margin + 1)),
+        };
+        self.team_spawn_centers.insert(team_id, center);
+        let radius = ((count as f64).sqrt() * 1.5).ceil() as usize;
+        let mut selected = Vec::with_capacity(count);
+        let mut selected_set = HashSet::with_capacity(count);
+        let max_attempts = count.saturating_mul(20);
+        for _ in 0..max_attempts {
+            if selected.len() == count {
+                break;
+            }
+            let dx = self.rng.random_range(0..=radius * 2) as isize - radius as isize;
+            let dy = self.rng.random_range(0..=radius * 2) as isize - radius as isize;
+            let coordinate = Coordinate {
+                x: (center.x as isize + dx).rem_euclid(width as isize) as usize,
+                y: (center.y as isize + dy).rem_euclid(height as isize) as usize,
+            };
+            if !self.coordinate_map.contains_key(&coordinate) && selected_set.insert(coordinate) {
+                selected.push(coordinate);
+            }
+        }
+        if selected.len() == count {
+            return Ok(selected);
+        }
+
+        let mut vacant = (0..height)
+            .flat_map(|y| (0..width).map(move |x| Coordinate { x, y }))
+            .filter(|coordinate| {
+                toroidal_axis_distance(coordinate.x, center.x, width) <= radius
+                    && toroidal_axis_distance(coordinate.y, center.y, height) <= radius
+                    && !self.coordinate_map.contains_key(coordinate)
+                    && !selected_set.contains(coordinate)
+            })
+            .collect::<Vec<_>>();
+        if vacant.len() < count - selected.len() {
+            return Err("not enough vacant tiles for loose-random starting layout".into());
+        }
+        vacant.shuffle(&mut self.rng);
+        vacant.truncate(count - selected.len());
+        selected.extend(vacant);
+        Ok(selected)
+    }
+
+    fn block_starting_coordinates(
+        &self,
+        center: Coordinate,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        let side = ceil_sqrt(count);
+        if side > width || count.div_ceil(side) > height {
+            return Err("block starting layout exceeds world dimensions".into());
+        }
+        let rows = count.div_ceil(side);
+        Ok((0..count)
+            .map(|index| {
+                offset_coordinate(
+                    center,
+                    index % side,
+                    index / side,
+                    side,
+                    rows,
+                    width,
+                    height,
+                )
+            })
+            .collect())
+    }
+
+    fn line_starting_coordinates(
+        &self,
+        center: Coordinate,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        if count > width {
+            return Err("line starting layout population exceeds world width".into());
+        }
+        Ok((0..count)
+            .map(|index| {
+                let x = (center.x as isize + index as isize - (count / 2) as isize)
+                    .rem_euclid(width as isize) as usize;
+                Coordinate {
+                    x,
+                    y: center.y % height,
+                }
+            })
+            .collect())
+    }
+
+    fn paired_contact_starting_coordinates(
+        &self,
+        team_id: TeamId,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        if team_id.0 > 1 {
+            return Err("paired-contact starting layout supports exactly two teams".into());
+        }
+        let columns = width / 2;
+        if columns == 0 || count > columns.saturating_mul(height) {
+            return Err("paired-contact starting layout exceeds world dimensions".into());
+        }
+        Ok((0..count)
+            .map(|index| Coordinate {
+                x: (index % columns) * 2 + team_id.0,
+                y: index / columns,
+            })
+            .collect())
+    }
+
+    fn opposed_lines_starting_coordinates(
+        &self,
+        team_id: TeamId,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        if team_id.0 > 1 {
+            return Err("opposed-lines starting layout supports exactly two teams".into());
+        }
+        if height < 2 || count > width {
+            return Err("opposed-lines starting layout exceeds world dimensions".into());
+        }
+        let start_x = (width - count) / 2;
+        let upper_y = height / 2 - 1;
+        Ok((0..count)
+            .map(|index| Coordinate {
+                x: start_x + index,
+                y: upper_y + team_id.0,
+            })
+            .collect())
+    }
+
+    fn checkerboard_starting_coordinates(
+        &self,
+        center: Coordinate,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        let side = ceil_sqrt(count);
+        let rows = count.div_ceil(side);
+        let span_x = side.saturating_mul(2).saturating_sub(1);
+        let span_y = rows.saturating_mul(2).saturating_sub(1);
+        if span_x > width || span_y > height {
+            return Err("checkerboard starting layout exceeds world dimensions".into());
+        }
+        Ok((0..count)
+            .map(|index| {
+                offset_coordinate(
+                    center,
+                    (index % side) * 2,
+                    (index / side) * 2,
+                    span_x,
+                    span_y,
+                    width,
+                    height,
+                )
+            })
+            .collect())
+    }
+
+    fn ring_starting_coordinates(
+        &self,
+        center: Coordinate,
+        count: usize,
+    ) -> Result<Vec<Coordinate>, String> {
+        let (width, height) = self.world.dimensions;
+        if count == 1 {
+            return Ok(vec![center]);
+        }
+        let radius = count.div_ceil(8);
+        if radius.saturating_mul(2).saturating_add(1) > width
+            || radius.saturating_mul(2).saturating_add(1) > height
+        {
+            return Err("ring starting layout exceeds world dimensions".into());
+        }
+        let radius = radius as isize;
+        let mut perimeter = Vec::with_capacity(radius as usize * 8);
+        for dx in -radius..radius {
+            perimeter.push((dx, -radius));
+        }
+        for dy in -radius..radius {
+            perimeter.push((radius, dy));
+        }
+        for dx in (-radius + 1..=radius).rev() {
+            perimeter.push((dx, radius));
+        }
+        for dy in (-radius + 1..=radius).rev() {
+            perimeter.push((-radius, dy));
+        }
+        Ok((0..count)
+            .map(|index| {
+                let (dx, dy) = perimeter[index * perimeter.len() / count];
+                Coordinate {
+                    x: (center.x as isize + dx).rem_euclid(width as isize) as usize,
+                    y: (center.y as isize + dy).rem_euclid(height as isize) as usize,
+                }
+            })
+            .collect())
     }
 
     /// Core tick: gather exact reference decisions and resolve the next event.
@@ -2524,6 +2885,215 @@ mod tests {
             engine.cell_config.starting_cells_per_team
         );
         assert_eq!(engine.reference_minds.len(), 1);
+    }
+
+    fn coordinates_for_layout(
+        layout: StartingCellLayout,
+        cells: usize,
+    ) -> (Engine, Vec<Coordinate>) {
+        let mut engine = Engine::new(
+            32,
+            32,
+            10,
+            CellConfig {
+                starting_cells_per_team: cells,
+                ..CellConfig::default()
+            },
+            Some(451),
+            ReferenceRuleset::default(),
+        );
+        engine.set_starting_cell_layout(layout).unwrap();
+        engine
+            .add_team_with_minds(TeamId(0), vec![RandomMind::new()])
+            .unwrap();
+        let mut coordinates = engine
+            .inv_coordinate_map
+            .values()
+            .copied()
+            .collect::<Vec<_>>();
+        coordinates.sort_unstable_by_key(|coordinate| (coordinate.y, coordinate.x));
+        (engine, coordinates)
+    }
+
+    #[test]
+    fn explicit_starting_layouts_are_exact_seeded_and_geometrically_distinct() {
+        let (_, line) = coordinates_for_layout(StartingCellLayout::Line, 8);
+        assert_eq!(line.len(), 8);
+        assert!(line.iter().all(|coordinate| coordinate.y == line[0].y));
+
+        let (_, block) = coordinates_for_layout(StartingCellLayout::Block, 8);
+        assert_eq!(block.len(), 8);
+        assert!(
+            block
+                .iter()
+                .map(|coordinate| coordinate.x)
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                <= 3
+        );
+        assert!(
+            block
+                .iter()
+                .map(|coordinate| coordinate.y)
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                <= 3
+        );
+
+        let (checker_engine, checkerboard) =
+            coordinates_for_layout(StartingCellLayout::Checkerboard, 8);
+        assert_eq!(checkerboard.len(), 8);
+        let center = checker_engine.team_spawn_centers[&TeamId(0)];
+        assert!(checkerboard.iter().all(|coordinate| {
+            toroidal_axis_distance(coordinate.x, center.x, 32).is_multiple_of(2)
+                && toroidal_axis_distance(coordinate.y, center.y, 32).is_multiple_of(2)
+        }));
+        assert!(checkerboard
+            .iter()
+            .all(|left| checkerboard.iter().all(|right| {
+                left == right
+                    || toroidal_axis_distance(left.x, right.x, 32) >= 2
+                    || toroidal_axis_distance(left.y, right.y, 32) >= 2
+            })));
+
+        let (ring_engine, ring) = coordinates_for_layout(StartingCellLayout::Ring, 8);
+        let center = ring_engine.team_spawn_centers[&TeamId(0)];
+        assert!(ring.iter().all(|coordinate| {
+            toroidal_axis_distance(coordinate.x, center.x, 32).max(toroidal_axis_distance(
+                coordinate.y,
+                center.y,
+                32,
+            )) == 1
+        }));
+
+        let (_, random_left) = coordinates_for_layout(StartingCellLayout::Random, 8);
+        let (_, random_right) = coordinates_for_layout(StartingCellLayout::Random, 8);
+        assert_eq!(random_left, random_right);
+        assert_ne!(random_left, block);
+    }
+
+    #[test]
+    fn paired_team_assemblies_are_opposite_and_failed_layout_is_transactional() {
+        let mut engine = Engine::new(
+            16,
+            16,
+            10,
+            CellConfig {
+                starting_cells_per_team: 4,
+                ..CellConfig::default()
+            },
+            Some(452),
+            ReferenceRuleset::default(),
+        );
+        engine
+            .set_starting_cell_layout(StartingCellLayout::Block)
+            .unwrap();
+        engine
+            .add_team_with_minds(TeamId(0), vec![RandomMind::new()])
+            .unwrap();
+        engine
+            .add_team_with_minds(TeamId(1), vec![RandomMind::new()])
+            .unwrap();
+        let left = engine.team_spawn_centers[&TeamId(0)];
+        let right = engine.team_spawn_centers[&TeamId(1)];
+        assert_eq!(right.x, (left.x + 8) % 16);
+        assert_eq!(right.y, (left.y + 8) % 16);
+
+        let mut impossible = Engine::new(
+            4,
+            4,
+            10,
+            CellConfig {
+                starting_cells_per_team: 5,
+                ..CellConfig::default()
+            },
+            Some(453),
+            ReferenceRuleset::default(),
+        );
+        impossible
+            .set_starting_cell_layout(StartingCellLayout::Line)
+            .unwrap();
+        assert!(impossible
+            .add_team_with_minds(TeamId(0), vec![RandomMind::new()])
+            .unwrap_err()
+            .contains("exceeds world width"));
+        assert!(impossible.cells.is_empty());
+        assert!(impossible.reference_minds.is_empty());
+    }
+
+    #[test]
+    fn paired_contact_layout_places_each_two_team_pair_on_adjacent_tiles() {
+        let mut engine = Engine::new(
+            8,
+            4,
+            10,
+            CellConfig {
+                starting_cells_per_team: 7,
+                ..CellConfig::default()
+            },
+            Some(454),
+            ReferenceRuleset::default(),
+        );
+        engine
+            .set_starting_cell_layout(StartingCellLayout::PairedContact)
+            .unwrap();
+        for team in [TeamId(0), TeamId(1)] {
+            engine
+                .add_team_with_minds(team, vec![RandomMind::new()])
+                .unwrap();
+        }
+
+        let coordinates = engine
+            .cells
+            .iter()
+            .map(|(cell_id, cell)| (cell.team_id, engine.inv_coordinate_map[cell_id]))
+            .collect::<HashSet<_>>();
+        for index in 0..7 {
+            let left = Coordinate {
+                x: (index % 4) * 2,
+                y: index / 4,
+            };
+            let right = Coordinate {
+                x: left.x + 1,
+                y: left.y,
+            };
+            assert!(coordinates.contains(&(TeamId(0), left)));
+            assert!(coordinates.contains(&(TeamId(1), right)));
+        }
+    }
+
+    #[test]
+    fn opposed_lines_layout_places_two_adjacent_local_team_fronts() {
+        let mut engine = Engine::new(
+            8,
+            6,
+            10,
+            CellConfig {
+                starting_cells_per_team: 4,
+                ..CellConfig::default()
+            },
+            Some(455),
+            ReferenceRuleset::default(),
+        );
+        engine
+            .set_starting_cell_layout(StartingCellLayout::OpposedLines)
+            .unwrap();
+        for team in [TeamId(0), TeamId(1)] {
+            engine
+                .add_team_with_minds(team, vec![RandomMind::new()])
+                .unwrap();
+        }
+
+        let coordinates = engine
+            .cells
+            .iter()
+            .map(|(cell_id, cell)| (cell.team_id, engine.inv_coordinate_map[cell_id]))
+            .collect::<HashSet<_>>();
+        for index in 0..4 {
+            let x = 2 + index;
+            assert!(coordinates.contains(&(TeamId(0), Coordinate { x, y: 2 })));
+            assert!(coordinates.contains(&(TeamId(1), Coordinate { x, y: 3 })));
+        }
     }
 
     #[test]

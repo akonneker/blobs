@@ -214,6 +214,13 @@ fn main() {
             (256, 1_000, 1),
             (256, 10_000, 1),
             (256, 30_000, 1),
+            // Large-world qualification is part of the default performance
+            // envelope, not an opt-in afterthought. The sparse 1024 case
+            // exposes board-wide materialization cost; the density-matched
+            // case measures frontier throughput.
+            (512, 8_192, 8),
+            (1_024, 2_048, 8),
+            (1_024, 32_768, 8),
         ]
     };
     for (board, cells, workers) in cases {

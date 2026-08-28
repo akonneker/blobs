@@ -444,10 +444,11 @@ The semantic resolver projects this input and maps every primary action
 losslessly to `ActionRequest`. It atomically installs both the action and the
 bounded explicit memory update; rejected actions still apply that update
 exactly once. `Retain` preserves the existing canonical allocation, while
-`Replace([])` deliberately clears it. Replay format version 10 records the
-tagged update, variable-strength optional signal, and explicit signal vector in
-the decision commitment, and authoritative native/browser replay applies it
-before resolution. Live native dispatch uses the `ReferenceMind`/
+`Replace([])` deliberately clears it. Replay format version 11 records the
+tagged update, variable-strength optional signal, explicit signal vector, and
+exact successful Consume intake. Authoritative native/browser replay applies
+the committed decision before resolution and verifies the reported intake
+against the request. Live native dispatch uses the `ReferenceMind`/
 `ReferenceMindFactory` boundary, while every hosted WASM team must export
 `reference_mind_function`. Both paths receive the same canonical projection and
 commit the returned memory operation without defaults supplied by the host.
@@ -1380,8 +1381,15 @@ The first isolated reference milestone is implemented under
   lineage, and per-cell invocation sequence. Online constructors accept an
   independently generated server secret; deterministic local constructors
   derive one from their configured world seed;
+- pre-match cell placement is an explicit scenario input with `random`,
+  `loose_random`, `block`, `line`, `checkerboard`, and `ring` layouts. Geometric
+  layouts use seeded, opposed team anchors and must place the exact population
+  or reject setup. The resulting coordinates enter the initial canonical state
+  and replay commitment, but the layout label, team anchor, and absolute
+  coordinates never enter a Mind invocation;
 - RL observations are the same canonical anonymous `ReferenceMindInput` used by
-  WASM Minds, padded to 32 local slots (1094 finite features). The policy uses
+  WASM Minds, including 32 exact normalized private-random byte features and
+  padded to 32 local slots (1126 finite features). The policy uses
   conditional heads for 264 physical action/effort/slot choices, five bounded
   payload/amount tiers, 16 four-bit channel patterns, and five quantized signal
   strengths. Ordinary actions are masked to no signal or a one-channel pattern;
@@ -1428,9 +1436,10 @@ The reference resolver now has an explicit authoritative-driver boundary:
   reference ABI while retaining fresh-instance WASM isolation. A missing
   export, trap, malformed output, or noncanonical action fails closed and rolls
   back private decision sequences;
-- maintained example Minds all export the reference ABI directly. Terrain,
-  messaging, and pheromone actions are deliberately absent until their
-  canonical semantics exist; they are not silently converted into Wait;
+- maintained example Minds all export the reference ABI directly. Terrain and
+  anonymous four-channel signaling have canonical action, observation,
+  conservation, and replay semantics; invalid or unavailable requests are not
+  silently treated as successful actions;
 - the `World`/`Cell` view is a projection for UI and host integration.
   Plant and loose energy share one projected tile value, but remain distinct in
   canonical state. Plant rate, capacity, and fractional progress are canonical

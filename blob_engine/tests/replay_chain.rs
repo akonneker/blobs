@@ -115,6 +115,30 @@ fn replay_frames_round_trip_and_verify_as_a_chain() {
 }
 
 #[test]
+fn replay_round_trip_preserves_exact_consume_intake() {
+    let mut simulation = ReferenceSimulation::new(1, 1, uniform_rules()).unwrap();
+    let tile = simulation.tile(0, 0).unwrap();
+    simulation.tile_state_mut(tile).unwrap().plant_energy = 7;
+    let actor = simulation.add_cell(tile, 10, 100, 1).unwrap();
+    let compiled = simulation.compiled_ruleset_hash();
+    let initial = simulation.state_hash();
+    let mut recorder = ReplayRecorder::new(compiled, initial);
+    let commitments = vec![commit(
+        &mut simulation,
+        actor,
+        ActionRequest::Consume { amount: 7 },
+    )];
+    let event = recorder
+        .record_with_commitments(&simulation.resolve_next_batch().unwrap(), commitments)
+        .unwrap();
+
+    assert_eq!(event.outcomes[0].consumed_energy, 7);
+    let decoded = ReplayBatchEvent::from_bytes(&event.to_bytes()).unwrap();
+    assert_eq!(decoded.outcomes[0].consumed_energy, 7);
+    assert_eq!(decoded, event);
+}
+
+#[test]
 fn replay_distinguishes_retain_from_replace_empty() {
     let (events, _, _, _) = two_batch_replay();
     let retained = &events[0];
@@ -341,10 +365,10 @@ fn replay_hash_golden_vectors() {
             frames[0].len(),
         ),
         (
-            "66ad67d2ee5b4642a3d908c74dcbea3be6fa6006a4bb38899fd81fb8b566ee49".into(),
-            "80342dc25e401a8a898ebfe934f8018fbc061711aba74f40e3c06ea9f217d14b".into(),
-            "1a8dd858360cdc8e538ca0a2f1d399aeacb6c51ab718f4449e54f77dcec008c3".into(),
-            1004,
+            "8bbd97f0a21804a9e05ebc9cbb7bce675bea949a699d7b38b255aa4b42dd3423".into(),
+            "bb498a32d089550ad935c1f497a9913f153bf88de0dcd9945ddafd1e67ea6d7c".into(),
+            "41de17c43a34b532f5ff7b5e61e15608b4d1dfb3bfb0b481b413245ec42ac914".into(),
+            1020,
         )
     );
     assert_eq!(events[0].sequence, 0);
@@ -453,8 +477,8 @@ fn replay_archive_golden_vector() {
     assert_eq!(
         (archive.archive_hash().to_hex(), archive.to_bytes().len()),
         (
-            "b6e211369f96e24ead5e96198125706ebdc80835a5be26aa30a939c68183364b".into(),
-            2076,
+            "ce6471f2905a5d6db54e779feb3ce029b7755db255843b888c702772d4ddc46b".into(),
+            2108,
         )
     );
 }

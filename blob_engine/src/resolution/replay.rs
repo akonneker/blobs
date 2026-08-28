@@ -16,7 +16,7 @@ use super::reference::{
     ResourceClaim, ResourceKey, SimTime, TerrainChange, TileState,
 };
 
-pub const REPLAY_FORMAT_VERSION: u16 = 10;
+pub const REPLAY_FORMAT_VERSION: u16 = 11;
 const REPLAY_MAGIC: &[u8; 8] = b"BLBRPL01";
 const GENESIS_DOMAIN: &[u8] = b"blob.replay.genesis";
 const EVENT_DOMAIN: &[u8] = b"blob.replay.batch";
@@ -982,6 +982,15 @@ fn validate_event_shape(event: &ReplayBatchEvent) -> Result<(), ReplayError> {
 }
 
 fn outcome_effects_are_consistent(outcome: &ActionOutcome) -> bool {
+    let consumed_consistent = match (&outcome.request, outcome.status) {
+        (ActionRequest::Consume { amount }, OutcomeStatus::Success) => {
+            outcome.consumed_energy <= *amount
+        }
+        _ => outcome.consumed_energy == 0,
+    };
+    if !consumed_consistent {
+        return false;
+    }
     let damage_consistent = match (&outcome.request, outcome.status, &outcome.attack_damage) {
         (ActionRequest::Attack { .. }, OutcomeStatus::Success, Some(damage)) => {
             damage.victim != outcome.actor
@@ -1594,6 +1603,7 @@ fn encode_outcome(writer: &mut Writer, outcome: &ActionOutcome) {
     encode_tile_option(writer, outcome.target);
     writer.u64(outcome.effort_spent);
     writer.u64(outcome.payload);
+    writer.u64(outcome.consumed_energy);
     encode_attack_damage_option(writer, outcome.attack_damage.as_ref());
     encode_terrain_change_option(writer, outcome.terrain_change.as_ref());
 }
@@ -1615,6 +1625,7 @@ fn decode_outcome(
         target: decode_tile_option(reader)?,
         effort_spent: reader.u64()?,
         payload: reader.u64()?,
+        consumed_energy: reader.u64()?,
         attack_damage: decode_attack_damage_option(reader)?,
         terrain_change: decode_terrain_change_option(reader)?,
     })
