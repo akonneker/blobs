@@ -17,8 +17,9 @@ use crate::config::{CombatCurriculumConfig, FeedingCurriculumStage};
 use crate::contact_evaluation::ContactEvaluationReport;
 use crate::evaluation::EvaluationMetrics;
 use crate::feeding_curriculum::FeedingPromotionReport;
+use crate::micro_combat::MicroCombatEvaluationReport;
 
-pub const COMPETENCY_FRONTIER_SCHEMA_VERSION: u32 = 2;
+pub const COMPETENCY_FRONTIER_SCHEMA_VERSION: u32 = 3;
 pub const MAX_COMPETENCY_FRONTIER_ENTRIES: usize = 32;
 const MAX_FRONTIER_BYTES: u64 = 1024 * 1024;
 static FRONTIER_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -33,6 +34,8 @@ pub struct CompetencyMetrics {
     pub on_food_intake_per_initial_cell: f64,
     pub adjacent_food_intake_per_initial_cell: f64,
     pub combat_passed: bool,
+    pub micro_survival_success_rate: f64,
+    pub micro_elimination_success_rate: f64,
     pub contact_damage: u128,
     pub contact_kills: u64,
     pub skirmish_damage: u128,
@@ -48,6 +51,7 @@ impl CompetencyMetrics {
         feeding: &FeedingPromotionReport,
         retention: Option<&FeedingPromotionReport>,
         contact: &ContactEvaluationReport,
+        micro: Option<&MicroCombatEvaluationReport>,
         combat: &CombatCurriculumConfig,
     ) -> Option<Self> {
         let retention = retention.unwrap_or(feeding);
@@ -74,6 +78,12 @@ impl CompetencyMetrics {
         let skirmish_damage = stage_sum(FeedingCurriculumStage::Skirmish, |variant| {
             variant.damage_dealt
         });
+        let micro_summary = micro.map(MicroCombatEvaluationReport::gate_summary);
+        let micro_passed = if combat.micro_combat.enabled {
+            micro.is_some_and(|report| report.meets_promotion_thresholds(&combat.micro_combat))
+        } else {
+            true
+        };
         let metrics = Self {
             configured_feeding_passed: feeding.passed,
             retention_feeding_passed: retention.passed,
@@ -81,7 +91,11 @@ impl CompetencyMetrics {
             adjacent_food_survival_rate: adjacent.survival_rate,
             on_food_intake_per_initial_cell: on_food.consumed_energy_per_initial_cell,
             adjacent_food_intake_per_initial_cell: adjacent.consumed_energy_per_initial_cell,
-            combat_passed: contact.meets_promotion_thresholds(combat),
+            combat_passed: contact.meets_promotion_thresholds(combat) && micro_passed,
+            micro_survival_success_rate: micro_summary
+                .map_or(0.0, |summary| summary.survival_success_rate),
+            micro_elimination_success_rate: micro_summary
+                .map_or(0.0, |summary| summary.elimination_success_rate),
             contact_damage,
             contact_kills: contact.kills_for_stage(FeedingCurriculumStage::Contact),
             skirmish_damage,
@@ -106,6 +120,8 @@ impl CompetencyMetrics {
             self.fixed_worst_case_win_rate,
             self.fixed_win_rate,
             self.fixed_average_reward,
+            self.micro_survival_success_rate,
+            self.micro_elimination_success_rate,
         ]
         .iter()
         .all(|value| value.is_finite())
@@ -115,6 +131,8 @@ impl CompetencyMetrics {
             && self.adjacent_food_intake_per_initial_cell >= 0.0
             && (0.0..=1.0).contains(&self.fixed_worst_case_win_rate)
             && (0.0..=1.0).contains(&self.fixed_win_rate)
+            && (0.0..=1.0).contains(&self.micro_survival_success_rate)
+            && (0.0..=1.0).contains(&self.micro_elimination_success_rate)
     }
 
     fn dominates_or_equals(&self, other: &Self) -> bool {
@@ -126,6 +144,8 @@ impl CompetencyMetrics {
             && self.adjacent_food_intake_per_initial_cell
                 >= other.adjacent_food_intake_per_initial_cell
             && u8::from(self.combat_passed) >= u8::from(other.combat_passed)
+            && self.micro_survival_success_rate >= other.micro_survival_success_rate
+            && self.micro_elimination_success_rate >= other.micro_elimination_success_rate
             && self.contact_damage >= other.contact_damage
             && self.contact_kills >= other.contact_kills
             && self.skirmish_damage >= other.skirmish_damage
@@ -424,6 +444,7 @@ pub fn validate_competency_frontier(frontier: &CompetencyFrontier) -> Result<(),
                 .contact_evaluation
                 .as_ref()
                 .ok_or("frontier checkpoint has no combat evaluation")?,
+            metadata.micro_combat_evaluation.as_ref(),
             &metadata.config.combat_curriculum,
         )
         .ok_or("frontier checkpoint has incomplete competency evidence")?;
@@ -508,6 +529,8 @@ mod tests {
             on_food_intake_per_initial_cell: 100.0,
             adjacent_food_intake_per_initial_cell: 100.0,
             combat_passed: kills > 0,
+            micro_survival_success_rate: 0.0,
+            micro_elimination_success_rate: 0.0,
             contact_damage: damage,
             contact_kills: 0,
             skirmish_damage: damage,

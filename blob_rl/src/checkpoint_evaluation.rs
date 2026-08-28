@@ -12,9 +12,10 @@ use crate::config::{FeedingCurriculumStage, TrainingConfig};
 use crate::contact_evaluation::ContactEvaluationReport;
 use crate::env::BlobEnv;
 use crate::feeding_curriculum::FeedingPromotionReport;
+use crate::micro_combat::MicroCombatEvaluationReport;
 use crate::sweep::sha256;
 
-pub const CHECKPOINT_EVALUATION_SCHEMA_VERSION: u32 = 4;
+pub const CHECKPOINT_EVALUATION_SCHEMA_VERSION: u32 = 5;
 const MAX_ARTIFACT_BYTES: u64 = 4 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -35,6 +36,7 @@ pub struct CheckpointEvaluationArtifact {
     pub config: TrainingConfig,
     pub feeding: FeedingPromotionReport,
     pub contact: ContactEvaluationReport,
+    pub micro_combat: Option<MicroCombatEvaluationReport>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -83,6 +85,7 @@ struct ArtifactIdentity<'a> {
     config: &'a TrainingConfig,
     feeding: &'a FeedingPromotionReport,
     contact: &'a ContactEvaluationReport,
+    micro_combat: &'a Option<MicroCombatEvaluationReport>,
 }
 
 fn valid_sha256(value: &str) -> bool {
@@ -103,6 +106,7 @@ impl CheckpointEvaluationArtifact {
         config: TrainingConfig,
         feeding: FeedingPromotionReport,
         contact: ContactEvaluationReport,
+        micro_combat: Option<MicroCombatEvaluationReport>,
     ) -> Result<Self, String> {
         let mut artifact = Self {
             schema_version: CHECKPOINT_EVALUATION_SCHEMA_VERSION,
@@ -117,6 +121,7 @@ impl CheckpointEvaluationArtifact {
             config,
             feeding,
             contact,
+            micro_combat,
         };
         artifact.artifact_hash = artifact.recompute_hash()?;
         artifact.validate()?;
@@ -136,6 +141,7 @@ impl CheckpointEvaluationArtifact {
             config: &self.config,
             feeding: &self.feeding,
             contact: &self.contact,
+            micro_combat: &self.micro_combat,
         };
         serde_json::to_vec(&identity)
             .map(|bytes| sha256(&bytes))
@@ -202,6 +208,33 @@ impl CheckpointEvaluationArtifact {
             &self.contact.seeds,
             &evaluation_config.combat_curriculum,
         )?;
+        match (
+            self.config.combat_curriculum.micro_combat.enabled,
+            self.micro_combat.as_ref(),
+        ) {
+            (true, Some(micro)) => {
+                if micro.seeds != self.feeding.seeds {
+                    return Err("micro-combat evaluation uses a different seed suite".into());
+                }
+                micro.validate_against(
+                    &contact_ruleset,
+                    self.config
+                        .combat_curriculum
+                        .micro_combat
+                        .suite
+                        .as_ref()
+                        .ok_or("micro-combat evaluation has no configured suite")?,
+                    &self.feeding.seeds,
+                )?;
+            }
+            (true, None) => {
+                return Err("checkpoint evaluation is missing micro-combat evidence".into())
+            }
+            (false, Some(_)) => {
+                return Err("checkpoint evaluation has unexpected micro-combat evidence".into())
+            }
+            (false, None) => {}
+        }
         if self.artifact_hash != self.recompute_hash()? {
             return Err("checkpoint-evaluation artifact hash mismatch".into());
         }
@@ -209,10 +242,18 @@ impl CheckpointEvaluationArtifact {
     }
 
     pub fn passed(&self) -> bool {
+        let micro_passed = if self.config.combat_curriculum.micro_combat.enabled {
+            self.micro_combat.as_ref().is_some_and(|report| {
+                report.meets_promotion_thresholds(&self.config.combat_curriculum.micro_combat)
+            })
+        } else {
+            self.micro_combat.is_none()
+        };
         self.feeding.passed
             && self
                 .contact
                 .meets_promotion_thresholds(&self.config.combat_curriculum)
+            && micro_passed
     }
 }
 

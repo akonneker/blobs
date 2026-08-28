@@ -7,7 +7,7 @@ use burn::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::config::{EnvConfig, OpponentProfile, RewardConfig};
+use crate::config::{EnvConfig, FeedingCurriculumStage, OpponentProfile, RewardConfig};
 use crate::env::{BlobEnv, EpisodeOutcome, OpponentStartingState, StepOutput};
 use crate::evaluation::greedy_policy_choices;
 use crate::model::PolicyValueNet;
@@ -48,6 +48,151 @@ pub struct MicroCombatScenario {
 pub struct MicroCombatSuiteConfig {
     pub schema_version: u32,
     pub scenarios: Vec<MicroCombatScenario>,
+}
+
+/// Exact inline training contract for the held-out micro-combat suite. Keeping
+/// the scenarios in `TrainingConfig` makes checkpoint resume independent of a
+/// mutable external file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct MicroCombatTrainingConfig {
+    pub enabled: bool,
+    pub suite: Option<MicroCombatSuiteConfig>,
+    pub min_survival_objective_success_rate: f64,
+    pub min_elimination_objective_success_rate: f64,
+}
+
+impl Default for MicroCombatTrainingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            suite: None,
+            min_survival_objective_success_rate: 0.8,
+            min_elimination_objective_success_rate: 0.25,
+        }
+    }
+}
+
+impl MicroCombatTrainingConfig {
+    pub fn validate_against(&self, base: &EnvConfig) -> Result<(), String> {
+        if !self.enabled {
+            if self.suite.is_some() {
+                return Err("disabled micro-combat training cannot retain a scenario suite".into());
+            }
+            return Ok(());
+        }
+        let suite = self
+            .suite
+            .as_ref()
+            .ok_or("enabled micro-combat training requires an inline suite")?;
+        suite.validate_against(base)?;
+        if ![
+            self.min_survival_objective_success_rate,
+            self.min_elimination_objective_success_rate,
+        ]
+        .iter()
+        .all(|rate| rate.is_finite() && (0.0..=1.0).contains(rate))
+        {
+            return Err("micro-combat promotion rates must be finite fractions".into());
+        }
+        for objective in [
+            MicroCombatObjective::Survival,
+            MicroCombatObjective::Elimination,
+        ] {
+            if !suite
+                .scenarios
+                .iter()
+                .any(|scenario| scenario.objective == objective)
+            {
+                return Err(
+                    "micro-combat training requires survival and elimination objectives".into(),
+                );
+            }
+        }
+        for stage in [
+            FeedingCurriculumStage::Contact,
+            FeedingCurriculumStage::Skirmish,
+        ] {
+            if self.scenario_indices(stage).is_empty() {
+                return Err(
+                    "micro-combat training requires paired and opposed-line scenarios".into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub fn scenario_indices(&self, stage: FeedingCurriculumStage) -> Vec<usize> {
+        let Some(suite) = self.suite.as_ref() else {
+            return Vec::new();
+        };
+        suite
+            .scenarios
+            .iter()
+            .enumerate()
+            .filter_map(|(index, scenario)| {
+                let selected = matches!(
+                    (stage, scenario.starting_layout),
+                    (
+                        FeedingCurriculumStage::Contact,
+                        StartingCellLayout::PairedContact
+                    ) | (
+                        FeedingCurriculumStage::Skirmish,
+                        StartingCellLayout::OpposedLines
+                    )
+                );
+                selected.then_some(index)
+            })
+            .collect()
+    }
+
+    /// Select the next scenario from the stage-local ordered ring. The caller
+    /// checkpoints and increments `cursor` only when assigning a new episode.
+    pub fn scenario_index_for_cursor(
+        &self,
+        stage: FeedingCurriculumStage,
+        cursor: u64,
+    ) -> Option<usize> {
+        if !self.enabled {
+            return None;
+        }
+        let indices = self.scenario_indices(stage);
+        if indices.is_empty() {
+            return None;
+        }
+        let position = usize::try_from(cursor % indices.len() as u64).ok()?;
+        indices.get(position).copied()
+    }
+
+    pub fn scenario(&self, index: usize) -> Option<&MicroCombatScenario> {
+        self.suite.as_ref()?.scenarios.get(index)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MicroCombatRotationState {
+    pub contact_assignments: u64,
+    pub skirmish_assignments: u64,
+}
+
+impl MicroCombatRotationState {
+    pub fn assign(
+        &mut self,
+        config: &MicroCombatTrainingConfig,
+        stage: FeedingCurriculumStage,
+    ) -> Option<usize> {
+        let cursor = match stage {
+            FeedingCurriculumStage::Contact => &mut self.contact_assignments,
+            FeedingCurriculumStage::Skirmish => &mut self.skirmish_assignments,
+            _ => return None,
+        };
+        let selected = config.scenario_index_for_cursor(stage, *cursor)?;
+        *cursor = cursor
+            .checked_add(1)
+            .expect("micro-combat rotation overflowed");
+        Some(selected)
+    }
 }
 
 impl MicroCombatSuiteConfig {
@@ -196,7 +341,57 @@ pub struct MicroCombatEvaluationReport {
     pub scenarios: Vec<MicroCombatScenarioMetrics>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MicroCombatGateSummary {
+    pub survival_episodes: usize,
+    pub survival_successes: usize,
+    pub survival_success_rate: f64,
+    pub elimination_episodes: usize,
+    pub elimination_successes: usize,
+    pub elimination_success_rate: f64,
+}
+
 impl MicroCombatEvaluationReport {
+    pub fn gate_summary(&self) -> MicroCombatGateSummary {
+        let totals = |objective| {
+            self.scenarios
+                .iter()
+                .filter(|metrics| metrics.objective == objective)
+                .fold((0_usize, 0_usize), |(episodes, successes), metrics| {
+                    (
+                        episodes.saturating_add(metrics.episodes),
+                        successes.saturating_add(metrics.objective_successes),
+                    )
+                })
+        };
+        let (survival_episodes, survival_successes) = totals(MicroCombatObjective::Survival);
+        let (elimination_episodes, elimination_successes) =
+            totals(MicroCombatObjective::Elimination);
+        MicroCombatGateSummary {
+            survival_episodes,
+            survival_successes,
+            survival_success_rate: ratio(survival_successes, survival_episodes),
+            elimination_episodes,
+            elimination_successes,
+            elimination_success_rate: ratio(elimination_successes, elimination_episodes),
+        }
+    }
+
+    pub fn meets_promotion_thresholds(&self, config: &MicroCombatTrainingConfig) -> bool {
+        if !config.enabled {
+            return true;
+        }
+        let summary = self.gate_summary();
+        summary.survival_episodes > 0
+            && summary.elimination_episodes > 0
+            && self
+                .scenarios
+                .iter()
+                .all(|metrics| metrics.safety_aborts == 0)
+            && summary.survival_success_rate >= config.min_survival_objective_success_rate
+            && summary.elimination_success_rate >= config.min_elimination_objective_success_rate
+    }
+
     pub fn validate_against(
         &self,
         expected_ruleset_hash: &str,
@@ -253,7 +448,7 @@ fn close(left: f64, right: f64) -> bool {
     left.is_finite() && right.is_finite() && (left - right).abs() <= 1.0e-12
 }
 
-fn scenario_environment(base: &EnvConfig, scenario: &MicroCombatScenario) -> EnvConfig {
+pub fn scenario_environment(base: &EnvConfig, scenario: &MicroCombatScenario) -> EnvConfig {
     let mut env = base.clone();
     env.world_size = scenario.world_size;
     env.cells_per_team = scenario.training_cells;
@@ -492,6 +687,111 @@ mod tests {
                 && scenario.training_cells == 2
                 && scenario.opponent_cells == 1
         }));
+    }
+
+    #[test]
+    fn stage_local_rotation_is_balanced_and_checkpointable() {
+        let maintained = MicroCombatSuiteConfig::from_toml_str(include_str!(
+            "../config/micro_combat_scenarios.toml"
+        ))
+        .unwrap();
+        let config = MicroCombatTrainingConfig {
+            enabled: true,
+            suite: Some(maintained),
+            min_survival_objective_success_rate: 0.75,
+            min_elimination_objective_success_rate: 0.25,
+        };
+        config.validate_against(&EnvConfig::default()).unwrap();
+        let mut rotation = MicroCombatRotationState::default();
+        let contact = (0..6)
+            .map(|_| {
+                rotation
+                    .assign(&config, FeedingCurriculumStage::Contact)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let skirmish = (0..6)
+            .map(|_| {
+                rotation
+                    .assign(&config, FeedingCurriculumStage::Skirmish)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(&contact[..3], &contact[3..]);
+        assert_eq!(&skirmish[..3], &skirmish[3..]);
+        assert!(contact.iter().all(|index| !skirmish.contains(index)));
+
+        let encoded = rmp_serde::to_vec_named(&rotation).unwrap();
+        let restored: MicroCombatRotationState = rmp_serde::from_slice(&encoded).unwrap();
+        assert_eq!(restored, rotation);
+    }
+
+    #[test]
+    fn maintained_256_profile_embeds_the_exact_held_out_suite() {
+        let profile = crate::config::TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_curriculum_256.toml"
+        ))
+        .unwrap();
+        profile.validate().unwrap();
+        let standalone = MicroCombatSuiteConfig::from_toml_str(include_str!(
+            "../config/micro_combat_scenarios.toml"
+        ))
+        .unwrap();
+        let embedded = profile
+            .combat_curriculum
+            .micro_combat
+            .suite
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            embedded.semantic_hash().unwrap(),
+            standalone.semantic_hash().unwrap()
+        );
+        assert_eq!(profile.env.world_size, 256);
+    }
+
+    #[test]
+    fn survival_and_elimination_gates_are_independent() {
+        let report = MicroCombatEvaluationReport {
+            schema_version: MICRO_COMBAT_EVALUATION_SCHEMA_VERSION,
+            ruleset_hash: "rules".into(),
+            suite_sha256: "suite".into(),
+            seeds: vec![1, 2, 3, 4],
+            scenarios: vec![
+                MicroCombatScenarioMetrics {
+                    scenario: "survival".into(),
+                    objective: MicroCombatObjective::Survival,
+                    episodes: 4,
+                    objective_successes: 3,
+                    objective_success_rate: 0.75,
+                    scientific_survival_episodes: 3,
+                    scientific_survival_rate: 0.75,
+                    ..MicroCombatScenarioMetrics::default()
+                },
+                MicroCombatScenarioMetrics {
+                    scenario: "elimination".into(),
+                    objective: MicroCombatObjective::Elimination,
+                    episodes: 4,
+                    objective_successes: 1,
+                    objective_success_rate: 0.25,
+                    scientific_survival_episodes: 4,
+                    scientific_survival_rate: 1.0,
+                    ..MicroCombatScenarioMetrics::default()
+                },
+            ],
+        };
+        let mut config = MicroCombatTrainingConfig {
+            enabled: true,
+            suite: Some(suite()),
+            min_survival_objective_success_rate: 0.75,
+            min_elimination_objective_success_rate: 0.5,
+        };
+        let summary = report.gate_summary();
+        assert_eq!(summary.survival_success_rate, 0.75);
+        assert_eq!(summary.elimination_success_rate, 0.25);
+        assert!(!report.meets_promotion_thresholds(&config));
+        config.min_elimination_objective_success_rate = 0.25;
+        assert!(report.meets_promotion_thresholds(&config));
     }
 
     #[test]

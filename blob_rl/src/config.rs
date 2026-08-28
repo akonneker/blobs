@@ -6,6 +6,7 @@ use blob_engine::world_gen::ResourceLayout;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::micro_combat::{scenario_environment, MicroCombatScenario, MicroCombatTrainingConfig};
 use crate::telemetry::TelemetryConfig;
 use std::fmt;
 
@@ -675,6 +676,9 @@ pub struct CombatCurriculumConfig {
     /// be labeled best or promoted. Scenario wins alone are insufficient.
     pub min_contact_kills_for_promotion: u64,
     pub min_skirmish_kills_for_promotion: u64,
+    /// Optional balanced asymmetric 1v1/1vN practice and its independent
+    /// held-out survival/elimination promotion gates.
+    pub micro_combat: MicroCombatTrainingConfig,
 }
 
 fn combat_curriculum_is_default(config: &CombatCurriculumConfig) -> bool {
@@ -705,6 +709,7 @@ impl Default for CombatCurriculumConfig {
             contact_opponents: vec![OpponentProfile::Aggressive, OpponentProfile::Defensive],
             min_contact_kills_for_promotion: 0,
             min_skirmish_kills_for_promotion: 0,
+            micro_combat: MicroCombatTrainingConfig::default(),
         }
     }
 }
@@ -905,6 +910,20 @@ impl CombatCurriculumConfig {
     ) -> EnvConfig {
         let mut env = self.environment_for_stage(feeding, base, stage, simulation_time_quanta);
         env.victory.sim_time_limit_quanta = self.combat_evaluation_episode_limit(stage);
+        env
+    }
+
+    pub fn micro_combat_rollout_environment(
+        &self,
+        base: &EnvConfig,
+        scenario: &MicroCombatScenario,
+        simulation_time_quanta: u64,
+    ) -> EnvConfig {
+        let mut env = scenario_environment(base, scenario);
+        env.victory.sim_time_limit_quanta = env
+            .victory
+            .sim_time_limit_quanta
+            .min(self.stage_remaining_quanta(simulation_time_quanta));
         env
     }
 }
@@ -1379,6 +1398,7 @@ impl TrainingConfig {
     /// when the legacy update-count interval is disabled.
     pub fn fixed_evaluation_enabled(&self) -> bool {
         self.eval_interval > 0
+            || self.combat_curriculum.micro_combat.enabled
             || !self
                 .combat_curriculum
                 .competency_evaluation_frontiers_sim_time_quanta_per_cycle
@@ -1618,6 +1638,10 @@ impl TrainingConfig {
         }
         let combat = &self.combat_curriculum;
         let distillation = &self.specialist_distillation;
+        combat.micro_combat.validate_against(&self.env)?;
+        if combat.micro_combat.enabled && !combat.enabled {
+            return Err("micro-combat training requires the combat curriculum".into());
+        }
         if distillation.enabled
             && (!feeding.enabled
                 || !combat.enabled

@@ -1744,12 +1744,50 @@ turtle is not counted as an offensive success. Safety aborts never count as
 scientific survival. `--require-all-objectives` is a coarse CI check, not a
 training or promotion threshold.
 
-This slice supplies held-out evaluation and the asymmetric environment seam;
-it does not yet change PPO rollout sampling or existing combat-promotion
-gates. The next training slice should sample these named scenarios with a
-balanced, exact-resume schedule and preserve independent survival and
-elimination gates so the much larger colony distribution cannot hide a failed
-local skill.
+The training integration is opt-in under
+`[combat_curriculum.micro_combat]`. Its suite is stored inline in the training
+configuration, even when it duplicates the standalone evaluation file, so an
+exact checkpoint never depends on mutable external scenario bytes. Paired
+1v1 scenarios rotate in declared order inside contact blocks; opposed-line
+1vN scenarios rotate independently inside skirmish blocks. Each stage-local
+round robin differs by at most one assignment, advances only when a new
+episode is created, and remains capped by the current canonical-time stage
+boundary. The two rotation cursors and every in-flight scenario index are
+stored in exact-resume state. Restored environments reconstruct the same
+asymmetric reset contract before importing canonical state.
+
+Objective labels remain host-only: they change neither observations nor
+physics and do not select a policy head. Ordinary rewards still arise from
+survival, damage, kills, and outcomes. Telemetry labels the assigned scenario
+for analysis, while the Mind sees only its own energy, local anonymous
+neighbors, terrain/resources, private memory, and private randomness.
+
+Held-out evaluation independently aggregates survival-objective and
+elimination-objective success. Both configured minimum rates must pass, with
+no safety aborts, before a checkpoint can become best or enter self-play; a
+missing report fails closed. Best-policy tie-breaking ranks elimination rate
+then survival rate after fixed-match and legacy contact evidence. Training
+artifact schema 38, checkpoint-evaluation schema 5, and competency-frontier
+schema 3 bind the report, exact suite, thresholds, rotation state, and the two
+rates. The frontier's combat qualification is now the conjunction of legacy
+contact/skirmish activity and the micro-combat gates.
+
+The maintained
+[`micro_combat_curriculum_256.toml`](../blob_rl/config/micro_combat_curriculum_256.toml)
+profile embeds the exact standalone six-scenario suite and returns to a
+256×256 competitive field outside the local rehearsal blocks. Launch it with
+the ordinary trainer:
+
+```sh
+cargo run --release -p blob_rl --bin train -- \
+  --config blob_rl/config/micro_combat_curriculum_256.toml
+```
+
+The initial thresholds are 75% survival and 25% elimination. They are explicit
+calibration targets, not established optima. The next experiment should run a
+bounded small-world smoke job to verify scenario exposure and gradient health,
+then compare the maintained 256×256 profile against the same schedule with
+micro-combat disabled before promoting either distribution.
 
 After every rollout environment reaches
 `self_play.start_after_sim_time_quanta_per_env`, promotion is considered every

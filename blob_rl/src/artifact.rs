@@ -21,10 +21,11 @@ use crate::contact_evaluation::ContactEvaluationReport;
 use crate::env::BlobEnvCheckpoint;
 use crate::evaluation::EvaluationMetrics;
 use crate::feeding_curriculum::FeedingPromotionReport;
+use crate::micro_combat::{MicroCombatEvaluationReport, MicroCombatRotationState};
 use crate::model::{PolicyValueNet, PolicyValueNetConfig};
 use crate::telemetry::TrainingTelemetryState;
 
-pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 37;
+pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 38;
 const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_RESUME_STATE_BYTES: u64 = 512 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -67,6 +68,9 @@ pub struct CheckpointMetadata {
     /// Held-out direct-contact and multi-cell skirmish evidence from the same
     /// primary seed suite.
     pub contact_evaluation: Option<ContactEvaluationReport>,
+    /// Independent held-out survival and elimination evidence for asymmetric
+    /// micro-combat scenarios.
+    pub micro_combat_evaluation: Option<MicroCombatEvaluationReport>,
     /// This checkpoint passed the rollout-pool gates. The resume record stores
     /// the pool immediately before this member is appended, avoiding a
     /// self-referential artifact hash.
@@ -132,6 +136,7 @@ pub struct TrainingResumeState {
     pub environments: Vec<BlobEnvCheckpoint>,
     pub best_evaluation: Option<EvaluationMetrics>,
     pub best_contact_evaluation: Option<ContactEvaluationReport>,
+    pub best_micro_combat_evaluation: Option<MicroCombatEvaluationReport>,
     /// Bounded host-only ecology/combat Pareto evidence. Entries point only to
     /// immutable evaluated checkpoints and do not affect Mind inputs.
     pub competency_frontier: CompetencyFrontier,
@@ -144,6 +149,10 @@ pub struct TrainingResumeState {
     pub environment_opponents: Vec<RolloutOpponentAssignment>,
     /// Curriculum scenario actually active in each in-flight environment.
     pub environment_curriculum_stages: Vec<crate::config::FeedingCurriculumStage>,
+    /// Stage-local balanced rotation cursors and the scenario assigned to each
+    /// in-flight environment. Both are required for exact continuation.
+    pub micro_combat_rotation: MicroCombatRotationState,
+    pub environment_micro_combat_scenarios: Vec<Option<usize>>,
     /// Exact bounded host-telemetry continuation. This is scientifically
     /// useful output state, never an input to policy or physics.
     pub telemetry: Option<TrainingTelemetryState>,
@@ -178,6 +187,7 @@ pub struct BestCheckpointPointer {
     pub feeding_evaluation: Option<FeedingPromotionReport>,
     pub retention_feeding_evaluation: Option<FeedingPromotionReport>,
     pub contact_evaluation: Option<ContactEvaluationReport>,
+    pub micro_combat_evaluation: Option<MicroCombatEvaluationReport>,
 }
 
 /// Integrity-checked immutable policy ready for stateless opponent inference.
@@ -213,6 +223,7 @@ pub struct RolloutPoolManifest {
     pub promotion_feeding_evaluation: Option<FeedingPromotionReport>,
     pub promotion_retention_feeding_evaluation: Option<FeedingPromotionReport>,
     pub promotion_contact_evaluation: Option<ContactEvaluationReport>,
+    pub promotion_micro_combat_evaluation: Option<MicroCombatEvaluationReport>,
     pub members: Vec<RolloutLeagueMember>,
 }
 
@@ -364,6 +375,28 @@ fn validate_evaluation_artifact_binding(metadata: &CheckpointMetadata) -> Result
         }
         (true, None, None) | (false, _, None) => {}
     }
+    let micro_config = &metadata.config.combat_curriculum.micro_combat;
+    match (
+        micro_config.enabled,
+        metadata.evaluation.as_ref(),
+        metadata.micro_combat_evaluation.as_ref(),
+    ) {
+        (true, Some(evaluation), Some(micro)) => micro.validate_against(
+            &metadata.compiled_ruleset_hash,
+            micro_config
+                .suite
+                .as_ref()
+                .ok_or("micro-combat evaluation has no configured suite")?,
+            &evaluation.seeds,
+        )?,
+        (true, Some(_), None) => {
+            return Err("evaluated checkpoint is missing its micro-combat report".into())
+        }
+        (true, None, Some(_)) | (false, _, Some(_)) => {
+            return Err("checkpoint has an unexpected micro-combat report".into())
+        }
+        (true, None, None) | (false, _, None) => {}
+    }
     if metadata.rollout_pool_promotion.is_some() {
         if metadata.evaluation.is_none() {
             return Err("rollout-pool promotion is missing held-out evaluation".into());
@@ -386,6 +419,14 @@ fn validate_evaluation_artifact_binding(metadata: &CheckpointMetadata) -> Result
             })
         {
             return Err("rollout-pool promotion has no active contact evidence".into());
+        }
+        if micro_config.enabled
+            && !metadata
+                .micro_combat_evaluation
+                .as_ref()
+                .is_some_and(|report| report.meets_promotion_thresholds(micro_config))
+        {
+            return Err("rollout-pool promotion failed a micro-combat gate".into());
         }
     }
     Ok(())
@@ -450,6 +491,7 @@ pub fn publish_checkpoint<B, O>(
     feeding_evaluation: Option<&FeedingPromotionReport>,
     retention_feeding_evaluation: Option<&FeedingPromotionReport>,
     contact_evaluation: Option<&ContactEvaluationReport>,
+    micro_combat_evaluation: Option<&MicroCombatEvaluationReport>,
     rollout_pool_promotion: Option<&LeaguePromotion>,
     resume_state: &TrainingResumeState,
 ) -> Result<PathBuf, String>
@@ -542,6 +584,7 @@ where
         feeding_evaluation: feeding_evaluation.cloned(),
         retention_feeding_evaluation: retention_feeding_evaluation.cloned(),
         contact_evaluation: contact_evaluation.cloned(),
+        micro_combat_evaluation: micro_combat_evaluation.cloned(),
         rollout_pool_promotion: rollout_pool_promotion.cloned(),
     };
     validate_evaluation_artifact_binding(&metadata)?;
@@ -684,6 +727,7 @@ pub fn publish_rollout_pool_manifest(
     promotion_feeding_evaluation: Option<&FeedingPromotionReport>,
     promotion_retention_feeding_evaluation: Option<&FeedingPromotionReport>,
     promotion_contact_evaluation: Option<&ContactEvaluationReport>,
+    promotion_micro_combat_evaluation: Option<&MicroCombatEvaluationReport>,
     members: &[RolloutLeagueMember],
 ) -> Result<PathBuf, String> {
     if promotion_feeding_evaluation
@@ -697,6 +741,11 @@ pub fn publish_rollout_pool_manifest(
         .is_some_and(|report| !report.is_active() || report.ruleset_hash != compiled_ruleset_hash)
     {
         return Err("rollout-pool manifest promotion has invalid contact evidence".into());
+    }
+    if promotion_micro_combat_evaluation
+        .is_some_and(|report| report.ruleset_hash != compiled_ruleset_hash)
+    {
+        return Err("rollout-pool manifest promotion has invalid micro-combat evidence".into());
     }
     let pool_root = root.join("opponent-pool");
     fs::create_dir_all(&pool_root).map_err(|error| {
@@ -726,6 +775,7 @@ pub fn publish_rollout_pool_manifest(
         promotion_feeding_evaluation: promotion_feeding_evaluation.cloned(),
         promotion_retention_feeding_evaluation: promotion_retention_feeding_evaluation.cloned(),
         promotion_contact_evaluation: promotion_contact_evaluation.cloned(),
+        promotion_micro_combat_evaluation: promotion_micro_combat_evaluation.cloned(),
         members: members.to_vec(),
     };
     validate_rollout_pool_manifest(root, &manifest)?;
@@ -770,6 +820,7 @@ fn validate_rollout_pool_manifest(
         || promotion.feeding_evaluation != manifest.promotion_feeding_evaluation
         || promotion.retention_feeding_evaluation != manifest.promotion_retention_feeding_evaluation
         || promotion.contact_evaluation != manifest.promotion_contact_evaluation
+        || promotion.micro_combat_evaluation != manifest.promotion_micro_combat_evaluation
     {
         return Err("rollout-pool manifest does not match its promotion checkpoint".into());
     }
@@ -782,6 +833,16 @@ fn validate_rollout_pool_manifest(
             })
     {
         return Err("rollout-pool manifest does not meet combat promotion thresholds".into());
+    }
+    if promotion.config.combat_curriculum.micro_combat.enabled
+        && !manifest
+            .promotion_micro_combat_evaluation
+            .as_ref()
+            .is_some_and(|report| {
+                report.meets_promotion_thresholds(&promotion.config.combat_curriculum.micro_combat)
+            })
+    {
+        return Err("rollout-pool manifest does not meet micro-combat thresholds".into());
     }
     for member in &manifest.members {
         let directory = Path::new(&member.snapshot.directory);
@@ -826,6 +887,16 @@ pub fn publish_best_pointer(root: &Path, checkpoint: &Path) -> Result<(), String
     {
         return Err("best checkpoint has no active contact evidence".into());
     }
+    if metadata.config.combat_curriculum.micro_combat.enabled
+        && !metadata
+            .micro_combat_evaluation
+            .as_ref()
+            .is_some_and(|report| {
+                report.meets_promotion_thresholds(&metadata.config.combat_curriculum.micro_combat)
+            })
+    {
+        return Err("best checkpoint failed a micro-combat gate".into());
+    }
     let checkpoint_name = checkpoint
         .file_name()
         .and_then(|name| name.to_str())
@@ -839,6 +910,7 @@ pub fn publish_best_pointer(root: &Path, checkpoint: &Path) -> Result<(), String
         feeding_evaluation: metadata.feeding_evaluation,
         retention_feeding_evaluation: metadata.retention_feeding_evaluation,
         contact_evaluation: metadata.contact_evaluation,
+        micro_combat_evaluation: metadata.micro_combat_evaluation,
     };
     let nonce = TEMP_NONCE.fetch_add(1, Ordering::Relaxed);
     let temporary = root.join(format!(".best.json.tmp-{}-{nonce}", std::process::id()));
@@ -872,6 +944,7 @@ pub fn verify_best_pointer(root: &Path) -> Result<BestCheckpointPointer, String>
         || metadata.feeding_evaluation != pointer.feeding_evaluation
         || metadata.retention_feeding_evaluation != pointer.retention_feeding_evaluation
         || metadata.contact_evaluation != pointer.contact_evaluation
+        || metadata.micro_combat_evaluation != pointer.micro_combat_evaluation
     {
         return Err("best pointer does not match its immutable checkpoint".into());
     }
@@ -893,6 +966,16 @@ pub fn verify_best_pointer(root: &Path) -> Result<BestCheckpointPointer, String>
         })
     {
         return Err("best pointer contains no active contact evidence".into());
+    }
+    if metadata.config.combat_curriculum.micro_combat.enabled
+        && !pointer
+            .micro_combat_evaluation
+            .as_ref()
+            .is_some_and(|report| {
+                report.meets_promotion_thresholds(&metadata.config.combat_curriculum.micro_combat)
+            })
+    {
+        return Err("best pointer failed a micro-combat gate".into());
     }
     Ok(pointer)
 }
@@ -929,12 +1012,15 @@ mod tests {
             environments: Vec::new(),
             best_evaluation: None,
             best_contact_evaluation: None,
+            best_micro_combat_evaluation: None,
             competency_frontier: CompetencyFrontier::default(),
             specialist_teachers: SpecialistTeacherSelection::default(),
             rollout_pool: Vec::new(),
             active_retired_snapshots: Vec::new(),
             environment_opponents: Vec::new(),
             environment_curriculum_stages: Vec::new(),
+            micro_combat_rotation: MicroCombatRotationState::default(),
+            environment_micro_combat_scenarios: Vec::new(),
             telemetry: None,
         };
         let mut invalid_teacher_state = resume_state.clone();
@@ -962,6 +1048,7 @@ mod tests {
             7,
             1234,
             "ruleset-hash",
+            None,
             None,
             None,
             None,
@@ -1045,6 +1132,7 @@ mod tests {
             7,
             1234,
             "ruleset-hash",
+            None,
             None,
             None,
             None,
@@ -1163,12 +1251,15 @@ mod tests {
             environments: Vec::new(),
             best_evaluation: None,
             best_contact_evaluation: None,
+            best_micro_combat_evaluation: None,
             competency_frontier: CompetencyFrontier::default(),
             specialist_teachers: SpecialistTeacherSelection::default(),
             rollout_pool: Vec::new(),
             active_retired_snapshots: Vec::new(),
             environment_opponents: Vec::new(),
             environment_curriculum_stages: Vec::new(),
+            micro_combat_rotation: MicroCombatRotationState::default(),
+            environment_micro_combat_scenarios: Vec::new(),
             telemetry: None,
         };
         let promotion = LeaguePromotion {
@@ -1191,6 +1282,7 @@ mod tests {
             Some(&failed_retention),
             None,
             None,
+            None,
             &rejected_state,
         )
         .unwrap();
@@ -1207,6 +1299,7 @@ mod tests {
             Some(&evaluation),
             Some(&feeding),
             Some(&retention_feeding),
+            None,
             None,
             Some(&promotion),
             &resume_state,
@@ -1238,6 +1331,7 @@ mod tests {
             Some(&feeding),
             Some(&failed_retention),
             None,
+            None,
             std::slice::from_ref(&member),
         )
         .is_err());
@@ -1249,6 +1343,7 @@ mod tests {
             &config.self_play,
             Some(&feeding),
             Some(&retention_feeding),
+            None,
             None,
             &[member],
         )

@@ -1,5 +1,5 @@
 #![recursion_limit = "512"]
-//! Publish held-out retention/contact evidence for a frozen PPO checkpoint.
+//! Publish held-out retention, contact, and micro-combat evidence for a frozen PPO checkpoint.
 
 use std::path::PathBuf;
 
@@ -9,6 +9,7 @@ use blob_rl::checkpoint_evaluation::{
 };
 use blob_rl::contact_evaluation::evaluate_contact;
 use blob_rl::feeding_curriculum::evaluate_feeding_promotion;
+use blob_rl::micro_combat::evaluate_micro_combat;
 use burn::prelude::*;
 use clap::Parser;
 use sha2::{Digest, Sha256};
@@ -16,7 +17,7 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Parser)]
 #[command(
     name = "checkpoint-evaluation",
-    about = "Publish hash-bound feeding-retention and direct-contact evidence for a PPO checkpoint"
+    about = "Publish hash-bound feeding-retention, contact, and micro-combat evidence for a PPO checkpoint"
 )]
 struct Args {
     /// Immutable training checkpoint directory.
@@ -30,7 +31,7 @@ struct Args {
     #[arg(long)]
     output: PathBuf,
 
-    /// Exit unsuccessfully after publishing valid evidence that fails either gate.
+    /// Exit unsuccessfully after publishing valid evidence that fails any active gate.
     #[arg(long)]
     require_pass: bool,
 
@@ -83,6 +84,27 @@ where
         &args.seeds,
         &device,
     );
+    let micro_combat = metadata
+        .config
+        .combat_curriculum
+        .micro_combat
+        .enabled
+        .then(|| {
+            evaluate_micro_combat(
+                &snapshot.model,
+                &metadata.config.env,
+                &metadata.config.reward,
+                metadata
+                    .config
+                    .combat_curriculum
+                    .micro_combat
+                    .suite
+                    .as_ref()
+                    .expect("validated micro-combat suite exists"),
+                &args.seeds,
+                &device,
+            )
+        });
     let artifact = CheckpointEvaluationArtifact::new(
         metadata_sha256,
         snapshot.model_sha256,
@@ -92,6 +114,7 @@ where
         metadata.config,
         feeding,
         contact,
+        micro_combat,
     )
     .unwrap_or_else(|error| panic!("invalid checkpoint evaluation: {error}"));
     publish_checkpoint_evaluation(&args.output, &artifact)
@@ -109,6 +132,14 @@ where
             .combat_evaluation_horizons
             .skirmish_sim_time_limit_quanta,
     );
+    if let Some(micro) = &artifact.micro_combat {
+        let gate = micro.gate_summary();
+        println!(
+            "  micro: survival {:.1}%, elimination {:.1}%",
+            gate.survival_success_rate * 100.0,
+            gate.elimination_success_rate * 100.0,
+        );
+    }
     for stage in &artifact.feeding.stages {
         println!(
             "  {}: success {:.1}%, survival {:.1}%, intake {:.3}/initial cell",

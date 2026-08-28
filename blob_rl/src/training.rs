@@ -32,10 +32,14 @@ use crate::competency_frontier::{
 };
 use crate::config::{FeedingCurriculumStage, OpponentProfile, SelfPlayConfig, TrainingConfig};
 use crate::contact_evaluation::{evaluate_contact, ContactEvaluationReport};
-use crate::env::{BlobEnv, EpisodeOutcome, PolicyObservation};
+use crate::env::{BlobEnv, EpisodeOutcome, OpponentStartingState, PolicyObservation};
 use crate::evaluation::{evaluate_policy_suite, EvaluationMetrics, EvaluationOpponent};
 use crate::feeding_curriculum::{evaluate_feeding_promotion, FeedingPromotionReport};
 use crate::feeding_evaluation_artifact::verify_feeding_initial_policy;
+use crate::micro_combat::{
+    evaluate_micro_combat, MicroCombatEvaluationReport, MicroCombatRotationState,
+    MicroCombatTrainingConfig,
+};
 use crate::model::{
     decode_policy_memory, encode_policy_memory, PolicyValueNet, PolicyValueNetConfig,
 };
@@ -57,6 +61,25 @@ struct PendingTransition {
 struct RolloutCurriculumAssignment {
     stage: FeedingCurriculumStage,
     simulation_time_quanta: u64,
+    micro_combat_scenario: Option<usize>,
+}
+
+fn curriculum_label(
+    config: &TrainingConfig,
+    stage: FeedingCurriculumStage,
+    micro_combat_scenario: Option<usize>,
+) -> String {
+    micro_combat_scenario.map_or_else(
+        || stage.to_string(),
+        |index| {
+            let scenario = config
+                .combat_curriculum
+                .micro_combat
+                .scenario(index)
+                .expect("assigned micro-combat scenario exists");
+            format!("{stage}:{}", scenario.name)
+        },
+    )
 }
 
 struct SpecialistTeachers<B: Backend> {
@@ -367,14 +390,49 @@ fn new_rollout_env<B: Backend>(
 where
     f32: From<B::FloatElem>,
 {
-    let stage_env = config.rollout_environment(curriculum.stage, curriculum.simulation_time_quanta);
+    let scenario = curriculum
+        .micro_combat_scenario
+        .map(|index| {
+            config
+                .combat_curriculum
+                .micro_combat
+                .scenario(index)
+                .ok_or_else(|| "rollout micro-combat scenario index is invalid".to_string())
+        })
+        .transpose()?;
+    let stage_env = scenario.map_or_else(
+        || config.rollout_environment(curriculum.stage, curriculum.simulation_time_quanta),
+        |scenario| {
+            config.combat_curriculum.micro_combat_rollout_environment(
+                &config.env,
+                scenario,
+                curriculum.simulation_time_quanta,
+            )
+        },
+    );
+    let opponent_starting_state = scenario.map(|scenario| OpponentStartingState {
+        cells_per_team: scenario.opponent_cells,
+        initial_energy: scenario.opponent_initial_energy,
+    });
     let mut env = match assignment {
         RolloutOpponentAssignment::Baseline { profile } => {
             let mut env_config = stage_env;
             env_config.opponent = *profile;
-            BlobEnv::new(env_config, config.reward.clone(), seed)
+            if let Some(starting_state) = opponent_starting_state {
+                BlobEnv::new_with_opponent_starting_state(
+                    env_config,
+                    config.reward.clone(),
+                    seed,
+                    starting_state,
+                )
+            } else {
+                BlobEnv::new(env_config, config.reward.clone(), seed)
+            }
         }
         RolloutOpponentAssignment::Snapshot { model_sha256 } => {
+            if scenario.is_some() {
+                return Err("micro-combat rollout cannot use a snapshot opponent".into());
+            }
             let snapshot = pool
                 .iter()
                 .chain(retired)
@@ -405,14 +463,48 @@ fn restore_rollout_env<B: Backend>(
 where
     f32: From<B::FloatElem>,
 {
-    let stage_env = config.rollout_environment(curriculum.stage, curriculum.simulation_time_quanta);
+    let scenario = curriculum
+        .micro_combat_scenario
+        .map(|index| {
+            config
+                .combat_curriculum
+                .micro_combat
+                .scenario(index)
+                .ok_or_else(|| "restored micro-combat scenario index is invalid".to_string())
+        })
+        .transpose()?;
+    let stage_env = scenario.map_or_else(
+        || config.rollout_environment(curriculum.stage, curriculum.simulation_time_quanta),
+        |scenario| {
+            config.combat_curriculum.micro_combat_rollout_environment(
+                &config.env,
+                scenario,
+                curriculum.simulation_time_quanta,
+            )
+        },
+    );
     let mut env = match assignment {
         RolloutOpponentAssignment::Baseline { profile } => {
             let mut env_config = stage_env;
             env_config.opponent = *profile;
-            BlobEnv::from_checkpoint(env_config, config.reward.clone(), checkpoint)
+            if let Some(scenario) = scenario {
+                BlobEnv::from_checkpoint_with_opponent_starting_state(
+                    env_config,
+                    config.reward.clone(),
+                    OpponentStartingState {
+                        cells_per_team: scenario.opponent_cells,
+                        initial_energy: scenario.opponent_initial_energy,
+                    },
+                    checkpoint,
+                )
+            } else {
+                BlobEnv::from_checkpoint(env_config, config.reward.clone(), checkpoint)
+            }
         }
         RolloutOpponentAssignment::Snapshot { model_sha256 } => {
+            if scenario.is_some() {
+                return Err("restored micro-combat rollout has a snapshot opponent".into());
+            }
             let snapshot = pool
                 .iter()
                 .chain(retired)
@@ -541,11 +633,57 @@ fn contact_is_equal(
     }
 }
 
+fn micro_combat_gate_passed(
+    config: &MicroCombatTrainingConfig,
+    report: Option<&MicroCombatEvaluationReport>,
+) -> bool {
+    if config.enabled {
+        report.is_some_and(|report| report.meets_promotion_thresholds(config))
+    } else {
+        report.is_none()
+    }
+}
+
+fn micro_combat_is_better(
+    candidate: Option<&MicroCombatEvaluationReport>,
+    incumbent: Option<&MicroCombatEvaluationReport>,
+) -> bool {
+    match (candidate, incumbent) {
+        (Some(candidate), Some(incumbent)) => {
+            let candidate = candidate.gate_summary();
+            let incumbent = incumbent.gate_summary();
+            candidate.elimination_success_rate > incumbent.elimination_success_rate
+                || (candidate.elimination_success_rate == incumbent.elimination_success_rate
+                    && candidate.survival_success_rate > incumbent.survival_success_rate)
+        }
+        (Some(_), None) => true,
+        (None, Some(_) | None) => false,
+    }
+}
+
+fn micro_combat_is_equal(
+    candidate: Option<&MicroCombatEvaluationReport>,
+    incumbent: Option<&MicroCombatEvaluationReport>,
+) -> bool {
+    match (candidate, incumbent) {
+        (Some(candidate), Some(incumbent)) => {
+            let candidate = candidate.gate_summary();
+            let incumbent = incumbent.gate_summary();
+            candidate.elimination_success_rate == incumbent.elimination_success_rate
+                && candidate.survival_success_rate == incumbent.survival_success_rate
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 fn evaluation_is_better(
     candidate: &EvaluationMetrics,
     candidate_contact: Option<&ContactEvaluationReport>,
+    candidate_micro: Option<&MicroCombatEvaluationReport>,
     incumbent: &EvaluationMetrics,
     incumbent_contact: Option<&ContactEvaluationReport>,
+    incumbent_micro: Option<&MicroCombatEvaluationReport>,
 ) -> bool {
     candidate.worst_case_win_rate > incumbent.worst_case_win_rate
         || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
@@ -556,10 +694,16 @@ fn evaluation_is_better(
         || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
             && candidate.win_rate == incumbent.win_rate
             && contact_is_equal(candidate_contact, incumbent_contact)
+            && micro_combat_is_better(candidate_micro, incumbent_micro))
+        || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
+            && candidate.win_rate == incumbent.win_rate
+            && contact_is_equal(candidate_contact, incumbent_contact)
+            && micro_combat_is_equal(candidate_micro, incumbent_micro)
             && candidate.average_reward > incumbent.average_reward)
         || (candidate.worst_case_win_rate == incumbent.worst_case_win_rate
             && candidate.win_rate == incumbent.win_rate
             && contact_is_equal(candidate_contact, incumbent_contact)
+            && micro_combat_is_equal(candidate_micro, incumbent_micro)
             && candidate.average_reward == incumbent.average_reward
             && candidate.average_episode_len < incumbent.average_episode_len)
 }
@@ -744,6 +888,40 @@ fn write_contact_evaluation_rows(
         .map_err(|error| format!("failed to flush contact evaluation: {error}"))
 }
 
+fn write_micro_combat_evaluation_rows(
+    file: &mut File,
+    update: usize,
+    actions: u64,
+    report: &MicroCombatEvaluationReport,
+) -> Result<(), String> {
+    for metrics in &report.scenarios {
+        writeln!(
+            file,
+            "{update},{actions},{},{:?},{},{},{},{},{},{},{},{:.6},{:.6},{},{},{},{},{},{}",
+            metrics.scenario,
+            metrics.objective,
+            metrics.episodes,
+            metrics.wins,
+            metrics.losses,
+            metrics.timeouts,
+            metrics.safety_aborts,
+            metrics.alive_at_end_episodes,
+            metrics.objective_successes,
+            metrics.objective_success_rate,
+            metrics.scientific_survival_rate,
+            metrics.survival_time_quanta_total,
+            metrics.training_attacks_committed,
+            metrics.training_damage_dealt,
+            metrics.training_damage_received,
+            metrics.training_kills,
+            report.seeds.len(),
+        )
+        .map_err(|error| format!("failed to write micro-combat evaluation: {error}"))?;
+    }
+    file.flush()
+        .map_err(|error| format!("failed to flush micro-combat evaluation: {error}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn write_competency_timeline_row(
     file: &mut File,
@@ -758,7 +936,7 @@ fn write_competency_timeline_row(
 ) -> Result<(), String> {
     writeln!(
         file,
-        "{update},{actions},{minimum_sim_time_quanta_per_env},{maximum_sim_time_quanta_per_env},{total_sim_time_quanta},{},{trigger},{},{},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{},{:.6},{:.6},{:.6}",
+        "{update},{actions},{minimum_sim_time_quanta_per_env},{maximum_sim_time_quanta_per_env},{total_sim_time_quanta},{},{trigger},{},{},{:.6},{:.6},{:.6},{:.6},{},{:.6},{:.6},{},{},{},{},{:.6},{:.6},{:.6}",
         scheduled_world_time_frontier.map_or_else(String::new, |value| value.to_string()),
         metrics.configured_feeding_passed,
         metrics.retention_feeding_passed,
@@ -767,6 +945,8 @@ fn write_competency_timeline_row(
         metrics.on_food_intake_per_initial_cell,
         metrics.adjacent_food_intake_per_initial_cell,
         metrics.combat_passed,
+        metrics.micro_survival_success_rate,
+        metrics.micro_elimination_success_rate,
         metrics.contact_damage,
         metrics.contact_kills,
         metrics.skirmish_damage,
@@ -937,6 +1117,7 @@ pub fn train<B: AutodiffBackend>(
         mut update_count,
         mut best_evaluation,
         mut best_contact_evaluation,
+        mut best_micro_combat_evaluation,
         mut competency_frontier,
         mut specialist_teacher_selection,
         mut rollout_pool,
@@ -944,6 +1125,8 @@ pub fn train<B: AutodiffBackend>(
         mut retired_rollout_snapshots,
         mut environment_opponents,
         mut environment_curriculum_stages,
+        mut micro_combat_rotation,
+        mut environment_micro_combat_scenarios,
         mut training_telemetry,
     ) = if let Some(checkpoint) = resume_checkpoint {
         let (model, optimizer, state, metadata) =
@@ -1001,6 +1184,11 @@ pub fn train<B: AutodiffBackend>(
             config.num_envs,
             "checkpoint curriculum-stage assignment count mismatch"
         );
+        assert_eq!(
+            state.environment_micro_combat_scenarios.len(),
+            config.num_envs,
+            "checkpoint micro-combat scenario assignment count mismatch"
+        );
         let mut rollout_league = state.rollout_pool.clone();
         let mut rollout_pool = rollout_league
             .iter()
@@ -1009,6 +1197,7 @@ pub fn train<B: AutodiffBackend>(
             .expect("failed to restore rollout-opponent pool");
         let environment_opponents = state.environment_opponents.clone();
         let environment_curriculum_stages = state.environment_curriculum_stages.clone();
+        let environment_micro_combat_scenarios = state.environment_micro_combat_scenarios.clone();
         let mut retired_rollout_snapshots = state
             .active_retired_snapshots
             .iter()
@@ -1028,6 +1217,7 @@ pub fn train<B: AutodiffBackend>(
                     RolloutCurriculumAssignment {
                         stage: environment_curriculum_stages[index],
                         simulation_time_quanta: state.cumulative_sim_time_quanta[index],
+                        micro_combat_scenario: environment_micro_combat_scenarios[index],
                     },
                     environment,
                     &device,
@@ -1073,6 +1263,7 @@ pub fn train<B: AutodiffBackend>(
             state.update_count,
             state.best_evaluation,
             state.best_contact_evaluation,
+            state.best_micro_combat_evaluation,
             state.competency_frontier,
             state.specialist_teachers,
             rollout_pool,
@@ -1080,6 +1271,8 @@ pub fn train<B: AutodiffBackend>(
             retired_rollout_snapshots,
             environment_opponents,
             environment_curriculum_stages,
+            state.micro_combat_rotation,
+            environment_micro_combat_scenarios,
             state.telemetry,
         )
     } else {
@@ -1111,6 +1304,7 @@ pub fn train<B: AutodiffBackend>(
             0,
             None,
             None,
+            None,
             CompetencyFrontier::default(),
             SpecialistTeacherSelection::default(),
             Vec::new(),
@@ -1118,6 +1312,8 @@ pub fn train<B: AutodiffBackend>(
             Vec::new(),
             vec![initial_assignment; config.num_envs],
             vec![initial_stage; config.num_envs],
+            MicroCombatRotationState::default(),
+            vec![None; config.num_envs],
             None,
         )
     };
@@ -1151,9 +1347,11 @@ pub fn train<B: AutodiffBackend>(
                 .map(|(index, env)| {
                     (
                         config.seed.wrapping_add(index as u64),
-                        config
-                            .rollout_stage(cumulative_sim_time_quanta[index])
-                            .to_string(),
+                        curriculum_label(
+                            &config,
+                            environment_curriculum_stages[index],
+                            environment_micro_combat_scenarios[index],
+                        ),
                         env.telemetry_sample()
                             .expect("enabled telemetry has an initial sample"),
                     )
@@ -1212,11 +1410,18 @@ pub fn train<B: AutodiffBackend>(
         "update,actions,stage,cells_per_team,initial_energy,opponent,episodes,wins,losses,timeouts,safety_aborts,attacking_episodes,damaging_episodes,attacks_committed,attacks_succeeded,damage_dealt,kills,attacks_frustrated,attacks_interrupted,attacking_episode_rate,damaging_episode_rate,attack_success_rate,seed_count",
     )
     .expect("failed to initialize contact evaluation metrics");
+    let micro_combat_evaluation_path = artifact_root.join("micro-combat-evaluation.csv");
+    let mut micro_combat_evaluation_file = open_metrics_file(
+        &micro_combat_evaluation_path,
+        resume_checkpoint.is_some(),
+        "update,actions,scenario,objective,episodes,wins,losses,timeouts,safety_aborts,alive_at_end,objective_successes,objective_success_rate,scientific_survival_rate,survival_time_quanta,attacks_committed,damage_dealt,damage_received,kills,seed_count",
+    )
+    .expect("failed to initialize micro-combat evaluation metrics");
     let competency_timeline_path = artifact_root.join("competency-timeline.csv");
     let mut competency_timeline_file = open_metrics_file(
         &competency_timeline_path,
         resume_checkpoint.is_some(),
-        "update,actions,min_sim_time_quanta_per_env,max_sim_time_quanta_per_env,total_sim_time_quanta,scheduled_world_time_frontier,trigger,configured_feeding_passed,retention_feeding_passed,on_food_survival_rate,adjacent_food_survival_rate,on_food_intake_per_initial_cell,adjacent_food_intake_per_initial_cell,combat_passed,contact_damage,contact_kills,skirmish_damage,skirmish_kills,fixed_worst_case_win_rate,fixed_win_rate,fixed_average_reward",
+        "update,actions,min_sim_time_quanta_per_env,max_sim_time_quanta_per_env,total_sim_time_quanta,scheduled_world_time_frontier,trigger,configured_feeding_passed,retention_feeding_passed,on_food_survival_rate,adjacent_food_survival_rate,on_food_intake_per_initial_cell,adjacent_food_intake_per_initial_cell,combat_passed,micro_survival_success_rate,micro_elimination_success_rate,contact_damage,contact_kills,skirmish_damage,skirmish_kills,fixed_worst_case_win_rate,fixed_win_rate,fixed_average_reward",
     )
     .expect("failed to initialize competency timeline");
     let evaluation_seeds = (0..config.eval_episodes)
@@ -1705,9 +1910,22 @@ pub fn train<B: AutodiffBackend>(
                         ^ env_episode_ids[env_idx].wrapping_mul(0xbf58_476d_1ce4_e5b9);
                     let curriculum_time = cumulative_sim_time_quanta[env_idx];
                     let curriculum_stage = config.rollout_stage(curriculum_time);
+                    let micro_combat_scenario = micro_combat_rotation
+                        .assign(&config.combat_curriculum.micro_combat, curriculum_stage);
+                    let stage_baseline = micro_combat_scenario.map_or_else(
+                        || config.rollout_baseline_opponent(curriculum_stage, curriculum_time),
+                        |index| {
+                            config
+                                .combat_curriculum
+                                .micro_combat
+                                .scenario(index)
+                                .expect("selected micro-combat scenario exists")
+                                .opponent
+                        },
+                    );
                     let assignment = choose_curriculum_rollout_opponent(
                         curriculum_stage,
-                        config.rollout_baseline_opponent(curriculum_stage, curriculum_time),
+                        stage_baseline,
                         &mut rollout_league,
                         config.env.opponent,
                         &config.self_play,
@@ -1721,6 +1939,7 @@ pub fn train<B: AutodiffBackend>(
                         RolloutCurriculumAssignment {
                             stage: curriculum_stage,
                             simulation_time_quanta: curriculum_time,
+                            micro_combat_scenario,
                         },
                         reset_seed,
                         &device,
@@ -1728,13 +1947,14 @@ pub fn train<B: AutodiffBackend>(
                     .expect("failed to rotate rollout opponent");
                     environment_opponents[env_idx] = assignment;
                     environment_curriculum_stages[env_idx] = curriculum_stage;
+                    environment_micro_combat_scenarios[env_idx] = micro_combat_scenario;
                     prune_retired_snapshots(&mut retired_rollout_snapshots, &environment_opponents);
                     if let Some(state) = training_telemetry.as_mut() {
                         state.start_episode(
                             env_idx,
                             env_episode_ids[env_idx],
                             reset_seed,
-                            curriculum_stage.to_string(),
+                            curriculum_label(&config, curriculum_stage, micro_combat_scenario),
                             env.telemetry_sample()
                                 .expect("enabled telemetry has a reset sample"),
                         );
@@ -1897,29 +2117,34 @@ pub fn train<B: AutodiffBackend>(
             let regular_evaluation_due = update_interval_evaluation_due
                 || world_time_competency_evaluation
                 || (terminal_boundary && config.fixed_evaluation_enabled());
-            let (evaluation, feeding_evaluation, retention_feeding_evaluation, contact_evaluation) =
-                if regular_evaluation_due || promotion_due {
-                    let valid_model = model.valid();
-                    let evaluation = evaluate_policy_suite(
-                        &valid_model,
-                        &config.env,
-                        &config.reward,
-                        &config.evaluation_opponents,
-                        &evaluation_snapshots,
-                        &evaluation_seeds,
-                        &device,
-                    );
-                    write_fixed_evaluation_rows(
-                        &mut evaluation_file,
-                        update_count,
-                        total_timesteps,
-                        &evaluation,
-                        config.evaluation_seed,
-                        evaluation_seeds.len(),
-                    )
-                    .expect("failed to publish fixed evaluation metrics");
-                    last_fixed_evaluation_actions = Some(total_timesteps);
-                    println!(
+            let (
+                evaluation,
+                feeding_evaluation,
+                retention_feeding_evaluation,
+                contact_evaluation,
+                micro_combat_evaluation,
+            ) = if regular_evaluation_due || promotion_due {
+                let valid_model = model.valid();
+                let evaluation = evaluate_policy_suite(
+                    &valid_model,
+                    &config.env,
+                    &config.reward,
+                    &config.evaluation_opponents,
+                    &evaluation_snapshots,
+                    &evaluation_seeds,
+                    &device,
+                );
+                write_fixed_evaluation_rows(
+                    &mut evaluation_file,
+                    update_count,
+                    total_timesteps,
+                    &evaluation,
+                    config.evaluation_seed,
+                    evaluation_seeds.len(),
+                )
+                .expect("failed to publish fixed evaluation metrics");
+                last_fixed_evaluation_actions = Some(total_timesteps);
+                println!(
                     "  eval {:>5} │ suite win {:>6.1}% │ worst {:>6.1}% │ reward {:>9.3} │ W/L/T {}/{}/{}",
                     update_count,
                     evaluation.win_rate * 100.0,
@@ -1929,67 +2154,67 @@ pub fn train<B: AutodiffBackend>(
                     evaluation.losses,
                     evaluation.timeouts,
                 );
-                    for opponent in &evaluation.opponents {
-                        println!(
-                            "             │ {:>10} {:>6.1}% │ reward {:>9.3} │ len {:>7.1}",
-                            opponent.opponent,
-                            opponent.win_rate * 100.0,
-                            opponent.average_reward,
-                            opponent.average_episode_len,
-                        );
-                    }
-                    let feeding_evaluation = config.feeding_curriculum.enabled.then(|| {
+                for opponent in &evaluation.opponents {
+                    println!(
+                        "             │ {:>10} {:>6.1}% │ reward {:>9.3} │ len {:>7.1}",
+                        opponent.opponent,
+                        opponent.win_rate * 100.0,
+                        opponent.average_reward,
+                        opponent.average_episode_len,
+                    );
+                }
+                let feeding_evaluation = config.feeding_curriculum.enabled.then(|| {
+                    let report = evaluate_feeding_promotion(
+                        &valid_model,
+                        &config.env,
+                        &config.reward,
+                        &config.feeding_curriculum,
+                        &evaluation_seeds,
+                        &device,
+                    );
+                    write_feeding_evaluation_rows(
+                        &mut feeding_evaluation_file,
+                        update_count,
+                        total_timesteps,
+                        "configured",
+                        &report,
+                    )
+                    .expect("failed to publish feeding evaluation metrics");
+                    println!(
+                        "  feed gate   │ {} │ on-food {:>6.1}% │ adjacent {:>6.1}%",
+                        if report.passed { "passed" } else { "failed" },
+                        report.stages[0].episode_success_rate * 100.0,
+                        report.stages[1].episode_success_rate * 100.0,
+                    );
+                    report
+                });
+                let retention_feeding_evaluation =
+                    retention_evaluation_seeds.as_ref().map(|seeds| {
                         let report = evaluate_feeding_promotion(
                             &valid_model,
                             &config.env,
                             &config.reward,
                             &config.feeding_curriculum,
-                            &evaluation_seeds,
+                            seeds,
                             &device,
                         );
                         write_feeding_evaluation_rows(
                             &mut feeding_evaluation_file,
                             update_count,
                             total_timesteps,
-                            "configured",
+                            "initial_qualification",
                             &report,
                         )
-                        .expect("failed to publish feeding evaluation metrics");
+                        .expect("failed to publish retention feeding evaluation metrics");
                         println!(
-                            "  feed gate   │ {} │ on-food {:>6.1}% │ adjacent {:>6.1}%",
+                            "  retain gate │ {} │ on-food survival {:>6.1}% │ adjacent {:>6.1}%",
                             if report.passed { "passed" } else { "failed" },
-                            report.stages[0].episode_success_rate * 100.0,
-                            report.stages[1].episode_success_rate * 100.0,
+                            report.stages[0].survival_rate * 100.0,
+                            report.stages[1].survival_rate * 100.0,
                         );
                         report
                     });
-                    let retention_feeding_evaluation =
-                        retention_evaluation_seeds.as_ref().map(|seeds| {
-                            let report = evaluate_feeding_promotion(
-                                &valid_model,
-                                &config.env,
-                                &config.reward,
-                                &config.feeding_curriculum,
-                                seeds,
-                                &device,
-                            );
-                            write_feeding_evaluation_rows(
-                                &mut feeding_evaluation_file,
-                                update_count,
-                                total_timesteps,
-                                "initial_qualification",
-                                &report,
-                            )
-                            .expect("failed to publish retention feeding evaluation metrics");
-                            println!(
-                        "  retain gate │ {} │ on-food survival {:>6.1}% │ adjacent {:>6.1}%",
-                        if report.passed { "passed" } else { "failed" },
-                        report.stages[0].survival_rate * 100.0,
-                        report.stages[1].survival_rate * 100.0,
-                    );
-                            report
-                        });
-                    let contact_evaluation = config.combat_curriculum.enabled.then(|| {
+                let contact_evaluation = config.combat_curriculum.enabled.then(|| {
                         let report = evaluate_contact(
                             &valid_model,
                             &config.env,
@@ -2019,15 +2244,59 @@ pub fn train<B: AutodiffBackend>(
                         );
                         report
                     });
-                    (
-                        Some(evaluation),
-                        feeding_evaluation,
-                        retention_feeding_evaluation,
-                        contact_evaluation,
-                    )
-                } else {
-                    (None, None, None, None)
-                };
+                let micro_combat_evaluation = config
+                        .combat_curriculum
+                        .micro_combat
+                        .enabled
+                        .then(|| {
+                            let report = evaluate_micro_combat(
+                                &valid_model,
+                                &config.env,
+                                &config.reward,
+                                config
+                                    .combat_curriculum
+                                    .micro_combat
+                                    .suite
+                                    .as_ref()
+                                    .expect("validated micro-combat suite exists"),
+                                &evaluation_seeds,
+                                &device,
+                            );
+                            write_micro_combat_evaluation_rows(
+                                &mut micro_combat_evaluation_file,
+                                update_count,
+                                total_timesteps,
+                                &report,
+                            )
+                            .expect("failed to publish micro-combat evaluation metrics");
+                            let gate = report.gate_summary();
+                            println!(
+                                "  micro gate  │ survival {:>6.1}% / {:>6.1}% │ elimination {:>6.1}% / {:>6.1}%",
+                                gate.survival_success_rate * 100.0,
+                                config
+                                    .combat_curriculum
+                                    .micro_combat
+                                    .min_survival_objective_success_rate
+                                    * 100.0,
+                                gate.elimination_success_rate * 100.0,
+                                config
+                                    .combat_curriculum
+                                    .micro_combat
+                                    .min_elimination_objective_success_rate
+                                    * 100.0,
+                            );
+                            report
+                        });
+                (
+                    Some(evaluation),
+                    feeding_evaluation,
+                    retention_feeding_evaluation,
+                    contact_evaluation,
+                    micro_combat_evaluation,
+                )
+            } else {
+                (None, None, None, None, None)
+            };
 
             let competency_metrics = evaluation.as_ref().and_then(|evaluation| {
                 CompetencyMetrics::from_reports(
@@ -2035,6 +2304,7 @@ pub fn train<B: AutodiffBackend>(
                     feeding_evaluation.as_ref()?,
                     retention_feeding_evaluation.as_ref(),
                     contact_evaluation.as_ref()?,
+                    micro_combat_evaluation.as_ref(),
                     &config.combat_curriculum,
                 )
             });
@@ -2153,6 +2423,10 @@ pub fn train<B: AutodiffBackend>(
                 && contact_evaluation.as_ref().is_none_or(|report| {
                     report.meets_promotion_thresholds(&config.combat_curriculum)
                 })
+                && micro_combat_gate_passed(
+                    &config.combat_curriculum.micro_combat,
+                    micro_combat_evaluation.as_ref(),
+                )
                 && evaluation.as_ref().is_some_and(|candidate| {
                     rollout_pool.is_empty()
                         || (best_evaluation.as_ref().is_none_or(|incumbent| {
@@ -2210,12 +2484,18 @@ pub fn train<B: AutodiffBackend>(
                     && contact_evaluation.as_ref().is_none_or(|report| {
                         report.meets_promotion_thresholds(&config.combat_curriculum)
                     })
+                    && micro_combat_gate_passed(
+                        &config.combat_curriculum.micro_combat,
+                        micro_combat_evaluation.as_ref(),
+                    )
                     && best_evaluation.as_ref().is_none_or(|incumbent| {
                         evaluation_is_better(
                             candidate,
                             contact_evaluation.as_ref(),
+                            micro_combat_evaluation.as_ref(),
                             incumbent,
                             best_contact_evaluation.as_ref(),
+                            best_micro_combat_evaluation.as_ref(),
                         )
                     })
             });
@@ -2224,6 +2504,7 @@ pub fn train<B: AutodiffBackend>(
             if is_new_best {
                 best_evaluation = evaluation.clone();
                 best_contact_evaluation = contact_evaluation.clone();
+                best_micro_combat_evaluation = micro_combat_evaluation.clone();
             }
 
             // A published state always describes the clean boundary between
@@ -2255,6 +2536,7 @@ pub fn train<B: AutodiffBackend>(
                         .expect("failed to checkpoint RL environments"),
                     best_evaluation: best_evaluation.clone(),
                     best_contact_evaluation: best_contact_evaluation.clone(),
+                    best_micro_combat_evaluation: best_micro_combat_evaluation.clone(),
                     competency_frontier: next_competency_frontier.clone(),
                     specialist_teachers: next_specialist_teacher_selection.clone(),
                     rollout_pool: rollout_league.clone(),
@@ -2264,6 +2546,8 @@ pub fn train<B: AutodiffBackend>(
                         .collect(),
                     environment_opponents: environment_opponents.clone(),
                     environment_curriculum_stages: environment_curriculum_stages.clone(),
+                    micro_combat_rotation: micro_combat_rotation.clone(),
+                    environment_micro_combat_scenarios: environment_micro_combat_scenarios.clone(),
                     telemetry: training_telemetry.clone(),
                 };
                 let checkpoint = publish_checkpoint(
@@ -2278,6 +2562,7 @@ pub fn train<B: AutodiffBackend>(
                     feeding_evaluation.as_ref(),
                     retention_feeding_evaluation.as_ref(),
                     contact_evaluation.as_ref(),
+                    micro_combat_evaluation.as_ref(),
                     accepted_promotion.as_ref(),
                     &resume_state,
                 )
@@ -2356,6 +2641,7 @@ pub fn train<B: AutodiffBackend>(
                         feeding_evaluation.as_ref(),
                         retention_feeding_evaluation.as_ref(),
                         contact_evaluation.as_ref(),
+                        micro_combat_evaluation.as_ref(),
                         &rollout_league,
                     )
                     .expect("failed to publish immutable rollout-pool manifest");
@@ -2470,6 +2756,34 @@ pub fn train<B: AutodiffBackend>(
                 report.kills_for_stage(FeedingCurriculumStage::Skirmish),
                 config.combat_curriculum.min_skirmish_kills_for_promotion,
                 report.damaging_episode_rate * 100.0,
+            );
+        }
+        if config.combat_curriculum.micro_combat.enabled {
+            let report = evaluate_micro_combat(
+                &valid_model,
+                &config.env,
+                &config.reward,
+                config
+                    .combat_curriculum
+                    .micro_combat
+                    .suite
+                    .as_ref()
+                    .expect("validated micro-combat suite exists"),
+                &evaluation_seeds,
+                &device,
+            );
+            write_micro_combat_evaluation_rows(
+                &mut micro_combat_evaluation_file,
+                update_count,
+                total_timesteps,
+                &report,
+            )
+            .expect("failed to publish terminal micro-combat evaluation metrics");
+            let gate = report.gate_summary();
+            println!(
+                "  final micro │ survival {:>6.1}% │ elimination {:>6.1}%",
+                gate.survival_success_rate * 100.0,
+                gate.elimination_success_rate * 100.0,
             );
         }
     }
@@ -2920,13 +3234,19 @@ mod tests {
         };
         let mut candidate = baseline.clone();
         candidate.average_reward = -1.0;
-        assert!(evaluation_is_better(&candidate, None, &baseline, None));
+        assert!(evaluation_is_better(
+            &candidate, None, None, &baseline, None, None
+        ));
         candidate.average_reward = -2.0;
         candidate.average_episode_len = 9.0;
-        assert!(evaluation_is_better(&candidate, None, &baseline, None));
+        assert!(evaluation_is_better(
+            &candidate, None, None, &baseline, None, None
+        ));
         candidate.win_rate = 1.0;
         candidate.average_reward = -100.0;
-        assert!(evaluation_is_better(&candidate, None, &baseline, None));
+        assert!(evaluation_is_better(
+            &candidate, None, None, &baseline, None, None
+        ));
 
         let mut robust = baseline.clone();
         robust.worst_case_win_rate = 0.5;
@@ -2935,7 +3255,9 @@ mod tests {
         brittle.worst_case_win_rate = 0.25;
         brittle.win_rate = 1.0;
         brittle.average_reward = 1_000.0;
-        assert!(evaluation_is_better(&robust, None, &brittle, None));
+        assert!(evaluation_is_better(
+            &robust, None, None, &brittle, None, None
+        ));
 
         let contact = |damage, kills| ContactEvaluationReport {
             schema_version: crate::contact_evaluation::CONTACT_EVALUATION_SCHEMA_VERSION,
@@ -2992,8 +3314,37 @@ mod tests {
         assert!(evaluation_is_better(
             &lower_reward,
             Some(&combat_candidate),
+            None,
             &baseline,
             Some(&combat_incumbent),
+            None,
+        ));
+
+        let micro = |elimination_successes| MicroCombatEvaluationReport {
+            schema_version: crate::micro_combat::MICRO_COMBAT_EVALUATION_SCHEMA_VERSION,
+            ruleset_hash: "rules".into(),
+            suite_sha256: "suite".into(),
+            seeds: vec![1],
+            scenarios: vec![crate::micro_combat::MicroCombatScenarioMetrics {
+                scenario: "elimination".into(),
+                objective: crate::micro_combat::MicroCombatObjective::Elimination,
+                episodes: 1,
+                objective_successes: elimination_successes,
+                objective_success_rate: elimination_successes as f64,
+                ..crate::micro_combat::MicroCombatScenarioMetrics::default()
+            }],
+        };
+        let worse_micro = micro(0);
+        let better_micro = micro(1);
+        let mut shorter = baseline.clone();
+        shorter.average_episode_len -= 1.0;
+        assert!(!evaluation_is_better(
+            &shorter,
+            None,
+            Some(&worse_micro),
+            &baseline,
+            None,
+            Some(&better_micro),
         ));
     }
 
@@ -3009,6 +3360,196 @@ mod tests {
         config.total_simulation_quanta_per_env = None;
         assert!(!training_budget_complete(&config, 99, &[u64::MAX]));
         assert!(training_budget_complete(&config, 100, &[0]));
+    }
+
+    #[test]
+    fn enabled_micro_combat_gate_fails_closed_without_evidence() {
+        let disabled = MicroCombatTrainingConfig::default();
+        assert!(micro_combat_gate_passed(&disabled, None));
+        let enabled = MicroCombatTrainingConfig {
+            enabled: true,
+            suite: Some(
+                crate::micro_combat::MicroCombatSuiteConfig::from_toml_str(include_str!(
+                    "../config/micro_combat_scenarios.toml"
+                ))
+                .unwrap(),
+            ),
+            ..MicroCombatTrainingConfig::default()
+        };
+        assert!(!micro_combat_gate_passed(&enabled, None));
+    }
+
+    #[test]
+    fn asymmetric_micro_rollout_restores_its_inflight_scenario_and_future_resets() {
+        let suite = crate::micro_combat::MicroCombatSuiteConfig::from_toml_str(include_str!(
+            "../config/micro_combat_scenarios.toml"
+        ))
+        .unwrap();
+        let mut config = TrainingConfig::default();
+        config.combat_curriculum.micro_combat = crate::micro_combat::MicroCombatTrainingConfig {
+            enabled: true,
+            suite: Some(suite),
+            min_survival_objective_success_rate: 0.75,
+            min_elimination_objective_success_rate: 0.25,
+        };
+        let scenario_index = config
+            .combat_curriculum
+            .micro_combat
+            .suite
+            .as_ref()
+            .unwrap()
+            .scenarios
+            .iter()
+            .position(|scenario| scenario.opponent_cells == 3)
+            .unwrap();
+        let scenario = config
+            .combat_curriculum
+            .micro_combat
+            .scenario(scenario_index)
+            .unwrap();
+        let assignment = RolloutOpponentAssignment::Baseline {
+            profile: scenario.opponent,
+        };
+        let curriculum = RolloutCurriculumAssignment {
+            stage: FeedingCurriculumStage::Skirmish,
+            simulation_time_quanta: 100_000,
+            micro_combat_scenario: Some(scenario_index),
+        };
+        let mut environment = new_rollout_env::<NdArray<f32>>(
+            &assignment,
+            &[],
+            &[],
+            &config,
+            curriculum,
+            818,
+            &Default::default(),
+        )
+        .unwrap();
+        let initial = environment.initial_ecology_snapshot().unwrap();
+        assert_eq!(initial.starts_by_team[0].len(), 1);
+        assert_eq!(initial.starts_by_team[1].len(), 3);
+
+        let checkpoint = environment.checkpoint().unwrap();
+        let mut restored = restore_rollout_env::<NdArray<f32>>(
+            &assignment,
+            &[],
+            &[],
+            &config,
+            curriculum,
+            checkpoint,
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            restored.initial_ecology_snapshot().unwrap().starts_by_team,
+            initial.starts_by_team
+        );
+        restored.reset(819);
+        environment.reset(819);
+        assert_eq!(
+            restored.initial_ecology_snapshot().unwrap().starts_by_team,
+            environment
+                .initial_ecology_snapshot()
+                .unwrap()
+                .starts_by_team
+        );
+    }
+
+    #[test]
+    fn micro_combat_curriculum_publishes_gate_evidence_and_rotation_state() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let mut suite = crate::micro_combat::MicroCombatSuiteConfig::from_toml_str(include_str!(
+            "../config/micro_combat_scenarios.toml"
+        ))
+        .unwrap();
+        for scenario in &mut suite.scenarios {
+            scenario.sim_time_limit_quanta = 256;
+        }
+        let mut config = TrainingConfig {
+            seed: 821,
+            num_envs: 1,
+            rollout_length: 32,
+            total_timesteps: 2_000,
+            total_simulation_quanta_per_env: Some(4_096),
+            eval_interval: 0,
+            eval_episodes: 1,
+            evaluation_opponents: vec![OpponentProfile::Wait],
+            checkpoint_interval: 0,
+            checkpoint_dir: temporary.path().to_string_lossy().into_owned(),
+            ..TrainingConfig::default()
+        };
+        config.model.hidden1 = 8;
+        config.model.hidden2 = 8;
+        config.model.recurrent_size = 8;
+        config.ppo.epochs_per_update = 1;
+        config.ppo.minibatch_size = 32;
+        config.feeding_curriculum.enabled = true;
+        config.combat_curriculum.enabled = true;
+        config.combat_curriculum.cycle_sim_time_quanta_per_env = 4_096;
+        config.combat_curriculum.on_food_sim_time_quanta_per_cycle = 512;
+        config
+            .combat_curriculum
+            .adjacent_food_sim_time_quanta_per_cycle = 512;
+        config.combat_curriculum.contact_sim_time_quanta_per_cycle = 1_024;
+        config.combat_curriculum.skirmish_sim_time_quanta_per_cycle = 1_024;
+        config
+            .combat_curriculum
+            .retention_episode_sim_time_limit_quanta = 256;
+        config
+            .combat_curriculum
+            .contact_episode_sim_time_limit_quanta = 256;
+        config
+            .combat_curriculum
+            .skirmish_episode_sim_time_limit_quanta = 256;
+        config
+            .combat_curriculum
+            .contact_evaluation_sim_time_limit_quanta = 256;
+        config
+            .combat_curriculum
+            .skirmish_evaluation_sim_time_limit_quanta = 256;
+        config.combat_curriculum.contact_initial_energies = vec![100];
+        config.combat_curriculum.contact_opponents = vec![OpponentProfile::Aggressive];
+        config.combat_curriculum.micro_combat = MicroCombatTrainingConfig {
+            enabled: true,
+            suite: Some(suite),
+            min_survival_objective_success_rate: 1.0,
+            min_elimination_objective_success_rate: 1.0,
+        };
+        config.env.world_size = 7;
+        config.env.cells_per_team = 1;
+        config.env.max_episode_len = 1_024;
+        config.env.victory.sim_time_limit_quanta = 256;
+        config.env.num_scattered_energy = 2;
+        config.env.num_plants = 1;
+        config.self_play.max_opponent_pool = 0;
+        config.validate().unwrap();
+
+        train::<TestBackend>(config, Default::default(), None, None, None);
+
+        let metrics = std::fs::read_to_string(temporary.path().join("metrics.csv")).unwrap();
+        let update = metrics
+            .lines()
+            .last()
+            .unwrap()
+            .split(',')
+            .next()
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        let checkpoint = temporary.path().join(format!("checkpoint-{update:08}"));
+        let metadata = crate::artifact::verify_checkpoint_metadata(&checkpoint).unwrap();
+        let micro = metadata
+            .micro_combat_evaluation
+            .expect("terminal checkpoint must bind micro-combat evidence");
+        assert_eq!(micro.scenarios.len(), 6);
+        assert!(micro.gate_summary().survival_episodes > 0);
+        assert!(micro.gate_summary().elimination_episodes > 0);
+        let resume: TrainingResumeState =
+            rmp_serde::from_slice(&std::fs::read(checkpoint.join("resume.mpk")).unwrap()).unwrap();
+        assert!(resume.micro_combat_rotation.contact_assignments > 0);
+        assert!(resume.micro_combat_rotation.skirmish_assignments > 0);
+        assert_eq!(resume.environment_micro_combat_scenarios.len(), 1);
     }
 
     #[test]

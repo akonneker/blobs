@@ -918,6 +918,21 @@ impl BlobEnv {
         Self::new(env_config, reward_config, 0).restore_checkpoint(checkpoint)
     }
 
+    pub fn from_checkpoint_with_opponent_starting_state(
+        env_config: EnvConfig,
+        reward_config: RewardConfig,
+        opponent_starting_state: OpponentStartingState,
+        checkpoint: BlobEnvCheckpoint,
+    ) -> Result<Self, String> {
+        Self::new_with_opponent_starting_state(
+            env_config,
+            reward_config,
+            0,
+            opponent_starting_state,
+        )
+        .restore_checkpoint(checkpoint)
+    }
+
     pub fn from_checkpoint_with_snapshot<B: Backend>(
         env_config: EnvConfig,
         reward_config: RewardConfig,
