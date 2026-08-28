@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  native:
+    name: Native workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes capnproto libvulkan1 mesa-vulkan-drivers
+      - run: cargo fmt --all -- --check
+      - run: cargo test --workspace --all-features --locked
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  schemas-and-web-source:
+    name: Schema and web source gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.3.0"
+      - run: python3 scripts/check_schema_registry.py
+      - run: node --check blob_web/web/blob_web.js
+      - run: node --check blob_web/viewer/match-explorer.js
+      - run: node scripts/check_match_explorer_sample.mjs
+      - run: bash -n scripts/conformance.sh scripts/build_browser_package.sh scripts/build_language_minds.sh
+
+  wasm:
+    name: WASM boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Cap'n Proto
+        run: sudo apt-get update && sudo apt-get install --yes capnproto
+      - run: cargo clippy -p blob_engine --lib --no-deps --target wasm32-unknown-unknown --locked -- -D warnings
+      - run: cargo clippy -p blob_web --lib --no-deps --target wasm32-unknown-unknown --locked -- -D warnings
+      - run: cargo build --release --target wasm32-unknown-unknown --locked -p blob_web
+      - name: Build maintained Rust Minds and ABI canaries
+        run: >-
+          cargo build --release --target wasm32-unknown-unknown --locked
+          -p simple_mind -p aggressive_mind -p defensive_mind -p explorer_mind
+          -p colony_mind -p isolation_canary -p invalid_mind_canary
+
+  browser:
+    name: Chromium match explorer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.3.0"
+          cache: npm
+          cache-dependency-path: browser-tests/package-lock.json
+      - run: npm ci --prefix browser-tests
+      - run: npm exec --prefix browser-tests -- playwright install --with-deps chromium
+      - run: npm test --prefix browser-tests
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: browser-tests/playwright-report/
+          retention-days: 14
+
+  fuzz-smoke:
+    name: Bounded fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Cap'n Proto
+        run: sudo apt-get update && sudo apt-get install --yes capnproto
+      - name: Install pinned fuzz toolchain
+        run: |
+          rustup toolchain install nightly-2026-08-01 --profile minimal
+          cargo +nightly-2026-08-01 install cargo-fuzz --version 0.13.2 --locked
+      - name: Fuzz canonical replay decoders
+        run: cargo +nightly-2026-08-01 fuzz run replay_formats -- -max_total_time=15 -max_len=4096
+      - name: Fuzz Mind ABI decoders
+        run: cargo +nightly-2026-08-01 fuzz run mind_abi -- -max_total_time=15 -max_len=4096

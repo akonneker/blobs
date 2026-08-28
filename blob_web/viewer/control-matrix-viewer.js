@@ -71,6 +71,8 @@ const record = (episodes) => {
   return values;
 };
 const recordText = (value) => `${value.wins}-${value.losses}-${value.timeouts}`;
+const CONTROL_MATRIX_SCHEMA_VERSION = 6;
+const SUPPORTED_CONTROL_MATRIX_SCHEMA_VERSIONS = new Set([2, 3, 4, 5, CONTROL_MATRIX_SCHEMA_VERSION]);
 
 class BlobControlMatrixViewer extends HTMLElement {
   static observedAttributes = ["src"];
@@ -91,9 +93,9 @@ class BlobControlMatrixViewer extends HTMLElement {
 
   setReport(value) { this.stopPolling(); this._source = null; this.commitReport(value); }
   commitReport(value) {
-    const isFinal = [2, 3].includes(numeric(value?.schema_version)) && Array.isArray(value?.matchups) && Array.isArray(value?.summaries);
-    const isProgress = numeric(value?.schema_version) === 1 && value?.report_kind === "blob_control_matrix_progress" && [2, 3].includes(numeric(value?.control_matrix_schema_version)) && Array.isArray(value?.matchups) && Array.isArray(value?.summaries);
-    if (!isFinal && !isProgress) throw new Error("Expected a control-matrix schema 2/3 report or progress schema 1 snapshot");
+    const isFinal = SUPPORTED_CONTROL_MATRIX_SCHEMA_VERSIONS.has(numeric(value?.schema_version)) && Array.isArray(value?.matchups) && Array.isArray(value?.summaries);
+    const isProgress = numeric(value?.schema_version) === 1 && value?.report_kind === "blob_control_matrix_progress" && SUPPORTED_CONTROL_MATRIX_SCHEMA_VERSIONS.has(numeric(value?.control_matrix_schema_version)) && Array.isArray(value?.matchups) && Array.isArray(value?.summaries);
+    if (!isFinal && !isProgress) throw new Error(`Expected a supported control-matrix report through schema ${CONTROL_MATRIX_SCHEMA_VERSION} or progress schema 1 snapshot`);
     if (value.server_verified === true || value.replay_committed === true) throw new Error("This local comparison viewer does not accept trusted-status claims");
     this._data = value; this.render();
     this.dispatchEvent(new CustomEvent("blob-control-matrix-load", { detail: { data: value } }));

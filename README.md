@@ -74,11 +74,22 @@ cargo test --workspace --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-Run the complete cross-language and browser conformance gate with:
+Run the complete cross-language and browser-source conformance gate with:
 
 ```sh
 scripts/conformance.sh
 ```
+
+Run the real Chromium match-explorer suite with:
+
+```sh
+npm ci --prefix browser-tests
+npm test --prefix browser-tests
+```
+
+Pull requests also run bounded native, WASM, schema, Chromium, and fuzz-smoke
+jobs. See [`schemas/README.md`](schemas/README.md) before changing an artifact
+version and [`fuzz/README.md`](fuzz/README.md) for the pinned local fuzz commands.
 
 Build two example Minds and launch a local match:
 
@@ -188,6 +199,8 @@ signing-key operations, leaderboard indexing/APIs, and site integration.
 - [Large-game optimization roadmap](docs/large-game-optimization-roadmap.md)
 - [Measured performance baseline](docs/performance-baseline.md)
 - [Testing and fuzzing roadmap](docs/testing-and-fuzzing-roadmap.md)
+- [Format and schema registry](schemas/README.md)
+- [Maintained fuzz harnesses](fuzz/README.md)
 
 Recorded optimized native profiles range from hundreds of thousands to low
 millions of cell actions per second depending on workload, population, host,

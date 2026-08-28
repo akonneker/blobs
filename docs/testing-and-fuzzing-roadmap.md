@@ -9,10 +9,12 @@ Mind ABI has malformed-input and size-limit coverage, and RL has deterministic
 evaluation, event-time GAE, exact update-boundary resume, sweep recovery, and
 telemetry tests.
 
-There is currently no maintained `cargo-fuzz` harness. Deterministic garbage,
-truncation, and randomized tests catch known classes of failure, but they do
-not replace coverage-guided exploration of nested decoders and long resolver
-state sequences.
+Maintained `cargo-fuzz` harnesses now cover the canonical replay family and the
+Mind ABI with tight allocation limits and bounded pull-request smoke runs. They
+establish the untrusted-byte foundation, but do not yet cover Wasm admission,
+imitation and ecological artifacts, long resolver command sequences, or
+crash-state persistence. Deterministic garbage, truncation, and randomized
+tests remain useful regressions rather than substitutes for those campaigns.
 
 ## Missing deterministic tests
 
@@ -62,12 +64,12 @@ expectations rather than outstanding work:
 
 ### P0: untrusted byte boundaries
 
-1. **Canonical replay family.** Feed arbitrary bytes and adversarial limits to
+1. **Canonical replay family (initial harness implemented).** Feed arbitrary bytes and adversarial limits to
    `ReplayBatchEvent`, replay archives, segments, manifests, bundles,
    checkpoints, match manifests, attestations, and leaderboard publications.
    The oracle is: never panic or allocate beyond limits; accepted values must
    round-trip canonically and preserve their submitted hash.
-2. **Mind ABI.** Fuzz Cap'n Proto input/decision decoding, including truncated
+2. **Mind ABI (initial harness implemented).** Fuzz Cap'n Proto input/decision decoding, including truncated
    segments, oversized lists, non-canonical visibility bits, invalid actions,
    memory-update combinations, and randomness lengths. Accepted decisions must
    survive encode/decode and resolver preflight without identity leakage.

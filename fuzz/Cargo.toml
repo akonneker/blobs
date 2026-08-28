@@ -1,0 +1,30 @@
+[package]
+name = "blob-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+blob_engine = { path = "../blob_engine" }
+blob_interface = { path = "../blob_interface" }
+libfuzzer-sys = "0.4"
+sha2 = "0.10"
+
+[workspace]
+
+[[bin]]
+name = "replay_formats"
+path = "fuzz_targets/replay_formats.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mind_abi"
+path = "fuzz_targets/mind_abi.rs"
+test = false
+doc = false
+bench = false

@@ -2,6 +2,13 @@
 .DS_Store
 *.png
 /training-output
+/browser-tests/node_modules/
+/browser-tests/playwright-report/
+/browser-tests/test-results/
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/
 /sweeps/**/artifacts/
 /sweeps/**/*.log
 /sweeps/**/*.lock

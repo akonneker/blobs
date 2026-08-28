@@ -27,6 +27,7 @@ const styles = String.raw`
 const escapeHtml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 const numeric = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const compact = new Intl.NumberFormat("en", { notation:"compact", maximumFractionDigits:1 });
+const ADJUDICATION_SENSITIVITY_SCHEMA_VERSION = 2;
 
 class BlobAdjudicationSensitivityViewer extends HTMLElement {
   static observedAttributes = ["src"];
@@ -34,7 +35,7 @@ class BlobAdjudicationSensitivityViewer extends HTMLElement {
   connectedCallback(){ this.installDropTarget(); this.renderLoading(); if(this.getAttribute("src")) this.load(this.getAttribute("src")); }
   attributeChangedCallback(name,oldValue,newValue){ if(name==="src"&&oldValue!==newValue&&this.isConnected&&newValue) this.load(newValue); }
   async load(url){ try { const response=await fetch(url,{cache:"no-store"}); if(!response.ok) throw new Error(`Sensitivity report request failed (${response.status})`); this.commit(await response.json()); } catch(error){ this.renderError(error); } }
-  commit(value){ if(numeric(value?.schema_version)!==2||value?.report_kind!=="blob_adjudication_sensitivity"||!Array.isArray(value?.policies)) throw new Error("Expected an adjudication-sensitivity schema 2 report"); if(value.server_verified===true||value.replay_committed===true) throw new Error("Counterfactual reports cannot claim trusted match status"); this._data=value; this.render(); }
+  commit(value){ if(numeric(value?.schema_version)!==ADJUDICATION_SENSITIVITY_SCHEMA_VERSION||value?.report_kind!=="blob_adjudication_sensitivity"||!Array.isArray(value?.policies)) throw new Error(`Expected an adjudication-sensitivity schema ${ADJUDICATION_SENSITIVITY_SCHEMA_VERSION} report`); if(value.server_verified===true||value.replay_committed===true) throw new Error("Counterfactual reports cannot claim trusted match status"); this._data=value; this.render(); }
   renderLoading(){ this.shadowRoot.innerHTML=`<style>${styles}</style><main class="shell"><div class="empty"><p class="eyebrow">Winning-criteria lab</p><h1>Reading sensitivity report…</h1></div></main>`; }
   renderError(error){ this.shadowRoot.innerHTML=`<style>${styles}</style><main class="shell"><div class="error"><p class="eyebrow">Could not load sensitivity report</p><h2>${escapeHtml(error?.message||error)}</h2></div></main>`; }
   render(){ const data=this._data; const study=this.getAttribute("study")||"custom"; const horizons=[...new Set(data.policies.flatMap((policy)=>policy.groups.map((group)=>numeric(group.sim_time_limit_quanta))))].sort((a,b)=>a-b); const variants=[...new Set(data.policies.flatMap((policy)=>policy.groups.map((group)=>group.variant)))]; const usesHorizons=horizons.length>1; const axes=usesHorizons?horizons:variants;

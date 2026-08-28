@@ -5,6 +5,7 @@ workspace_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$workspace_dir"
 
 cargo fmt --all -- --check
+python3 scripts/check_schema_registry.py
 cargo test -p blob_interface
 cargo test -p blob_engine --lib
 cargo test -p blob_engine \

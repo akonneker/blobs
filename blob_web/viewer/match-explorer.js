@@ -1,5 +1,6 @@
 const COLORS = ["#65e6a8", "#ffb55e", "#72b7ff", "#e987ff", "#f56f7d", "#d8e66a"];
 const CHECKPOINT_INTERVAL = 128;
+const MATCH_EXPLORER_SCHEMA_VERSION = 1;
 
 const cloneState = (state) => ({
   cells: new Map([...state.cells].map(([key, value]) => [key, { ...value }])),
@@ -92,7 +93,7 @@ class BlobMatchExplorer extends HTMLElement {
   }
 
   validate(bundle, verified) {
-    if (!bundle || bundle.schema_version !== 1) throw new Error("Expected match explorer schema 1");
+    if (!bundle || bundle.schema_version !== MATCH_EXPLORER_SCHEMA_VERSION) throw new Error(`Expected match explorer schema ${MATCH_EXPLORER_SCHEMA_VERSION}`);
     if (!bundle.run?.board || !Number.isInteger(bundle.run.board.width) || !Number.isInteger(bundle.run.board.height)) {
       throw new Error("Match board dimensions are missing");
     }
