@@ -101,6 +101,55 @@ Run the dependency-free viewer from the repository root:
 scripts/serve_telemetry_viewer.sh
 ```
 
+The match explorer is at `http://localhost:4173/?view=match`. It supports
+pan/zoom, selectable and followable cells, event stepping and playback, sparse
+seek checkpoints, field layers, per-team energy and population timelines,
+environmental energy, selected-cell mass-energy history, and current-resolution
+details. Resolver events also expose selected action families, outcome status,
+food present at each action origin, requested amounts, and exact consumed
+energy. The resolution panel aggregates these into cumulative per-team action
+distributions and feeding totals, while the cell lens shows the selected cell's
+last resolved action. Select **Open JSON** to inspect another local schema-1 match bundle, or
+set `MATCH_EXPLORER_REPORT=/absolute/match.json` before starting the server.
+
+Explorer bundles contain a complete initial board followed by sparse `tiles`
+and `cells` patches. An `alive: false` cell patch removes that identity. The
+separate `presentation.cell_teams` map lets the UI aggregate team metrics;
+embedded `team` fields in cell state are rejected. This host-generated
+post-match sidecar is never part of canonical Mind input and does not weaken
+per-Mind isolation. A future published
+bundle must bind the sidecar and replay manifest into the server attestation;
+until then browser-loaded bundles are always labeled local and unverified, and
+JSON that claims verification or a replay commitment is rejected. An enclosing
+site may call `setVerifiedMatch(bundle, verification)` only after the canonical
+replay and its presentation binding have been verified.
+
+The UI is the dependency-free Shadow-DOM custom element
+`<blob-match-explorer>` in `viewer/match-explorer.js`, so it can later be
+embedded in tinker.ninja without inheriting page styles.
+
+Record one real frozen-policy evaluation for the explorer with:
+
+```sh
+cargo run --release -p blob_rl --no-default-features --features ndarray \
+  --bin match-explorer -- training-output/checkpoints/checkpoint-000100 \
+  --output /tmp/blob-match.json \
+  --opponent aggressive \
+  --seed 4101
+
+MATCH_EXPLORER_REPORT=/tmp/blob-match.json scripts/serve_telemetry_viewer.sh
+```
+
+The command writes `/tmp/blob-match.json` and a sibling
+`/tmp/blob-match.replay.bin`. The JSON contains a full initial state followed
+by the exact sparse delta from every canonical resolver batch. The binary is
+the verified canonical replay bundle, and its SHA-256 and event count are bound
+into the JSON metadata. Recording switches only this selected evaluation to
+per-batch hashing and replay capture; ordinary training and bulk evaluation
+remain in trusted on-demand mode and pay none of the state-copy or hashing
+cost. The JSON is still local and unverified until a server attestation binds
+both the canonical replay and its host-only presentation sidecar.
+
 Then open `http://localhost:4173`. It loads a sample colony report by default
 and accepts dropped or selected JSON files. The report envelope is versioned; its
 `latest` object is the serializable `ColonyScenarioTelemetry` sample, while

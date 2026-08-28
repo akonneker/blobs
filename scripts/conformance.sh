@@ -32,6 +32,8 @@ cargo clippy -p blob_web --lib --no-deps \
   --target wasm32-unknown-unknown -- -D warnings
 cargo build --release --target wasm32-unknown-unknown -p blob_web
 node --check blob_web/web/blob_web.js
+node --check blob_web/viewer/match-explorer.js
+node scripts/check_match_explorer_sample.mjs
 bash -n scripts/build_browser_package.sh
 bash -n scripts/build_language_minds.sh
 bash scripts/build_language_minds.sh

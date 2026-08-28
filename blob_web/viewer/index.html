@@ -22,21 +22,29 @@
       import "./telemetry-viewer.js";
       import "./control-matrix-viewer.js";
       import "./adjudication-sensitivity-viewer.js";
+      import "./match-explorer.js";
 
       const query = new URLSearchParams(window.location.search);
       const controls = query.get("view") === "controls";
       const adjudication = query.get("view") === "adjudication";
-      document.title = controls
+      const match = query.get("view") === "match";
+      document.title = match
+        ? "Blob Match Microscope"
+        : controls
         ? "Blob Control Matrix"
         : adjudication
           ? "Blob Adjudication Lab"
           : "Blob Field Notes";
-      const element = document.createElement(controls
+      const element = document.createElement(match
+        ? "blob-match-explorer"
+        : controls
         ? "blob-control-matrix-viewer"
         : adjudication
           ? "blob-adjudication-sensitivity-viewer"
           : "blob-telemetry-viewer");
-      if (controls) {
+      if (match) {
+        element.setAttribute("src", "/reports/match-explorer.json");
+      } else if (controls) {
         const recorded = "/reports/control-matrix.json";
         const live = "/reports/control-matrix-live.json";
         element.setAttribute("recorded-src", recorded);

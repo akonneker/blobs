@@ -64,7 +64,11 @@ def main() -> None:
     fragmentation_sensitivity_default = repository / "sweeps" / "colony-population-fragmentation-v1" / "adjudication-sensitivity-v2.json"
     density_sensitivity_default = repository / "sweeps" / "colony-population-density-v1" / "adjudication-sensitivity-v2.json"
     crowding_sensitivity_default = repository / "sweeps" / "colony-population-crowding-v1" / "adjudication-sensitivity-v2.json"
+    match_explorer_default = viewer / "sample-match.json"
     ViewerHandler.report_routes = {
+        "/reports/match-explorer.json": Path(
+            os.environ.get("MATCH_EXPLORER_REPORT", match_explorer_default)
+        ).resolve(),
         "/reports/control-matrix.json": Path(
             os.environ.get("CONTROL_MATRIX_REPORT", recorded_default)
         ).resolve(),
@@ -92,6 +96,7 @@ def main() -> None:
     print(f"Blob observatory: http://{args.host}:{args.port}", flush=True)
     print(f"Recorded matrix: {ViewerHandler.report_routes['/reports/control-matrix.json']}", flush=True)
     print(f"Live matrix: {ViewerHandler.report_routes['/reports/control-matrix-live.json']}", flush=True)
+    print(f"Match explorer: {ViewerHandler.report_routes['/reports/match-explorer.json']}", flush=True)
     print(
         f"Adjudication sensitivity: {ViewerHandler.report_routes['/reports/adjudication-sensitivity.json']}",
         flush=True,
