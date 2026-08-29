@@ -25,7 +25,7 @@ use crate::micro_combat::{MicroCombatEvaluationReport, MicroCombatRotationState}
 use crate::model::{PolicyValueNet, PolicyValueNetConfig};
 use crate::telemetry::TrainingTelemetryState;
 
-pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 39;
+pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 40;
 const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_RESUME_STATE_BYTES: u64 = 512 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);

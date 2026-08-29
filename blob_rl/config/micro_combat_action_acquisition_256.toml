@@ -1,0 +1,30 @@
+# Paired three-seed A/B for explicit combat-action acquisition. Both arms
+# receive the same named-scenario rehearsal and held-out gates; the only
+# intervention is the training-only direct Attack behavior-policy mixture.
+base_config = "micro_combat_ablation_256_v2_base.toml"
+output_dir = "../../sweeps/micro-combat-action-acquisition-256"
+seeds = [256301, 256302, 256303]
+
+[[variants]]
+name = "uniform-rehearsal"
+description = "Control: named micro-combat rehearsal with ordinary legal-kind exploration"
+
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = true
+attack_action_kind_exploration_floor = 0.0
+min_attack_commitments_per_episode = 0.25
+
+[[variants]]
+name = "attack-acquisition"
+description = "Treatment: identical rehearsal plus a 50% direct Attack mixture whenever Attack is legal"
+
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = true
+attack_action_kind_exploration_floor = 0.5
+min_attack_commitments_per_episode = 0.25

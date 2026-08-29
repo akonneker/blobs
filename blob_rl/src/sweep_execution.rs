@@ -20,7 +20,7 @@ use crate::sweep::{
 use crate::telemetry::{ActionFamilyTelemetry, TrainingTelemetrySummary};
 use crate::viability_gate::{verify_viability_gate_requirement, ViabilityGateRequirement};
 
-pub const SWEEP_EXECUTION_SCHEMA_VERSION: u32 = 9;
+pub const SWEEP_EXECUTION_SCHEMA_VERSION: u32 = 10;
 const MAX_CONTROL_FILE_BYTES: u64 = 16 * 1024 * 1024;
 static EXECUTION_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -163,6 +163,8 @@ pub struct MicroCombatRunMetrics {
     pub final_elimination_success_rate: f64,
     pub best_survival_success_rate: f64,
     pub best_elimination_success_rate: f64,
+    pub final_attack_commitments_per_episode: f64,
+    pub best_attack_commitments_per_episode: f64,
     /// Exactly 0.0 or 1.0 so it can share the paired-summary machinery.
     pub qualification_reached: f64,
     /// First qualifying action divided by the terminal action count. Runs
@@ -283,6 +285,8 @@ pub struct MicroCombatSweepMetricSummaries {
     pub final_elimination_success_rate: MetricSummary,
     pub best_survival_success_rate: MetricSummary,
     pub best_elimination_success_rate: MetricSummary,
+    pub final_attack_commitments_per_episode: MetricSummary,
+    pub best_attack_commitments_per_episode: MetricSummary,
     pub qualification_rate: MetricSummary,
     pub normalized_actions_to_qualification_or_budget: MetricSummary,
 }
@@ -728,12 +732,13 @@ fn training_tail(path: &Path) -> Result<TrainingTailMetrics, String> {
 
 #[derive(Debug, Clone, Default)]
 struct MicroCombatEvaluationPoint {
-    scenario_rows: HashMap<String, (String, usize, usize, usize)>,
+    scenario_rows: HashMap<String, (String, usize, usize, usize, u64)>,
     survival_episodes: usize,
     survival_successes: usize,
     elimination_episodes: usize,
     elimination_successes: usize,
     safety_aborts: usize,
+    attacks_committed: u64,
 }
 
 fn micro_combat_curve(
@@ -764,8 +769,15 @@ fn micro_combat_curve(
         let episodes: usize = number(&row, "episodes")?;
         let successes: usize = number(&row, "objective_successes")?;
         let safety_aborts: usize = number(&row, "safety_aborts")?;
+        let attacks_committed: u64 = number(&row, "attacks_committed")?;
         let point = points.entry(key).or_default();
-        let identity = (objective.clone(), episodes, successes, safety_aborts);
+        let identity = (
+            objective.clone(),
+            episodes,
+            successes,
+            safety_aborts,
+            attacks_committed,
+        );
         if let Some(existing) = point.scenario_rows.get(&scenario) {
             if existing != &identity {
                 return Err(format!(
@@ -776,6 +788,7 @@ fn micro_combat_curve(
         }
         point.scenario_rows.insert(scenario, identity);
         point.safety_aborts = point.safety_aborts.saturating_add(safety_aborts);
+        point.attacks_committed = point.attacks_committed.saturating_add(attacks_committed);
         match objective.as_str() {
             "Survival" => {
                 point.survival_episodes = point.survival_episodes.saturating_add(episodes);
@@ -812,11 +825,13 @@ fn micro_combat_curve(
                 *actions,
                 rate(point.survival_successes, point.survival_episodes),
                 rate(point.elimination_successes, point.elimination_episodes),
+                point.attacks_committed as f64
+                    / (point.survival_episodes + point.elimination_episodes) as f64,
                 point.safety_aborts,
             )
         })
         .collect::<Vec<_>>();
-    let &(final_actions, final_survival, final_elimination, _) = scored
+    let &(final_actions, final_survival, final_elimination, final_attacks, _) = scored
         .last()
         .expect("nonempty micro-combat curve has a final point");
     if final_actions != terminal_actions {
@@ -827,10 +842,11 @@ fn micro_combat_curve(
     let first_qualified_actions =
         scored
             .iter()
-            .find_map(|(actions, survival, elimination, aborts)| {
+            .find_map(|(actions, survival, elimination, attacks, aborts)| {
                 (*aborts == 0
                     && *survival >= micro.min_survival_objective_success_rate
-                    && *elimination >= micro.min_elimination_objective_success_rate)
+                    && *elimination >= micro.min_elimination_objective_success_rate
+                    && *attacks >= micro.min_attack_commitments_per_episode)
                     .then_some(*actions)
             });
     let qualification_reached = if first_qualified_actions.is_some() {
@@ -852,11 +868,16 @@ fn micro_combat_curve(
         final_elimination_success_rate: final_elimination,
         best_survival_success_rate: scored
             .iter()
-            .map(|(_, survival, _, _)| *survival)
+            .map(|(_, survival, _, _, _)| *survival)
             .fold(0.0, f64::max),
         best_elimination_success_rate: scored
             .iter()
-            .map(|(_, _, elimination, _)| *elimination)
+            .map(|(_, _, elimination, _, _)| *elimination)
+            .fold(0.0, f64::max),
+        final_attack_commitments_per_episode: final_attacks,
+        best_attack_commitments_per_episode: scored
+            .iter()
+            .map(|(_, _, _, attacks, _)| *attacks)
             .fold(0.0, f64::max),
         qualification_reached,
         normalized_actions_to_qualification_or_budget,
@@ -1230,6 +1251,10 @@ fn result_matches_run(
                 ]
                 .iter()
                 .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                && metrics.final_attack_commitments_per_episode.is_finite()
+                && metrics.final_attack_commitments_per_episode >= 0.0
+                && metrics.best_attack_commitments_per_episode.is_finite()
+                && metrics.best_attack_commitments_per_episode >= 0.0
                 && (metrics.qualification_reached == 0.0
                     && metrics.first_qualified_actions.is_none()
                     || metrics.qualification_reached == 1.0
@@ -1831,6 +1856,12 @@ fn summaries(results: &[&SweepRunResult]) -> SweepMetricSummaries {
             final_elimination_success_rate: summarize(|m| m.final_elimination_success_rate),
             best_survival_success_rate: summarize(|m| m.best_survival_success_rate),
             best_elimination_success_rate: summarize(|m| m.best_elimination_success_rate),
+            final_attack_commitments_per_episode: summarize(|m| {
+                m.final_attack_commitments_per_episode
+            }),
+            best_attack_commitments_per_episode: summarize(|m| {
+                m.best_attack_commitments_per_episode
+            }),
             qualification_rate: summarize(|m| m.qualification_reached),
             normalized_actions_to_qualification_or_budget: summarize(|m| {
                 m.normalized_actions_to_qualification_or_budget
@@ -2062,6 +2093,12 @@ fn paired_differences(
                         - base.best_survival_success_rate,
                     best_elimination_success_rate: candidate.best_elimination_success_rate
                         - base.best_elimination_success_rate,
+                    final_attack_commitments_per_episode: candidate
+                        .final_attack_commitments_per_episode
+                        - base.final_attack_commitments_per_episode,
+                    best_attack_commitments_per_episode: candidate
+                        .best_attack_commitments_per_episode
+                        - base.best_attack_commitments_per_episode,
                     qualification_reached: candidate.qualification_reached
                         - base.qualification_reached,
                     normalized_actions_to_qualification_or_budget: candidate
@@ -2596,10 +2633,14 @@ mod tests {
     #[test]
     fn micro_combat_curve_reports_terminal_skill_and_first_gate_crossing() {
         let temporary = tempfile::tempdir().unwrap();
-        let config = TrainingConfig::from_toml_str(include_str!(
+        let mut config = TrainingConfig::from_toml_str(include_str!(
             "../config/micro_combat_curriculum_256.toml"
         ))
         .unwrap();
+        config
+            .combat_curriculum
+            .micro_combat
+            .min_attack_commitments_per_episode = 0.25;
         let suite = config
             .combat_curriculum
             .micro_combat
@@ -2609,14 +2650,14 @@ mod tests {
         let mut csv = String::from(
             "update,actions,scenario,objective,episodes,wins,losses,timeouts,safety_aborts,alive_at_end,objective_successes,objective_success_rate,scientific_survival_rate,survival_time_quanta,attacks_committed,damage_dealt,damage_received,kills,seed_count\n",
         );
-        for (update, actions, elimination_successes) in [(1, 100, 0), (2, 200, 2)] {
+        for (update, actions, elimination_successes, attacks) in [(1, 100, 0, 0), (2, 200, 2, 2)] {
             for scenario in &suite.scenarios {
                 let successes = match scenario.objective {
                     crate::micro_combat::MicroCombatObjective::Survival => 3,
                     crate::micro_combat::MicroCombatObjective::Elimination => elimination_successes,
                 };
                 csv.push_str(&format!(
-                    "{update},{actions},{},{:?},4,0,0,4,0,3,{successes},0,0,0,0,0,0,0,4\n",
+                    "{update},{actions},{},{:?},4,0,0,4,0,3,{successes},0,0,0,{attacks},0,0,0,4\n",
                     scenario.name, scenario.objective
                 ));
             }
@@ -2627,6 +2668,8 @@ mod tests {
         assert_eq!(metrics.evaluations, 2);
         assert_eq!(metrics.final_survival_success_rate, 0.75);
         assert_eq!(metrics.final_elimination_success_rate, 0.5);
+        assert_eq!(metrics.final_attack_commitments_per_episode, 0.5);
+        assert_eq!(metrics.best_attack_commitments_per_episode, 0.5);
         assert_eq!(metrics.qualification_reached, 1.0);
         assert_eq!(metrics.first_qualified_actions, Some(200));
         assert_eq!(metrics.normalized_actions_to_qualification_or_budget, 1.0);
@@ -2694,6 +2737,8 @@ mod tests {
                     final_elimination_success_rate: if qualified { 1.0 } else { 0.0 },
                     best_survival_success_rate: 1.0,
                     best_elimination_success_rate: if qualified { 1.0 } else { 0.0 },
+                    final_attack_commitments_per_episode: if qualified { 1.0 } else { 0.0 },
+                    best_attack_commitments_per_episode: if qualified { 1.0 } else { 0.0 },
                     qualification_reached: if qualified { 1.0 } else { 0.0 },
                     normalized_actions_to_qualification_or_budget: if qualified {
                         0.5

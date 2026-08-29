@@ -1216,6 +1216,77 @@ mod tests {
     }
 
     #[test]
+    fn action_acquisition_ablation_changes_only_the_attack_mixture() {
+        let spec: RulesSweepSpec = toml::from_str(include_str!(
+            "../config/micro_combat_action_acquisition_256.toml"
+        ))
+        .unwrap();
+        validate_spec(&spec).unwrap();
+        let base = TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_ablation_256_v2_base.toml"
+        ))
+        .unwrap();
+        let expanded = spec
+            .variants
+            .iter()
+            .map(|variant| {
+                base.with_scenario_override(&variant.scenario)
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(expanded.len(), 2);
+        for config in &expanded {
+            assert!(config.combat_curriculum.micro_combat.rollout_enabled);
+            assert_eq!(
+                config
+                    .combat_curriculum
+                    .micro_combat
+                    .min_attack_commitments_per_episode,
+                0.25
+            );
+        }
+        assert_eq!(
+            expanded[0]
+                .combat_curriculum
+                .micro_combat
+                .attack_action_kind_exploration_floor,
+            0.0
+        );
+        assert_eq!(
+            expanded[1]
+                .combat_curriculum
+                .micro_combat
+                .attack_action_kind_exploration_floor,
+            0.5
+        );
+        let mut normalized = expanded[1].clone();
+        normalized
+            .combat_curriculum
+            .micro_combat
+            .attack_action_kind_exploration_floor = 0.0;
+        assert_eq!(normalized, expanded[0]);
+
+        for config in &expanded {
+            for &seed in &spec.seeds {
+                for (stage, time) in [
+                    (crate::config::FeedingCurriculumStage::OnFood, 0),
+                    (crate::config::FeedingCurriculumStage::AdjacentFood, 32_768),
+                    (crate::config::FeedingCurriculumStage::Contact, 65_536),
+                    (crate::config::FeedingCurriculumStage::Skirmish, 131_072),
+                    (crate::config::FeedingCurriculumStage::Competitive, 196_608),
+                ] {
+                    let environment = config.rollout_environment(stage, time);
+                    crate::env::BlobEnv::new(environment, config.reward.clone(), seed);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn experiment_identity_ignores_only_the_artifact_destination() {
         let mut config = TrainingConfig {
             checkpoint_dir: "/first/output".into(),

@@ -1,0 +1,122 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/micro_combat_action_acquisition_256.toml",
+  "spec_sha256": "0ec10036758471ae8e4101cf995f248fee04a5f2eab793ed6b3f172d6c727e71",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/micro_combat_ablation_256_v2_base.toml",
+  "base_config_sha256": "69d3de2f0da1fef9e3bca1a3c0f6361488cfa9286f6cd3944b77b2b3cefc2aee",
+  "output_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256",
+  "seeds": [
+    256301,
+    256302,
+    256303
+  ],
+  "variants": [
+    {
+      "name": "uniform-rehearsal",
+      "description": "Control: named micro-combat rehearsal with ordinary legal-kind exploration",
+      "rules": {},
+      "scenario": {
+        "starting_cell_layout": "checkerboard"
+      },
+      "combat_curriculum": {
+        "micro_combat": {
+          "attack_action_kind_exploration_floor": 0.0,
+          "min_attack_commitments_per_episode": 0.25,
+          "rollout_enabled": true
+        }
+      },
+      "specialist_distillation": {}
+    },
+    {
+      "name": "attack-acquisition",
+      "description": "Treatment: identical rehearsal plus a 50% direct Attack mixture whenever Attack is legal",
+      "rules": {},
+      "scenario": {
+        "starting_cell_layout": "checkerboard"
+      },
+      "combat_curriculum": {
+        "micro_combat": {
+          "attack_action_kind_exploration_floor": 0.5,
+          "min_attack_commitments_per_episode": 0.25,
+          "rollout_enabled": true
+        }
+      },
+      "specialist_distillation": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "uniform-rehearsal",
+      "replicate": 0,
+      "training_seed": 256301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "db95c52c6b46b3cb8723c1372d7c0a7f6cfe5cad0b89a7406b181c3b2c747c9f",
+      "config_file_sha256": "b05aa92d2e31d06eff3d9f1aac5fab04bda40f41df73188de50d68faba6eaf87",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/uniform-rehearsal/seed-256301",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/uniform-rehearsal/seed-256301/config.toml"
+    },
+    {
+      "variant": "uniform-rehearsal",
+      "replicate": 1,
+      "training_seed": 256302,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "3dff3cba75092e00b40af94bc2e937fb0eb89fb4b66ff744a558e6665079e092",
+      "config_file_sha256": "96a2102d0578344c17dd87c7e5b709359e6c0acf0ab3d92cd28d6dab2ddebb7f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/uniform-rehearsal/seed-256302",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/uniform-rehearsal/seed-256302/config.toml"
+    },
+    {
+      "variant": "uniform-rehearsal",
+      "replicate": 2,
+      "training_seed": 256303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "c145109361a32346e47b9d907d90f5c59af4bce5620167a18e8be0da72401012",
+      "config_file_sha256": "474f789ec5455502d034ddef7045a42a85b0e27eb534a2751ebeac5f1ded8e7f",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/uniform-rehearsal/seed-256303",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/uniform-rehearsal/seed-256303/config.toml"
+    },
+    {
+      "variant": "attack-acquisition",
+      "replicate": 0,
+      "training_seed": 256301,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "71b4ad4efdb50f1deb32dea9314db418470e9de370de37143ff1492b2bd1cf88",
+      "config_file_sha256": "7e5dd3b4dc304aeae4aaebf069454c4b03a67c6715aa75a3eff97574e3b6ea22",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/attack-acquisition/seed-256301",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/attack-acquisition/seed-256301/config.toml"
+    },
+    {
+      "variant": "attack-acquisition",
+      "replicate": 1,
+      "training_seed": 256302,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "a4d6af953d6f4c572d30addf00657e77304dd971d7168bbbc95df0da9eb914bb",
+      "config_file_sha256": "f4f63234c60e1ff52e49f8279f34404fdfdb564e91fb9a1058536b7518c294e8",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/attack-acquisition/seed-256302",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/attack-acquisition/seed-256302/config.toml"
+    },
+    {
+      "variant": "attack-acquisition",
+      "replicate": 2,
+      "training_seed": 256303,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "42f51927d0192acf05938f51190ef4911a3b0b9e9706dcb8f285ff66486254f7",
+      "config_file_sha256": "b06befe4405af22791626fa5913f7f7b42f0cac7d48be87e0bdeb6a92e8d4107",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/attack-acquisition/seed-256303",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-action-acquisition-256/attack-acquisition/seed-256303/config.toml"
+    }
+  ]
+}

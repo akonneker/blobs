@@ -19,7 +19,7 @@ use crate::evaluation::EvaluationMetrics;
 use crate::feeding_curriculum::FeedingPromotionReport;
 use crate::micro_combat::MicroCombatEvaluationReport;
 
-pub const COMPETENCY_FRONTIER_SCHEMA_VERSION: u32 = 3;
+pub const COMPETENCY_FRONTIER_SCHEMA_VERSION: u32 = 4;
 pub const MAX_COMPETENCY_FRONTIER_ENTRIES: usize = 32;
 const MAX_FRONTIER_BYTES: u64 = 1024 * 1024;
 static FRONTIER_TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -36,6 +36,7 @@ pub struct CompetencyMetrics {
     pub combat_passed: bool,
     pub micro_survival_success_rate: f64,
     pub micro_elimination_success_rate: f64,
+    pub micro_attack_commitments_per_episode: f64,
     pub contact_damage: u128,
     pub contact_kills: u64,
     pub skirmish_damage: u128,
@@ -96,6 +97,8 @@ impl CompetencyMetrics {
                 .map_or(0.0, |summary| summary.survival_success_rate),
             micro_elimination_success_rate: micro_summary
                 .map_or(0.0, |summary| summary.elimination_success_rate),
+            micro_attack_commitments_per_episode: micro_summary
+                .map_or(0.0, |summary| summary.attack_commitments_per_episode),
             contact_damage,
             contact_kills: contact.kills_for_stage(FeedingCurriculumStage::Contact),
             skirmish_damage,
@@ -122,6 +125,7 @@ impl CompetencyMetrics {
             self.fixed_average_reward,
             self.micro_survival_success_rate,
             self.micro_elimination_success_rate,
+            self.micro_attack_commitments_per_episode,
         ]
         .iter()
         .all(|value| value.is_finite())
@@ -133,6 +137,7 @@ impl CompetencyMetrics {
             && (0.0..=1.0).contains(&self.fixed_win_rate)
             && (0.0..=1.0).contains(&self.micro_survival_success_rate)
             && (0.0..=1.0).contains(&self.micro_elimination_success_rate)
+            && self.micro_attack_commitments_per_episode >= 0.0
     }
 
     fn dominates_or_equals(&self, other: &Self) -> bool {
@@ -146,6 +151,8 @@ impl CompetencyMetrics {
             && u8::from(self.combat_passed) >= u8::from(other.combat_passed)
             && self.micro_survival_success_rate >= other.micro_survival_success_rate
             && self.micro_elimination_success_rate >= other.micro_elimination_success_rate
+            && self.micro_attack_commitments_per_episode
+                >= other.micro_attack_commitments_per_episode
             && self.contact_damage >= other.contact_damage
             && self.contact_kills >= other.contact_kills
             && self.skirmish_damage >= other.skirmish_damage
@@ -531,6 +538,7 @@ mod tests {
             combat_passed: kills > 0,
             micro_survival_success_rate: 0.0,
             micro_elimination_success_rate: 0.0,
+            micro_attack_commitments_per_episode: 0.0,
             contact_damage: damage,
             contact_kills: 0,
             skirmish_damage: damage,

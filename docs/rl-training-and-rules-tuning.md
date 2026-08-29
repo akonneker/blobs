@@ -1824,12 +1824,41 @@ step. The next experiment should explicitly solve combat-action acquisition
 while protecting feeding retention. Full evidence and caveats are recorded in
 the V3 sweep README and aggregate.
 
-Training-artifact schema 39 and checkpoint-evaluation schema 6 bind the split
-evaluation/rehearsal contract. Sweep-execution schema 9 reconstructs every complete micro-combat evaluation
+The combat-action acquisition slice now makes that next experiment explicit.
+`attack_action_kind_exploration_floor` is applied only to cells assigned to a
+named micro-combat training scenario, and only when Attack is legal. The host
+first forms the ordinary learned-plus-uniform legal-kind distribution, then
+mixes the configured mass directly into Attack. Each transition records both
+mixture weights and PPO reconstructs the exact behavior probability. This is
+training scaffolding: it is absent from ordinary competitive rollouts,
+held-out evaluation, Mind observations, and canonical physics.
+
+Held-out qualification additionally requires
+`min_attack_commitments_per_episode`, aggregated over the complete named suite.
+The value is published in the competency frontier, timeline, immutable run
+result, and paired sweep summaries. Thus passive survival cannot masquerade as
+combat acquisition. Feeding remains a separate hard promotion condition and
+the existing on-food/adjacent-food rehearsal blocks remain in the schedule;
+the acquisition mechanism does not claim to prevent weight-level forgetting,
+so the A/B must still demonstrate retained feeding.
+
+The executable paired design is
+[`micro_combat_action_acquisition_256.toml`](../blob_rl/config/micro_combat_action_acquisition_256.toml).
+Both three-seed arms receive identical scenario rehearsal, rules, schedules,
+rewards, and a held-out floor of 0.25 committed attacks per scenario episode.
+The sole intervention is a 0.50 direct Attack mixture versus 0.0 in control.
+This tests action acquisition before spending another full budget on reward or
+physics tuning.
+
+Training-artifact schema 40 and checkpoint-evaluation schema 7 bind the split
+evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution
+schema 10 reconstructs every complete micro-combat evaluation
 boundary and binds terminal/best survival and elimination, joint-gate reach,
-and normalized actions to first qualification into each immutable result and
-paired aggregate. A run that never qualifies is right-censored at its full
-budget rather than disappearing from the learning-speed statistic. Trainer
+terminal/best attack commitment rate, and normalized actions to first
+qualification into each immutable result and paired aggregate. Competency
+frontier schema 4 preserves the same acquisition evidence. A run that never
+qualifies is right-censored at its full budget rather than disappearing from
+the learning-speed statistic. Trainer
 metrics also report peak host resident-set bytes; aggregation takes the maximum
 across resumed attempts. This intentionally excludes GPU device memory, which
 must be characterized separately for deployment sizing. Throughput remains

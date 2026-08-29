@@ -63,7 +63,16 @@ pub struct MicroCombatTrainingConfig {
     /// Keeping this separate lets an A/B control use the identical held-out
     /// suite without receiving micro-combat training exposure.
     pub rollout_enabled: bool,
+    /// Training-only mixture weight reserved directly for Attack whenever the
+    /// action kind is legal in an assigned named scenario. PPO records and
+    /// reconstructs the exact mixture; ordinary and held-out rollouts remain
+    /// untouched.
+    pub attack_action_kind_exploration_floor: f32,
     pub suite: Option<MicroCombatSuiteConfig>,
+    /// Minimum held-out committed attacks per evaluated scenario episode.
+    /// This independent acquisition gate prevents survival through passive
+    /// behavior from being mistaken for combat competence.
+    pub min_attack_commitments_per_episode: f64,
     pub min_survival_objective_success_rate: f64,
     pub min_elimination_objective_success_rate: f64,
 }
@@ -73,7 +82,9 @@ impl Default for MicroCombatTrainingConfig {
         Self {
             enabled: false,
             rollout_enabled: false,
+            attack_action_kind_exploration_floor: 0.0,
             suite: None,
+            min_attack_commitments_per_episode: 0.0,
             min_survival_objective_success_rate: 0.8,
             min_elimination_objective_success_rate: 0.25,
         }
@@ -88,6 +99,14 @@ impl MicroCombatTrainingConfig {
             }
             if self.suite.is_some() {
                 return Err("disabled micro-combat training cannot retain a scenario suite".into());
+            }
+            if self.attack_action_kind_exploration_floor != 0.0
+                || self.min_attack_commitments_per_episode != 0.0
+            {
+                return Err(
+                    "disabled micro-combat training cannot retain action-acquisition settings"
+                        .into(),
+                );
             }
             return Ok(());
         }
@@ -104,6 +123,13 @@ impl MicroCombatTrainingConfig {
         .all(|rate| rate.is_finite() && (0.0..=1.0).contains(rate))
         {
             return Err("micro-combat promotion rates must be finite fractions".into());
+        }
+        if !self.attack_action_kind_exploration_floor.is_finite()
+            || !(0.0..1.0).contains(&self.attack_action_kind_exploration_floor)
+            || !self.min_attack_commitments_per_episode.is_finite()
+            || self.min_attack_commitments_per_episode < 0.0
+        {
+            return Err("micro-combat action-acquisition settings are invalid".into());
         }
         for objective in [
             MicroCombatObjective::Survival,
@@ -353,6 +379,9 @@ pub struct MicroCombatEvaluationReport {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MicroCombatGateSummary {
+    pub episodes: usize,
+    pub attacks_committed: u64,
+    pub attack_commitments_per_episode: f64,
     pub survival_episodes: usize,
     pub survival_successes: usize,
     pub survival_success_rate: f64,
@@ -377,7 +406,20 @@ impl MicroCombatEvaluationReport {
         let (survival_episodes, survival_successes) = totals(MicroCombatObjective::Survival);
         let (elimination_episodes, elimination_successes) =
             totals(MicroCombatObjective::Elimination);
+        let episodes = survival_episodes.saturating_add(elimination_episodes);
+        let attacks_committed = self
+            .scenarios
+            .iter()
+            .map(|metrics| metrics.training_attacks_committed)
+            .fold(0_u64, u64::saturating_add);
         MicroCombatGateSummary {
+            episodes,
+            attacks_committed,
+            attack_commitments_per_episode: if episodes == 0 {
+                0.0
+            } else {
+                attacks_committed as f64 / episodes as f64
+            },
             survival_episodes,
             survival_successes,
             survival_success_rate: ratio(survival_successes, survival_episodes),
@@ -398,6 +440,7 @@ impl MicroCombatEvaluationReport {
                 .scenarios
                 .iter()
                 .all(|metrics| metrics.safety_aborts == 0)
+            && summary.attack_commitments_per_episode >= config.min_attack_commitments_per_episode
             && summary.survival_success_rate >= config.min_survival_objective_success_rate
             && summary.elimination_success_rate >= config.min_elimination_objective_success_rate
     }
@@ -710,7 +753,9 @@ mod tests {
         let config = MicroCombatTrainingConfig {
             enabled: true,
             rollout_enabled: true,
+            attack_action_kind_exploration_floor: 0.0,
             suite: Some(maintained),
+            min_attack_commitments_per_episode: 0.0,
             min_survival_objective_success_rate: 0.75,
             min_elimination_objective_success_rate: 0.25,
         };
@@ -810,6 +855,27 @@ mod tests {
     }
 
     #[test]
+    fn action_acquisition_settings_are_strict_and_require_evaluation() {
+        let mut config = MicroCombatTrainingConfig {
+            enabled: true,
+            rollout_enabled: true,
+            suite: Some(suite()),
+            ..MicroCombatTrainingConfig::default()
+        };
+        config.attack_action_kind_exploration_floor = 1.0;
+        assert!(config.validate_against(&EnvConfig::default()).is_err());
+        config.attack_action_kind_exploration_floor = 0.5;
+        config.min_attack_commitments_per_episode = -0.1;
+        assert!(config.validate_against(&EnvConfig::default()).is_err());
+
+        let disabled = MicroCombatTrainingConfig {
+            attack_action_kind_exploration_floor: 0.5,
+            ..MicroCombatTrainingConfig::default()
+        };
+        assert!(disabled.validate_against(&EnvConfig::default()).is_err());
+    }
+
+    #[test]
     fn survival_and_elimination_gates_are_independent() {
         let report = MicroCombatEvaluationReport {
             schema_version: MICRO_COMBAT_EVALUATION_SCHEMA_VERSION,
@@ -825,6 +891,7 @@ mod tests {
                     objective_success_rate: 0.75,
                     scientific_survival_episodes: 3,
                     scientific_survival_rate: 0.75,
+                    training_attacks_committed: 2,
                     ..MicroCombatScenarioMetrics::default()
                 },
                 MicroCombatScenarioMetrics {
@@ -835,6 +902,7 @@ mod tests {
                     objective_success_rate: 0.25,
                     scientific_survival_episodes: 4,
                     scientific_survival_rate: 1.0,
+                    training_attacks_committed: 2,
                     ..MicroCombatScenarioMetrics::default()
                 },
             ],
@@ -842,16 +910,24 @@ mod tests {
         let mut config = MicroCombatTrainingConfig {
             enabled: true,
             rollout_enabled: true,
+            attack_action_kind_exploration_floor: 0.5,
             suite: Some(suite()),
+            min_attack_commitments_per_episode: 0.5,
             min_survival_objective_success_rate: 0.75,
             min_elimination_objective_success_rate: 0.5,
         };
         let summary = report.gate_summary();
         assert_eq!(summary.survival_success_rate, 0.75);
         assert_eq!(summary.elimination_success_rate, 0.25);
+        assert_eq!(summary.attack_commitments_per_episode, 0.5);
         assert!(!report.meets_promotion_thresholds(&config));
         config.min_elimination_objective_success_rate = 0.25;
         assert!(report.meets_promotion_thresholds(&config));
+        let mut passive = report.clone();
+        for scenario in &mut passive.scenarios {
+            scenario.training_attacks_committed = 0;
+        }
+        assert!(!passive.meets_promotion_thresholds(&config));
     }
 
     #[test]

@@ -10,9 +10,9 @@ use rand::Rng;
 
 use crate::action::{
     decompose_policy_action, policy_action_kind_mask, policy_effort_mask, policy_target_mask,
-    NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS,
-    NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
-    NUM_SIGNAL_STRENGTH_CHOICES,
+    PolicyActionKind, NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS,
+    NUM_POLICY_EFFORTS, NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS,
+    NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::config::PPOConfig;
 use crate::model::PolicyValueNet;
@@ -47,6 +47,9 @@ pub struct Transition {
     /// Exact legal-kind behavior-policy mixture used when this action was
     /// sampled. Contact curricula may override the global PPO default.
     pub action_kind_exploration_floor: f32,
+    /// Exact direct Attack mixture used after the legal-kind mixture. This is
+    /// nonzero only for assigned named micro-combat training rollouts.
+    pub attack_action_kind_exploration_floor: f32,
     pub reward: f32,
     pub value: f32,
     /// Value at this cell's next decision frontier. This is supplied only
@@ -133,6 +136,29 @@ pub struct PpoMetrics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RecurrentChunk {
     indices: Vec<usize>,
+}
+
+fn behavior_kind_fixed_and_scale(
+    mask: &[bool; NUM_POLICY_ACTION_KINDS],
+    uniform_floor: f32,
+    attack_floor: f32,
+) -> ([f32; NUM_POLICY_ACTION_KINDS], f32) {
+    debug_assert!(
+        attack_floor == 0.0 || mask[PolicyActionKind::Attack.index()],
+        "an Attack mixture may only be recorded when Attack is legal"
+    );
+    let legal = mask.iter().filter(|allowed| **allowed).count().max(1) as f32;
+    let mut fixed = [0.0; NUM_POLICY_ACTION_KINDS];
+    for (kind, allowed) in mask.iter().enumerate() {
+        let uniform = if *allowed { uniform_floor / legal } else { 0.0 };
+        fixed[kind] = (1.0 - attack_floor) * uniform
+            + if kind == PolicyActionKind::Attack.index() {
+                attack_floor
+            } else {
+                0.0
+            };
+    }
+    (fixed, (1.0 - uniform_floor) * (1.0 - attack_floor))
 }
 
 fn recurrent_chunks(transitions: &[Transition], unroll_steps: usize) -> Vec<RecurrentChunk> {
@@ -355,21 +381,31 @@ where
                     .map(|allowed| if *allowed { 0.0 } else { -1.0e9 })
             })
             .collect::<Vec<_>>();
-        let kind_uniform = kind_masks
+        let kind_fixed = kind_masks
             .iter()
             .zip(&indices)
             .flat_map(|(mask, index)| {
-                let legal = mask.iter().filter(|allowed| **allowed).count().max(1) as f32;
-                let floor = rollout.transitions[*index].action_kind_exploration_floor;
-                mask.iter()
-                    .map(move |allowed| if *allowed { floor / legal } else { 0.0 })
+                let transition = &rollout.transitions[*index];
+                behavior_kind_fixed_and_scale(
+                    mask,
+                    transition.action_kind_exploration_floor,
+                    transition.attack_action_kind_exploration_floor,
+                )
+                .0
             })
             .collect::<Vec<_>>();
-        let kind_policy_scale = indices
+        let kind_policy_scale = kind_masks
             .iter()
-            .flat_map(|index| {
+            .zip(&indices)
+            .flat_map(|(mask, index)| {
+                let transition = &rollout.transitions[*index];
                 std::iter::repeat_n(
-                    1.0 - rollout.transitions[*index].action_kind_exploration_floor,
+                    behavior_kind_fixed_and_scale(
+                        mask,
+                        transition.action_kind_exploration_floor,
+                        transition.attack_action_kind_exploration_floor,
+                    )
+                    .1,
                     NUM_POLICY_ACTION_KINDS,
                 )
             })
@@ -512,7 +548,7 @@ where
                 device,
             )
             + Tensor::<B, 2>::from_data(
-                TensorData::new(kind_uniform, [batch_size, NUM_POLICY_ACTION_KINDS]),
+                TensorData::new(kind_fixed, [batch_size, NUM_POLICY_ACTION_KINDS]),
                 device,
             );
         let kind_log_probs = kind_probs.clone().clamp_min(1.0e-20).log();
@@ -975,6 +1011,7 @@ mod tests {
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
             action_kind_exploration_floor: 0.0,
+            attack_action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 0.0,
             next_value: 0.0,
@@ -1042,6 +1079,21 @@ mod tests {
     }
 
     #[test]
+    fn ppo_reconstructs_uniform_then_direct_attack_mixture() {
+        let mut mask = [false; NUM_POLICY_ACTION_KINDS];
+        mask[PolicyActionKind::Wait.index()] = true;
+        mask[PolicyActionKind::Guard.index()] = true;
+        mask[PolicyActionKind::Attack.index()] = true;
+        let (fixed, scale) = behavior_kind_fixed_and_scale(&mask, 0.3, 0.5);
+
+        assert!((scale - 0.35).abs() < 1.0e-6);
+        assert!((fixed[PolicyActionKind::Wait.index()] - 0.05).abs() < 1.0e-6);
+        assert!((fixed[PolicyActionKind::Guard.index()] - 0.05).abs() < 1.0e-6);
+        assert!((fixed[PolicyActionKind::Attack.index()] - 0.55).abs() < 1.0e-6);
+        assert!((fixed.iter().sum::<f32>() + scale - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
     fn singleton_minibatch_preserves_the_batch_axis() {
         let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
         type TestBackend = Autodiff<NdArray>;
@@ -1062,6 +1114,7 @@ mod tests {
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
                 action_kind_exploration_floor: 0.1,
+                attack_action_kind_exploration_floor: 0.5,
                 reward: 1.0,
                 value: 0.0,
                 next_value: 0.0,
@@ -1204,6 +1257,7 @@ mod tests {
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
                 action_kind_exploration_floor: 0.0,
+                attack_action_kind_exploration_floor: 0.0,
                 reward: 1.0,
                 value: 0.5,
                 next_value: 1.0,
@@ -1227,6 +1281,7 @@ mod tests {
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
                 action_kind_exploration_floor: 0.0,
+                attack_action_kind_exploration_floor: 0.0,
                 reward: 2.0,
                 value: 1.0,
                 next_value: 1.5,
@@ -1250,6 +1305,7 @@ mod tests {
                 signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
                 signal_strength: 0,
                 action_kind_exploration_floor: 0.0,
+                attack_action_kind_exploration_floor: 0.0,
                 reward: 3.0,
                 value: 1.5,
                 next_value: 0.0,
@@ -1286,6 +1342,7 @@ mod tests {
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
             action_kind_exploration_floor: 0.0,
+            attack_action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 0.5,
             next_value: 0.0,
@@ -1312,6 +1369,7 @@ mod tests {
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
             action_kind_exploration_floor: 0.0,
+            attack_action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 0.5,
             next_value: 0.0,
@@ -1341,6 +1399,7 @@ mod tests {
             signal_strength_mask: vec![true; NUM_SIGNAL_STRENGTH_CHOICES],
             signal_strength: 0,
             action_kind_exploration_floor: 0.0,
+            attack_action_kind_exploration_floor: 0.0,
             reward: 1.0,
             value: 2.0,
             next_value: 10.0,

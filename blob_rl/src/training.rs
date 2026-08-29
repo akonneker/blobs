@@ -14,8 +14,8 @@ use std::time::Instant;
 
 use crate::action::{
     compose_policy_action, policy_action_kind_mask, policy_effort_mask, policy_target_mask,
-    policy_wait_action, HierarchicalActionChoice, PolicyChoice, NUM_AMOUNT_CHOICES,
-    NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS,
+    policy_wait_action, HierarchicalActionChoice, PolicyActionKind, PolicyChoice,
+    NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS,
     NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
     NUM_SIGNAL_STRENGTH_CHOICES,
 };
@@ -962,7 +962,7 @@ fn write_competency_timeline_row(
 ) -> Result<(), String> {
     writeln!(
         file,
-        "{update},{actions},{minimum_sim_time_quanta_per_env},{maximum_sim_time_quanta_per_env},{total_sim_time_quanta},{},{trigger},{},{},{:.6},{:.6},{:.6},{:.6},{},{:.6},{:.6},{},{},{},{},{:.6},{:.6},{:.6}",
+        "{update},{actions},{minimum_sim_time_quanta_per_env},{maximum_sim_time_quanta_per_env},{total_sim_time_quanta},{},{trigger},{},{},{:.6},{:.6},{:.6},{:.6},{},{:.6},{:.6},{:.6},{},{},{},{},{:.6},{:.6},{:.6}",
         scheduled_world_time_frontier.map_or_else(String::new, |value| value.to_string()),
         metrics.configured_feeding_passed,
         metrics.retention_feeding_passed,
@@ -973,6 +973,7 @@ fn write_competency_timeline_row(
         metrics.combat_passed,
         metrics.micro_survival_success_rate,
         metrics.micro_elimination_success_rate,
+        metrics.micro_attack_commitments_per_episode,
         metrics.contact_damage,
         metrics.contact_kills,
         metrics.skirmish_damage,
@@ -1447,7 +1448,7 @@ pub fn train<B: AutodiffBackend>(
     let mut competency_timeline_file = open_metrics_file(
         &competency_timeline_path,
         resume_checkpoint.is_some(),
-        "update,actions,min_sim_time_quanta_per_env,max_sim_time_quanta_per_env,total_sim_time_quanta,scheduled_world_time_frontier,trigger,configured_feeding_passed,retention_feeding_passed,on_food_survival_rate,adjacent_food_survival_rate,on_food_intake_per_initial_cell,adjacent_food_intake_per_initial_cell,combat_passed,micro_survival_success_rate,micro_elimination_success_rate,contact_damage,contact_kills,skirmish_damage,skirmish_kills,fixed_worst_case_win_rate,fixed_win_rate,fixed_average_reward",
+        "update,actions,min_sim_time_quanta_per_env,max_sim_time_quanta_per_env,total_sim_time_quanta,scheduled_world_time_frontier,trigger,configured_feeding_passed,retention_feeding_passed,on_food_survival_rate,adjacent_food_survival_rate,on_food_intake_per_initial_cell,adjacent_food_intake_per_initial_cell,combat_passed,micro_survival_success_rate,micro_elimination_success_rate,micro_attack_commitments_per_episode,contact_damage,contact_kills,skirmish_damage,skirmish_kills,fixed_worst_case_win_rate,fixed_win_rate,fixed_average_reward",
     )
     .expect("failed to initialize competency timeline");
     let evaluation_seeds = (0..config.eval_episodes)
@@ -1667,6 +1668,10 @@ pub fn train<B: AutodiffBackend>(
                 let decision_time = env.sim_time_quanta();
                 let action_kind_exploration_floor = config
                     .rollout_action_kind_exploration_floor(environment_curriculum_stages[env_idx]);
+                let configured_attack_action_kind_exploration_floor = config
+                    .rollout_attack_action_kind_exploration_floor(
+                        environment_micro_combat_scenarios[env_idx],
+                    );
                 let stage = environment_curriculum_stages[env_idx];
                 let initial_policy_anchor_coeff = anchor_teacher_for_stage(
                     &config,
@@ -1687,10 +1692,18 @@ pub fn train<B: AutodiffBackend>(
                     let effort_logits_start = target_logits_start + NUM_POLICY_TARGET_LOGITS;
                     let amount_logits_start = effort_logits_start + NUM_POLICY_EFFORT_LOGITS;
                     let signal_start = amount_logits_start + NUM_POLICY_AMOUNT_LOGITS;
-                    let (kind_probs, kind_log_probs) = masked_distribution(
+                    let kind_mask = policy_action_kind_mask(&obs.action_mask);
+                    let attack_action_kind_exploration_floor =
+                        if kind_mask[PolicyActionKind::Attack.index()] {
+                            configured_attack_action_kind_exploration_floor
+                        } else {
+                            0.0
+                        };
+                    let (kind_probs, kind_log_probs) = masked_action_kind_distribution(
                         &row[..target_logits_start],
-                        &policy_action_kind_mask(&obs.action_mask),
+                        &kind_mask,
                         action_kind_exploration_floor,
+                        attack_action_kind_exploration_floor,
                     );
                     let kind = sample_action(&kind_probs, &mut action_rng);
                     let target_start = target_logits_start + kind * NUM_POLICY_TARGETS;
@@ -1805,6 +1818,7 @@ pub fn train<B: AutodiffBackend>(
                             signal_strength_mask: signal_strength_mask.to_vec(),
                             signal_strength,
                             action_kind_exploration_floor,
+                            attack_action_kind_exploration_floor,
                             reward: 0.0,
                             value,
                             next_value: 0.0,
@@ -2300,7 +2314,7 @@ pub fn train<B: AutodiffBackend>(
                             .expect("failed to publish micro-combat evaluation metrics");
                             let gate = report.gate_summary();
                             println!(
-                                "  micro gate  │ survival {:>6.1}% / {:>6.1}% │ elimination {:>6.1}% / {:>6.1}%",
+                                "  micro gate  │ survival {:>6.1}% / {:>6.1}% │ elimination {:>6.1}% / {:>6.1}% │ attacks {:>6.2} / {:>6.2} per episode",
                                 gate.survival_success_rate * 100.0,
                                 config
                                     .combat_curriculum
@@ -2313,6 +2327,11 @@ pub fn train<B: AutodiffBackend>(
                                     .micro_combat
                                     .min_elimination_objective_success_rate
                                     * 100.0,
+                                gate.attack_commitments_per_episode,
+                                config
+                                    .combat_curriculum
+                                    .micro_combat
+                                    .min_attack_commitments_per_episode,
                             );
                             report
                         });
@@ -2913,6 +2932,33 @@ fn masked_distribution<const N: usize>(
     (weights, log_probs)
 }
 
+fn masked_action_kind_distribution(
+    logits: &[f32],
+    mask: &[bool; NUM_POLICY_ACTION_KINDS],
+    uniform_floor: f32,
+    attack_floor: f32,
+) -> (Vec<f32>, Vec<f32>) {
+    let (mut probabilities, _) = masked_distribution(logits, mask, uniform_floor);
+    if attack_floor > 0.0 {
+        debug_assert!(mask[PolicyActionKind::Attack.index()]);
+        for probability in &mut probabilities {
+            *probability *= 1.0 - attack_floor;
+        }
+        probabilities[PolicyActionKind::Attack.index()] += attack_floor;
+    }
+    let log_probabilities = probabilities
+        .iter()
+        .map(|probability| {
+            if *probability > 0.0 {
+                probability.ln()
+            } else {
+                -1.0e9
+            }
+        })
+        .collect();
+    (probabilities, log_probabilities)
+}
+
 /// Sample an action from a probability distribution.
 fn sample_action(probs: &[f32], rng: &mut impl Rng) -> usize {
     let rng_val: f32 = rng.random();
@@ -3065,6 +3111,31 @@ mod tests {
         for index in [0, 1, 3] {
             assert!(probabilities[index] >= 0.1 - 1.0e-6);
             assert!((log_probabilities[index].exp() - probabilities[index]).abs() < 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn micro_combat_attack_mixture_is_applied_after_uniform_legal_exploration() {
+        let mut mask = [false; NUM_POLICY_ACTION_KINDS];
+        mask[PolicyActionKind::Wait.index()] = true;
+        mask[PolicyActionKind::Guard.index()] = true;
+        mask[PolicyActionKind::Attack.index()] = true;
+        let (base, _) = masked_distribution(&[0.0; NUM_POLICY_ACTION_KINDS], &mask, 0.3);
+        let (mixed, logs) =
+            masked_action_kind_distribution(&[0.0; NUM_POLICY_ACTION_KINDS], &mask, 0.3, 0.5);
+
+        assert!((mixed.iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+        for kind in 0..NUM_POLICY_ACTION_KINDS {
+            let expected = 0.5 * base[kind]
+                + if kind == PolicyActionKind::Attack.index() {
+                    0.5
+                } else {
+                    0.0
+                };
+            assert!((mixed[kind] - expected).abs() < 1.0e-6);
+            if mixed[kind] > 0.0 {
+                assert!((logs[kind].exp() - mixed[kind]).abs() < 1.0e-6);
+            }
         }
     }
 
@@ -3425,7 +3496,9 @@ mod tests {
         config.combat_curriculum.micro_combat = crate::micro_combat::MicroCombatTrainingConfig {
             enabled: true,
             rollout_enabled: true,
+            attack_action_kind_exploration_floor: 0.0,
             suite: Some(suite),
+            min_attack_commitments_per_episode: 0.0,
             min_survival_objective_success_rate: 0.75,
             min_elimination_objective_success_rate: 0.25,
         };
@@ -3550,7 +3623,9 @@ mod tests {
         config.combat_curriculum.micro_combat = MicroCombatTrainingConfig {
             enabled: true,
             rollout_enabled: true,
+            attack_action_kind_exploration_floor: 0.0,
             suite: Some(suite),
+            min_attack_commitments_per_episode: 0.0,
             min_survival_objective_success_rate: 1.0,
             min_elimination_objective_success_rate: 1.0,
         };

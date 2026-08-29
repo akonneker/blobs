@@ -1456,6 +1456,22 @@ impl TrainingConfig {
         self.ppo.action_kind_exploration_floor
     }
 
+    /// Direct Attack mixture used only inside an explicitly assigned named
+    /// micro-combat scenario. The scenario index stays host-private and is not
+    /// projected into observations or canonical physics.
+    pub fn rollout_attack_action_kind_exploration_floor(
+        &self,
+        micro_combat_scenario: Option<usize>,
+    ) -> f32 {
+        if micro_combat_scenario.is_some() && self.combat_curriculum.micro_combat.rollout_enabled {
+            self.combat_curriculum
+                .micro_combat
+                .attack_action_kind_exploration_floor
+        } else {
+            0.0
+        }
+    }
+
     pub fn rollout_initial_policy_anchor_coeff(&self, stage: FeedingCurriculumStage) -> f32 {
         if self.combat_curriculum.enabled && stage == FeedingCurriculumStage::Contact {
             self.combat_curriculum

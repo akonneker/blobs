@@ -15,7 +15,7 @@ use crate::feeding_curriculum::FeedingPromotionReport;
 use crate::micro_combat::MicroCombatEvaluationReport;
 use crate::sweep::sha256;
 
-pub const CHECKPOINT_EVALUATION_SCHEMA_VERSION: u32 = 6;
+pub const CHECKPOINT_EVALUATION_SCHEMA_VERSION: u32 = 7;
 const MAX_ARTIFACT_BYTES: u64 = 4 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
