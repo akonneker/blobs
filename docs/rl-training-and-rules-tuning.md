@@ -1813,6 +1813,17 @@ requires the 256×256 base-world identity. The report now binds the base world;
 the hashed suite continues to bind the small-world geometries. A regression
 test checks this exact maintained configuration before V3 execution.
 
+V3 completed all six bounded runs. Balanced rehearsal did not qualify: final
+held-out survival was 4.17% versus 2.08% for control (paired change +2.08
+percentage points with a ±8.96-point 95% interval), while both arms had zero
+elimination success and zero terminal fixed-suite wins. More importantly,
+every terminal held-out micro-combat report recorded zero committed attacks;
+five of six terminal policies also failed both feeding tasks. This rejects
+longer exposure to the same undifferentiated rehearsal as the immediate next
+step. The next experiment should explicitly solve combat-action acquisition
+while protecting feeding retention. Full evidence and caveats are recorded in
+the V3 sweep README and aggregate.
+
 Training-artifact schema 39 and checkpoint-evaluation schema 6 bind the split
 evaluation/rehearsal contract. Sweep-execution schema 9 reconstructs every complete micro-combat evaluation
 boundary and binds terminal/best survival and elimination, joint-gate reach,
@@ -1824,10 +1835,12 @@ across resumed attempts. This intentionally excludes GPU device memory, which
 must be characterized separately for deployment sizing. Throughput remains
 reported as actions and authoritative simulation quanta per second.
 
-Build and execute serially on one GPU with:
+The completed V3 evidence used the faster measured CPU NdArray backend and one
+serial worker:
 
 ```sh
-cargo build --release -p blob_rl --bin train --bin rules-sweep-run
+cargo build --release -p blob_rl --bin train --bin rules-sweep-run \
+  --no-default-features --features ndarray --locked
 target/release/rules-sweep-run \
   sweeps/micro-combat-ablation-256-v3/manifest.json \
   --max-parallel 1

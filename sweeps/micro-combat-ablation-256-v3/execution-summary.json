@@ -1,0 +1,11 @@
+{
+  "schema_version": 9,
+  "manifest_sha256": "b53bf873fa5db049d4a68589f9f4eb8b15efa1878ff54f5008f7f5413c9ff0cf",
+  "execution_contract_sha256": "8044b0176f79368460ff3b3c764846e54babe44911f4896d7e3056d1b0a6d44e",
+  "trainer_sha256": "87c988bbb648ce69955e3a8b892878c0a276815f42834acecc5949dc00198188",
+  "total_runs": 6,
+  "succeeded": 6,
+  "failed": 0,
+  "still_running": 0,
+  "aggregate_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/aggregate.json"
+}
