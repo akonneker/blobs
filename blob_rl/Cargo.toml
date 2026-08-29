@@ -73,6 +73,10 @@ name = "demonstrations"
 path = "src/bin/demonstrations.rs"
 
 [[bin]]
+name = "policy-corrections"
+path = "src/bin/policy_corrections.rs"
+
+[[bin]]
 name = "behavior-clone"
 path = "src/bin/behavior_clone.rs"
 

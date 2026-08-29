@@ -2073,6 +2073,56 @@ across resumed attempts. This intentionally excludes GPU device memory, which
 must be characterized separately for deployment sizing. Throughput remains
 reported as actions and authoritative simulation quanta per second.
 
+The first rollout-distribution correction slice now uses deterministic
+dataset aggregation rather than extracting isolated failure frames. A verified
+greedy clone executes each contact episode, while the maintained aggressive
+teacher labels every state the clone actually visits. Each cell's trajectory
+is retained from its beginning, including intervening agreements, so recurrent
+unrolls never splice across omitted decisions or initialize a mid-episode
+hidden state as zero. Collection replaces the cell-private random block with
+zero after advancing the canonical invocation sequence, exactly matching the
+deterministic held-out rollout boundary. This remains a local Mind observation;
+the teacher and policy artifact identity are host-side supervision metadata.
+
+Demonstration schema 11 distinguishes ordinary teacher rollouts from greedy
+policy corrections and binds both the behavior-clone metadata and model hashes.
+It also records total policy disagreements and the subset where the teacher
+attacked but the rollout policy did not. Continuous teacher parameters that do
+not exactly occur in the learned policy's discrete catalog are explicitly
+projected to the nearest legal policy choice; the manifest records the number
+of projected labels, and the stored label then round-trips exactly. This avoids
+silently dropping the exact attack corrections that motivated collection.
+Behavior-cloning schema 17 already
+binds each dataset's complete manifest hash, so no clone-format change is
+needed to carry the new collection identity. The 256-cell warm-start
+builder now produces a bootstrap clone, collects separate 60-energy/aggressive
+and 180-energy/defensive correction trajectories on disjoint seeds, and runs a
+bounded continuation with both the original rehearsal corpus and corrections.
+The immutable feeding, contact, and micro-combat gates still decide whether the
+result is promotable; correction labels alone are not evidence of competence.
+
+A bounded first correction run exposed two separate failure modes. Without
+explicit projection, the 60-energy policy rollout produced 120 missed teacher
+attacks, but exact-round-trip filtering removed every one because their payload
+values fell between catalog tiers. Projected correction retains all 120. A
+four-epoch, `1e-4` continuation then recovered 100% routed-expert Attack but
+erased held-out Consume, so the maintained builder now defaults to one
+correction epoch at `1e-5` and half the former correction share. That
+conservative candidate retained 97.0% held-out Consume and 100% routed-expert
+Attack, but its gate selected combat for only 66.7% of held-out Attack labels.
+It committed 16 attacks across 48 contact episodes and about 0.021 attacks per
+micro-combat episode, with zero elimination successes. It is rejected.
+
+The correction data also reveals the next modeling seam: a dataset-wide
+`combat` label is host scenario metadata, not necessarily inferable from a
+later anonymous state after the policy has moved away from contact. Such Move
+states can be locally indistinguishable from feeding Move states, forcing the
+gate to learn contradictory labels. The next slice should route supervision
+per decision using a locally derivable interaction predicate or the projected
+action family, permit phase changes inside a recurrent trajectory, and verify
+that identical observations cannot receive conflicting gate labels. Only then
+should another multi-round correction schedule be tuned.
+
 The completed V3 evidence used the faster measured CPU NdArray backend and one
 serial worker:
 

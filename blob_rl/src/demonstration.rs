@@ -5,7 +5,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use blob_interface::reference_mind::ReferenceMemoryUpdate;
+use blob_interface::randomness::PrivateRandom;
+use blob_interface::reference_mind::{
+    ReferenceMemoryUpdate, ReferenceMindDecision, ReferenceMindInput,
+};
+use burn::prelude::Backend;
 use serde::{Deserialize, Serialize};
 
 use crate::action::{
@@ -15,11 +19,13 @@ use crate::action::{
 use crate::config::{ScenarioProfile, TrainingConfig};
 use crate::control_matrix::MaintainedMindProfile;
 use crate::env::{BlobEnv, EpisodeOutcome};
+use crate::evaluation::greedy_policy_choices;
+use crate::model::PolicyValueNet;
 use crate::observation::{Observation, OBS_DIM};
 use crate::sweep::sha256;
 use crate::viability::mind_abi_hash;
 
-pub const DEMONSTRATION_SCHEMA_VERSION: u32 = 10;
+pub const DEMONSTRATION_SCHEMA_VERSION: u32 = 11;
 const PAYLOAD_FILE: &str = "samples.mpk";
 const MANIFEST_FILE: &str = "manifest.json";
 const MAX_DATASET_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -30,6 +36,38 @@ pub struct DemonstrationOptions {
     pub teacher: MaintainedMindProfile,
     pub seeds: Vec<u64>,
     pub max_samples: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct PolicyCorrectionOptions {
+    pub teacher: MaintainedMindProfile,
+    pub seeds: Vec<u64>,
+    pub max_samples: usize,
+    pub behavior_clone_metadata_sha256: String,
+    pub behavior_clone_model_sha256: String,
+}
+
+/// How the labeled observations were reached. Correction datasets deliberately
+/// keep complete policy-induced trajectory prefixes rather than isolated
+/// mistakes, so recurrent training never invents continuity across omitted
+/// decisions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DemonstrationCollection {
+    TeacherRollout,
+    GreedyPolicyCorrection {
+        behavior_clone_metadata_sha256: String,
+        behavior_clone_model_sha256: String,
+        policy_disagreement_samples: usize,
+        teacher_attack_policy_non_attack_samples: usize,
+        /// Raw teacher decisions whose continuous parameters were projected to
+        /// the nearest legal discrete policy choice before storage.
+        projected_teacher_samples: usize,
+        /// Qualification uses deterministic greedy inference. Replacing the
+        /// invocation randomness with zero reproduces that exact observation
+        /// boundary while still advancing canonical per-cell sequences.
+        zero_randomness: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -71,6 +109,7 @@ pub struct DemonstrationManifest {
     pub package_version: String,
     pub mind_abi_sha256: String,
     pub teacher: MaintainedMindProfile,
+    pub collection: DemonstrationCollection,
     pub seeds: Vec<u64>,
     /// Hash of the source TOML before CLI scenario overrides.
     pub source_config_sha256: String,
@@ -106,16 +145,72 @@ pub struct LoadedDemonstrations {
 }
 
 fn validate_options(options: &DemonstrationOptions) -> Result<(), String> {
-    if options.seeds.is_empty() || options.max_samples == 0 {
+    validate_seed_sample_options(&options.seeds, options.max_samples)
+}
+
+fn validate_seed_sample_options(seeds: &[u64], max_samples: usize) -> Result<(), String> {
+    if seeds.is_empty() || max_samples == 0 {
         return Err("demonstrations require seeds and a positive sample cap".into());
     }
-    let mut unique = options.seeds.clone();
+    let mut unique = seeds.to_vec();
     unique.sort_unstable();
     unique.dedup();
-    if unique.len() != options.seeds.len() {
+    if unique.len() != seeds.len() {
         return Err("demonstration seeds must be unique".into());
     }
     Ok(())
+}
+
+fn sample_from_decision(
+    source_seed: u64,
+    source_cell: usize,
+    input: &ReferenceMindInput,
+    decision: &ReferenceMindDecision,
+) -> Result<(DemonstrationSample, PolicyActionFamily), String> {
+    let choice = encode_decision(decision, input)
+        .ok_or_else(|| "teacher emitted an unencodable decision".to_string())?;
+    let observation = Observation::from_reference(input);
+    let amount_mask = observation.amount_mask(choice.action);
+    let signal_mask = observation.signal_mask(choice.action, choice.amount);
+    let signal_strength_mask =
+        observation.signal_strength_mask(choice.action, choice.amount, choice.signal);
+    if choice.action >= NUM_ACTIONS
+        || !observation.action_mask[choice.action]
+        || choice.amount >= NUM_AMOUNT_CHOICES
+        || !amount_mask[choice.amount]
+        || choice.signal >= NUM_SIGNAL_CHOICES
+        || !signal_mask[choice.signal]
+        || choice.signal_strength >= NUM_SIGNAL_STRENGTH_CHOICES
+        || !signal_strength_mask[choice.signal_strength]
+    {
+        return Err("teacher emitted an action outside the policy mask".into());
+    }
+    let decoded = decode_policy_choice(choice, input);
+    let family = policy_action_family(choice.action)
+        .expect("encoded teacher decision belongs to a policy family");
+    Ok((
+        DemonstrationSample {
+            source_seed,
+            source_cell: u64::try_from(source_cell)
+                .map_err(|_| "cell ID exceeds demonstration trajectory key".to_string())?,
+            observation: observation.data.to_vec(),
+            action_mask: observation.action_mask.to_vec(),
+            action: u16::try_from(choice.action)
+                .map_err(|_| "policy action catalog exceeds u16".to_string())?,
+            amount_mask: amount_mask.to_vec(),
+            amount: u8::try_from(choice.amount)
+                .map_err(|_| "policy amount catalog exceeds u8".to_string())?,
+            signal_mask: signal_mask.to_vec(),
+            signal: u8::try_from(choice.signal)
+                .map_err(|_| "policy signal catalog exceeds u8".to_string())?,
+            signal_strength_mask: signal_strength_mask.to_vec(),
+            signal_strength: u8::try_from(choice.signal_strength)
+                .map_err(|_| "policy signal-strength catalog exceeds u8".to_string())?,
+            exact_round_trip: decoded == *decision,
+            memory_replacement: matches!(decision.memory_update, ReferenceMemoryUpdate::Replace(_)),
+        },
+        family,
+    ))
 }
 
 pub fn generate_demonstrations(
@@ -158,62 +253,14 @@ pub fn generate_demonstrations(
             let mut decisions = std::collections::HashMap::with_capacity(prepared.len());
             for (cell_id, input) in prepared {
                 let decision = options.teacher.decide(&input);
-                let choice = encode_decision(&decision, &input).ok_or_else(|| {
-                    format!(
-                        "teacher {} emitted an unencodable decision",
-                        options.teacher
-                    )
-                })?;
-                let observation = Observation::from_reference(&input);
-                let amount_mask = observation.amount_mask(choice.action);
-                let signal_mask = observation.signal_mask(choice.action, choice.amount);
-                let signal_strength_mask =
-                    observation.signal_strength_mask(choice.action, choice.amount, choice.signal);
-                if choice.action >= NUM_ACTIONS
-                    || !observation.action_mask[choice.action]
-                    || choice.amount >= NUM_AMOUNT_CHOICES
-                    || !amount_mask[choice.amount]
-                    || choice.signal >= NUM_SIGNAL_CHOICES
-                    || !signal_mask[choice.signal]
-                    || choice.signal_strength >= NUM_SIGNAL_STRENGTH_CHOICES
-                    || !signal_strength_mask[choice.signal_strength]
-                {
-                    return Err(format!(
-                        "teacher {} emitted an action outside the policy mask",
-                        options.teacher
-                    ));
-                }
                 if samples.len() < options.max_samples && seed_samples < samples_per_seed {
-                    let decoded = decode_policy_choice(choice, &input);
-                    let exact_round_trip = decoded == decision;
-                    exact_round_trip_samples += usize::from(exact_round_trip);
-                    let memory_replacement =
-                        matches!(decision.memory_update, ReferenceMemoryUpdate::Replace(_));
-                    memory_replacement_samples += usize::from(memory_replacement);
-                    let family = policy_action_family(choice.action)
-                        .expect("encoded teacher decision belongs to a policy family");
+                    let (sample, family) =
+                        sample_from_decision(*seed, cell_id.0, &input, &decision)
+                            .map_err(|error| format!("teacher {} {error}", options.teacher))?;
+                    exact_round_trip_samples += usize::from(sample.exact_round_trip);
+                    memory_replacement_samples += usize::from(sample.memory_replacement);
                     action_family_samples[family.index()] += 1;
-                    samples.push(DemonstrationSample {
-                        source_seed: *seed,
-                        source_cell: u64::try_from(cell_id.0).map_err(|_| {
-                            "cell ID exceeds demonstration trajectory key".to_string()
-                        })?,
-                        observation: observation.data.to_vec(),
-                        action_mask: observation.action_mask.to_vec(),
-                        action: u16::try_from(choice.action)
-                            .map_err(|_| "policy action catalog exceeds u16".to_string())?,
-                        amount_mask: amount_mask.to_vec(),
-                        amount: u8::try_from(choice.amount)
-                            .map_err(|_| "policy amount catalog exceeds u8".to_string())?,
-                        signal_mask: signal_mask.to_vec(),
-                        signal: u8::try_from(choice.signal)
-                            .map_err(|_| "policy signal catalog exceeds u8".to_string())?,
-                        signal_strength_mask: signal_strength_mask.to_vec(),
-                        signal_strength: u8::try_from(choice.signal_strength)
-                            .map_err(|_| "policy signal-strength catalog exceeds u8".to_string())?,
-                        exact_round_trip,
-                        memory_replacement,
-                    });
+                    samples.push(sample);
                     seed_samples += 1;
                 }
                 decisions.insert(cell_id, decision);
@@ -260,12 +307,196 @@ pub fn generate_demonstrations(
         package_version: env!("CARGO_PKG_VERSION").to_string(),
         mind_abi_sha256: mind_abi_hash(),
         teacher: options.teacher,
+        collection: DemonstrationCollection::TeacherRollout,
         seeds: options.seeds.clone(),
         source_config_sha256,
         effective_config_sha256,
         semantic_ruleset_hash,
         compiled_ruleset_hash: compiled_ruleset_hash
             .expect("a nonempty demonstration has a compiled ruleset"),
+        scenario_hash,
+        observation_dim: OBS_DIM,
+        action_count: NUM_ACTIONS,
+        amount_choice_count: NUM_AMOUNT_CHOICES,
+        signal_choice_count: NUM_SIGNAL_CHOICES,
+        signal_strength_choice_count: NUM_SIGNAL_STRENGTH_CHOICES,
+        samples: payload.samples.len(),
+        exact_round_trip_samples,
+        memory_replacement_samples,
+        action_family_samples,
+        completed_episodes,
+        wins,
+        losses,
+        timeouts,
+        payload_file: PAYLOAD_FILE.into(),
+        payload_sha256: sha256(&payload_bytes),
+    };
+    Ok((manifest, payload))
+}
+
+/// Roll out one verified greedy policy while labeling every visited state with
+/// a maintained teacher. Keeping the full per-cell prefixes is essential: a
+/// disagreement-only sample set would silently splice unrelated recurrent
+/// states together during behavior cloning.
+pub fn generate_policy_correction_demonstrations<B: Backend>(
+    config: &TrainingConfig,
+    source_config_sha256: String,
+    options: &PolicyCorrectionOptions,
+    model: &PolicyValueNet<B>,
+    device: &B::Device,
+) -> Result<(DemonstrationManifest, DemonstrationPayload), String>
+where
+    f32: From<B::FloatElem>,
+{
+    config.validate()?;
+    validate_seed_sample_options(&options.seeds, options.max_samples)?;
+    if !is_sha256(&options.behavior_clone_metadata_sha256)
+        || !is_sha256(&options.behavior_clone_model_sha256)
+    {
+        return Err("policy correction requires valid behavior-clone hashes".into());
+    }
+    let scenario_hash = ScenarioProfile::from(&config.env).semantic_hash()?;
+    let effective_config_sha256 = sha256(
+        &serde_json::to_vec(config)
+            .map_err(|error| format!("failed to encode effective correction config: {error}"))?,
+    );
+    let semantic_ruleset_hash = config.env.rules.semantic_hash().to_string();
+    let mut samples = Vec::with_capacity(options.max_samples);
+    let mut exact_round_trip_samples = 0usize;
+    let mut memory_replacement_samples = 0usize;
+    let mut action_family_samples = [0usize; PolicyActionFamily::COUNT];
+    let mut policy_disagreement_samples = 0usize;
+    let mut teacher_attack_policy_non_attack_samples = 0usize;
+    let mut projected_teacher_samples = 0usize;
+    let mut completed_episodes = 0usize;
+    let mut wins = 0usize;
+    let mut losses = 0usize;
+    let mut timeouts = 0usize;
+    let mut compiled_ruleset_hash = None;
+    let samples_per_seed = options.max_samples.div_ceil(options.seeds.len());
+
+    'seeds: for seed in &options.seeds {
+        let mut env = BlobEnv::new(config.env.clone(), config.reward.clone(), *seed);
+        let compiled = env.compiled_ruleset_hash();
+        if compiled_ruleset_hash
+            .as_ref()
+            .is_some_and(|expected| expected != &compiled)
+        {
+            return Err("identical correction configuration compiled differently".into());
+        }
+        compiled_ruleset_hash = Some(compiled);
+        let mut seed_samples = 0usize;
+        loop {
+            let mut prepared = env.prepare_training_reference_inputs()?;
+            // Held-out rollout gates use deterministic greedy inference with a
+            // zero random block. Reproduce that observation exactly while the
+            // preceding preparation still advances canonical invocation
+            // sequences once per decision.
+            for (_, input) in &mut prepared {
+                input.randomness = PrivateRandom::ZERO;
+            }
+            let policy_observations = prepared
+                .iter()
+                .map(|(cell_id, input)| crate::env::PolicyObservation {
+                    cell_id: *cell_id,
+                    observation: Observation::from_reference(input),
+                    private_memory: input.private_memory.clone(),
+                })
+                .collect::<Vec<_>>();
+            let policy_choices = greedy_policy_choices(model, &policy_observations, device);
+            if policy_choices.len() != prepared.len() {
+                return Err("policy correction lost a ready-cell observation".into());
+            }
+            for ((cell_id, input), (policy_cell, policy_choice, _)) in
+                prepared.iter().zip(&policy_choices)
+            {
+                if cell_id != policy_cell {
+                    return Err("policy correction changed ready-cell ordering".into());
+                }
+                let raw_decision = options.teacher.decide(input);
+                let teacher_choice = encode_decision(&raw_decision, input).ok_or_else(|| {
+                    format!(
+                        "correction teacher {} emitted an unencodable decision",
+                        options.teacher
+                    )
+                })?;
+                let decision = decode_policy_choice(teacher_choice, input);
+                if samples.len() < options.max_samples && seed_samples < samples_per_seed {
+                    let (sample, teacher_family) = sample_from_decision(
+                        *seed, cell_id.0, input, &decision,
+                    )
+                    .map_err(|error| format!("correction teacher {} {error}", options.teacher))?;
+                    let disagrees = teacher_choice != *policy_choice;
+                    policy_disagreement_samples += usize::from(disagrees);
+                    projected_teacher_samples += usize::from(decision != raw_decision);
+                    teacher_attack_policy_non_attack_samples += usize::from(
+                        teacher_family == PolicyActionFamily::Attack
+                            && policy_action_family(policy_choice.action)
+                                != Some(PolicyActionFamily::Attack),
+                    );
+                    exact_round_trip_samples += usize::from(sample.exact_round_trip);
+                    memory_replacement_samples += usize::from(sample.memory_replacement);
+                    action_family_samples[teacher_family.index()] += 1;
+                    samples.push(sample);
+                    seed_samples += 1;
+                }
+            }
+            let result = env.step_with_policy_memory(&policy_choices);
+            if result.done {
+                completed_episodes += 1;
+                match result.outcome {
+                    Some(EpisodeOutcome::Win) => wins += 1,
+                    Some(EpisodeOutcome::Loss) => losses += 1,
+                    Some(EpisodeOutcome::Timeout) => timeouts += 1,
+                    Some(EpisodeOutcome::SafetyAbort) => {
+                        return Err(format!(
+                            "policy-correction seed {seed} reached the decision-frontier safety limit"
+                        ));
+                    }
+                    None => return Err("completed correction rollout omitted its outcome".into()),
+                }
+                break;
+            }
+            if samples.len() >= options.max_samples {
+                break 'seeds;
+            }
+            if seed_samples >= samples_per_seed {
+                break;
+            }
+        }
+        if samples.len() >= options.max_samples {
+            break;
+        }
+    }
+    if samples.is_empty() {
+        return Err("policy correction produced no ready-cell decisions".into());
+    }
+
+    let payload = DemonstrationPayload {
+        schema_version: DEMONSTRATION_SCHEMA_VERSION,
+        samples,
+    };
+    let payload_bytes = rmp_serde::to_vec_named(&payload)
+        .map_err(|error| format!("failed to encode correction payload: {error}"))?;
+    let manifest = DemonstrationManifest {
+        schema_version: DEMONSTRATION_SCHEMA_VERSION,
+        package_version: env!("CARGO_PKG_VERSION").to_string(),
+        mind_abi_sha256: mind_abi_hash(),
+        teacher: options.teacher,
+        collection: DemonstrationCollection::GreedyPolicyCorrection {
+            behavior_clone_metadata_sha256: options.behavior_clone_metadata_sha256.clone(),
+            behavior_clone_model_sha256: options.behavior_clone_model_sha256.clone(),
+            policy_disagreement_samples,
+            teacher_attack_policy_non_attack_samples,
+            projected_teacher_samples,
+            zero_randomness: true,
+        },
+        seeds: options.seeds.clone(),
+        source_config_sha256,
+        effective_config_sha256,
+        semantic_ruleset_hash,
+        compiled_ruleset_hash: compiled_ruleset_hash
+            .expect("a nonempty correction dataset has a compiled ruleset"),
         scenario_hash,
         observation_dim: OBS_DIM,
         action_count: NUM_ACTIONS,
@@ -304,6 +535,25 @@ fn validate_dataset(
         || manifest.payload_file != PAYLOAD_FILE
     {
         return Err("demonstration schema or identity mismatch".into());
+    }
+    if let DemonstrationCollection::GreedyPolicyCorrection {
+        behavior_clone_metadata_sha256,
+        behavior_clone_model_sha256,
+        policy_disagreement_samples,
+        teacher_attack_policy_non_attack_samples,
+        projected_teacher_samples,
+        zero_randomness,
+    } = &manifest.collection
+    {
+        if !is_sha256(behavior_clone_metadata_sha256)
+            || !is_sha256(behavior_clone_model_sha256)
+            || *policy_disagreement_samples > manifest.samples
+            || *teacher_attack_policy_non_attack_samples > *policy_disagreement_samples
+            || *projected_teacher_samples > manifest.samples
+            || !zero_randomness
+        {
+            return Err("policy-correction collection identity is malformed".into());
+        }
     }
     let mut exact = 0usize;
     let mut memory_replacements = 0usize;
@@ -461,6 +711,9 @@ pub fn load_demonstrations(directory: &Path) -> Result<LoadedDemonstrations, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use burn::backend::{Autodiff, NdArray};
+
+    type TestBackend = Autodiff<NdArray<f32>>;
 
     fn small_config() -> TrainingConfig {
         let mut config = TrainingConfig::default();
@@ -567,5 +820,80 @@ mod tests {
         assert!(attacks * 2 >= payload.samples.len());
         assert!(exact_attacks > 0);
         assert!(exact_attacks * 2 >= manifest.exact_round_trip_samples);
+    }
+
+    #[test]
+    fn policy_corrections_are_reproducible_and_bind_the_rollout_policy() {
+        let mut config = small_config();
+        config.env.world_size = 8;
+        config.env.cells_per_team = 1;
+        config.env.starting_cell_layout = blob_engine::engine::StartingCellLayout::PairedContact;
+        config.env.initial_energy = 100;
+        config.env.num_scattered_energy = 0;
+        config.env.num_plants = 0;
+        config.env.opponent = crate::config::OpponentProfile::Defensive;
+        let device = Default::default();
+        TestBackend::seed(&device, 73);
+        let model = crate::model::PolicyValueNetConfig {
+            hidden1: config.model.hidden1,
+            hidden2: config.model.hidden2,
+            recurrent_size: config.model.recurrent_size,
+        }
+        .init::<TestBackend>(&device);
+        let options = PolicyCorrectionOptions {
+            teacher: MaintainedMindProfile::Aggressive,
+            seeds: vec![31, 32],
+            max_samples: 16,
+            behavior_clone_metadata_sha256: "a".repeat(64),
+            behavior_clone_model_sha256: "b".repeat(64),
+        };
+        let left = generate_policy_correction_demonstrations(
+            &config,
+            sha256(b"correction config"),
+            &options,
+            &model,
+            &device,
+        )
+        .unwrap();
+        let right = generate_policy_correction_demonstrations(
+            &config,
+            sha256(b"correction config"),
+            &options,
+            &model,
+            &device,
+        )
+        .unwrap();
+        assert_eq!(left, right);
+        assert_eq!(left.0.samples, 16);
+        assert!(left.0.action_family_samples[PolicyActionFamily::Attack.index()] > 0);
+        let DemonstrationCollection::GreedyPolicyCorrection {
+            behavior_clone_metadata_sha256,
+            behavior_clone_model_sha256,
+            policy_disagreement_samples,
+            teacher_attack_policy_non_attack_samples,
+            projected_teacher_samples,
+            zero_randomness,
+        } = &left.0.collection
+        else {
+            panic!("expected policy-correction identity")
+        };
+        assert_eq!(behavior_clone_metadata_sha256, &"a".repeat(64));
+        assert_eq!(behavior_clone_model_sha256, &"b".repeat(64));
+        assert!(*policy_disagreement_samples <= left.0.samples);
+        assert!(*teacher_attack_policy_non_attack_samples <= *policy_disagreement_samples);
+        assert!(*projected_teacher_samples <= left.0.samples);
+        assert!(*zero_randomness);
+        validate_dataset(&left.0, &left.1).unwrap();
+
+        let mut tampered = left.0.clone();
+        let DemonstrationCollection::GreedyPolicyCorrection {
+            behavior_clone_model_sha256,
+            ..
+        } = &mut tampered.collection
+        else {
+            unreachable!()
+        };
+        *behavior_clone_model_sha256 = "not-a-hash".into();
+        assert!(validate_dataset(&tampered, &left.1).is_err());
     }
 }
