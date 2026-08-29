@@ -1,0 +1,22 @@
+# Corrected paired A/B. V1 proved that dense blocks are incompatible with the
+# adjacent-food retention stage because interior cells have no vacant neighbor.
+# Reuse V1's exact expanded bounded base and change both arms to checkerboard.
+base_config = "micro_combat_ablation_256_v2_base.toml"
+output_dir = "../../sweeps/micro-combat-ablation-256-v2"
+seeds = [256201, 256202, 256203]
+
+[[variants]]
+name = "no-rehearsal"
+description = "Control: checkerboard assembly, shared held-out suite, no named-scenario rollout exposure"
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = false
+
+[[variants]]
+name = "balanced-rehearsal"
+description = "Treatment: checkerboard assembly with stage-local round-robin micro-combat exposure"
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = true

@@ -1147,12 +1147,12 @@ mod tests {
     }
 
     #[test]
-    fn documented_micro_combat_ablation_changes_only_rollout_exposure() {
+    fn corrected_micro_combat_ablation_initializes_every_stage_and_changes_only_rehearsal() {
         let spec: RulesSweepSpec =
-            toml::from_str(include_str!("../config/micro_combat_ablation_256.toml")).unwrap();
+            toml::from_str(include_str!("../config/micro_combat_ablation_256_v2.toml")).unwrap();
         validate_spec(&spec).unwrap();
         let base = TrainingConfig::from_toml_str(include_str!(
-            "../config/micro_combat_ablation_256_base.toml"
+            "../config/micro_combat_ablation_256_v2_base.toml"
         ))
         .unwrap();
         base.validate().unwrap();
@@ -1180,7 +1180,12 @@ mod tests {
         let expanded = spec
             .variants
             .iter()
-            .map(|variant| base.with_combat_curriculum_override(&variant.combat_curriculum))
+            .map(|variant| {
+                base.with_scenario_override(&variant.scenario)
+                    .and_then(|config| {
+                        config.with_combat_curriculum_override(&variant.combat_curriculum)
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(spec.seeds.len(), 3);
@@ -1192,6 +1197,22 @@ mod tests {
         let mut normalized = expanded[1].clone();
         normalized.combat_curriculum.micro_combat.rollout_enabled = false;
         assert_eq!(normalized, expanded[0]);
+
+        let stage_starts = [
+            (crate::config::FeedingCurriculumStage::OnFood, 0),
+            (crate::config::FeedingCurriculumStage::AdjacentFood, 32_768),
+            (crate::config::FeedingCurriculumStage::Contact, 65_536),
+            (crate::config::FeedingCurriculumStage::Skirmish, 131_072),
+            (crate::config::FeedingCurriculumStage::Competitive, 196_608),
+        ];
+        for config in &expanded {
+            for &seed in &spec.seeds {
+                for &(stage, time) in &stage_starts {
+                    let environment = config.rollout_environment(stage, time);
+                    crate::env::BlobEnv::new(environment, config.reward.clone(), seed);
+                }
+            }
+        }
     }
 
     #[test]

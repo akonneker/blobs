@@ -1642,6 +1642,16 @@ impl TrainingConfig {
         if combat.micro_combat.enabled && !combat.enabled {
             return Err("micro-combat training requires the combat curriculum".into());
         }
+        if combat.enabled
+            && combat.adjacent_food_sim_time_quanta_per_cycle > 0
+            && self.env.starting_cell_layout == StartingCellLayout::Block
+            && self.env.cells_per_team >= 9
+        {
+            return Err(
+                "adjacent-food combat retention cannot use a block with enclosed interior cells"
+                    .into(),
+            );
+        }
         if distillation.enabled
             && (!feeding.enabled
                 || !combat.enabled
@@ -2456,6 +2466,20 @@ mod tests {
                 "accepted contact anchor coefficient {invalid}"
             );
         }
+    }
+
+    #[test]
+    fn adjacent_retention_rejects_blocks_with_enclosed_cells() {
+        let mut config = TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_ablation_256_base.toml"
+        ))
+        .unwrap();
+        assert!(config
+            .validate()
+            .unwrap_err()
+            .contains("enclosed interior cells"));
+        config.env.starting_cell_layout = StartingCellLayout::Checkerboard;
+        config.validate().unwrap();
     }
 
     #[test]

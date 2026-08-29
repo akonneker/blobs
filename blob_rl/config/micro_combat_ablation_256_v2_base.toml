@@ -1,18 +1,16 @@
-# Selection-grade 256x256 training with balanced local micro-combat rehearsal.
-# The six inline scenarios intentionally duplicate the standalone held-out
-# suite: checkpoint metadata must contain the exact rollout contract rather
-# than depend on a mutable path.
-seed = 256101
-num_envs = 4
-rollout_length = 8192
-total_timesteps = 100000000
-total_simulation_quanta_per_env = 67108864
-eval_interval = 25
+# Corrected bounded 256x256 base. Checkerboard placement guarantees that each
+# founder has a local vacancy during adjacent-food retention.
+seed = 256201
+num_envs = 2
+rollout_length = 2048
+total_timesteps = 20000000
+total_simulation_quanta_per_env = 1048576
+eval_interval = 8
 eval_episodes = 8
 evaluation_opponents = ["wait", "random", "forager", "aggressive"]
-evaluation_seed = 1256100000
-checkpoint_interval = 25
-checkpoint_dir = "./checkpoints/micro-combat-curriculum-256"
+evaluation_seed = 1256200000
+checkpoint_interval = 16
+checkpoint_dir = "./checkpoints/micro-combat-ablation-256-v2-base"
 
 [feeding_curriculum]
 enabled = true
@@ -28,17 +26,17 @@ evaluation_sim_time_limit_quanta = 262144
 
 [combat_curriculum]
 enabled = true
-cycle_sim_time_quanta_per_env = 1048576
-on_food_sim_time_quanta_per_cycle = 131072
-adjacent_food_sim_time_quanta_per_cycle = 131072
-contact_sim_time_quanta_per_cycle = 262144
-skirmish_sim_time_quanta_per_cycle = 262144
-retention_episode_sim_time_limit_quanta = 65536
+cycle_sim_time_quanta_per_env = 262144
+on_food_sim_time_quanta_per_cycle = 32768
+adjacent_food_sim_time_quanta_per_cycle = 32768
+contact_sim_time_quanta_per_cycle = 65536
+skirmish_sim_time_quanta_per_cycle = 65536
+retention_episode_sim_time_limit_quanta = 32768
 contact_episode_sim_time_limit_quanta = 8192
 skirmish_episode_sim_time_limit_quanta = 8192
 contact_evaluation_sim_time_limit_quanta = 16384
 skirmish_evaluation_sim_time_limit_quanta = 32768
-competency_evaluation_frontiers_sim_time_quanta_per_cycle = [524288, 786432]
+competency_evaluation_frontiers_sim_time_quanta_per_cycle = [131072, 196608]
 contact_action_kind_exploration_floor = 0.50
 skirmish_action_kind_exploration_floor = 0.25
 contact_cells_per_team = 1
@@ -153,7 +151,7 @@ recurrent_size = 64
 
 [env]
 world_size = 256
-cells_per_team = 512
+cells_per_team = 256
 starting_cell_layout = "checkerboard"
 max_episode_len = 65536
 victory = { immediate = "extermination", deadline = "draw", sim_time_limit_quanta = 16777216 }

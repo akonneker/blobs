@@ -27,6 +27,9 @@ simulation/action throughput, and peak host resident memory. Peak RSS excludes
 GPU device allocations; compare device memory separately when selecting a GPU
 deployment profile.
 
-This plan has been published but not executed. Its initial purpose is to detect
-direction and gross regressions. Three pairs are not sufficient evidence for a
-final curriculum decision when confidence intervals overlap materially.
+Execution was attempted on the CPU NdArray backend. All six runs failed before
+their first update because the dense block contains interior cells with no
+vacant neighbor, violating the adjacent-food retention setup. No learning
+result was produced and this plan must not be retried. The durable failure
+statuses and execution summary are retained as provenance. V2 changes both
+arms to the checkerboard assembly and leaves the paired intervention intact.
