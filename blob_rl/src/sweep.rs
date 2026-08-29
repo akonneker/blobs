@@ -1149,7 +1149,7 @@ mod tests {
     #[test]
     fn corrected_micro_combat_ablation_initializes_every_stage_and_changes_only_rehearsal() {
         let spec: RulesSweepSpec =
-            toml::from_str(include_str!("../config/micro_combat_ablation_256_v2.toml")).unwrap();
+            toml::from_str(include_str!("../config/micro_combat_ablation_256_v3.toml")).unwrap();
         validate_spec(&spec).unwrap();
         let base = TrainingConfig::from_toml_str(include_str!(
             "../config/micro_combat_ablation_256_v2_base.toml"

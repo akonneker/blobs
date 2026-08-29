@@ -1,4 +1,4 @@
-# Micro-combat rehearsal ablation, 256×256 (v2)
+# Micro-combat rehearsal ablation, 256×256 (v2, failed)
 
 V2 corrects the invalid dense-block starting assembly discovered when V1 was
 launched. Both arms now use a checkerboard assembly, which preserves 256 cells
@@ -21,4 +21,9 @@ target/release/rules-sweep-run \
   --max-parallel 1
 ```
 
-V1 is retained as failed provenance and must not be retried.
+The launch reached one complete training update, then exposed a report-identity
+bug: compiled ruleset hashes include board dimensions, so the 7×7 micro suite
+was incorrectly presented as the 256×256 checkpoint identity. The executor was
+stopped during the next trial once the shared failure was understood. V2 and V1
+are retained as failed provenance and must not be retried; V3 carries the same
+scientific design with the identity fix.

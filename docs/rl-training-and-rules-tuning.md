@@ -1791,8 +1791,8 @@ the contact/skirmish rollout rotation. Rehearsal is invalid unless evaluation
 is enabled. This separation makes the no-rehearsal control scientifically
 useful rather than exempting it from the test it is meant to compare.
 
-The corrected bounded A/B plan is published at
-[`sweeps/micro-combat-ablation-256-v2`](../sweeps/micro-combat-ablation-256-v2/README.md).
+The executable bounded A/B plan is published at
+[`sweeps/micro-combat-ablation-256-v3`](../sweeps/micro-combat-ablation-256-v3/README.md).
 It contains three paired seeds and two 256×256 arms. Every environment must
 reach 1,048,576 authoritative simulation quanta across four full curriculum
 cycles; 20 million actions is only the safety ceiling. Both arms retain the
@@ -1806,6 +1806,12 @@ visible vacant neighbor for every founder. The failure is retained as durable
 provenance. Configuration validation now rejects this combination, V2 uses a
 checkerboard assembly in both arms, and a regression test constructs every
 curriculum stage for every paired seed before a plan is accepted.
+
+V2 then reached its first update and revealed that micro-combat evidence used
+the 7×7 scenario's dimension-sensitive compiled hash where checkpoint metadata
+requires the 256×256 base-world identity. The report now binds the base world;
+the hashed suite continues to bind the small-world geometries. A regression
+test checks this exact maintained configuration before V3 execution.
 
 Training-artifact schema 39 and checkpoint-evaluation schema 6 bind the split
 evaluation/rehearsal contract. Sweep-execution schema 9 reconstructs every complete micro-combat evaluation
@@ -1823,7 +1829,7 @@ Build and execute serially on one GPU with:
 ```sh
 cargo build --release -p blob_rl --bin train --bin rules-sweep-run
 target/release/rules-sweep-run \
-  sweeps/micro-combat-ablation-256-v2/manifest.json \
+  sweeps/micro-combat-ablation-256-v3/manifest.json \
   --max-parallel 1
 ```
 

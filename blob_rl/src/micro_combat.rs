@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use blob_engine::engine::StartingCellLayout;
+use blob_engine::resolution::ReferenceSimulation;
 use burn::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -484,7 +485,15 @@ fn evaluate_with(
         .expect("invalid micro-combat suite");
     assert!(!seeds.is_empty(), "micro-combat evaluation requires seeds");
     let suite_sha256 = suite.semantic_hash().expect("validated suite must hash");
-    let mut ruleset_hash = None;
+    // A compiled ruleset hash includes the board dimensions. Bind the report
+    // to the training environment's compiled identity; individual micro
+    // scenarios deliberately use smaller worlds described by the hashed
+    // suite and therefore have different compiled hashes.
+    let ruleset_hash =
+        ReferenceSimulation::new(base.world_size, base.world_size, base.rules.clone())
+            .expect("validated base environment must compile")
+            .compiled_ruleset_hash()
+            .to_string();
     let mut all_metrics = Vec::with_capacity(suite.scenarios.len());
     for scenario in &suite.scenarios {
         let environment = scenario_environment(base, scenario);
@@ -504,12 +513,6 @@ fn evaluate_with(
                     initial_energy: scenario.opponent_initial_energy,
                 },
             );
-            let hash = env.compiled_ruleset_hash();
-            if let Some(expected) = &ruleset_hash {
-                assert_eq!(expected, &hash, "micro scenarios changed resolver rules");
-            } else {
-                ruleset_hash = Some(hash);
-            }
             env.enable_telemetry(TelemetryConfig {
                 enabled: true,
                 state_sample_interval_steps: u64::MAX,
@@ -585,7 +588,7 @@ fn evaluate_with(
     }
     MicroCombatEvaluationReport {
         schema_version: MICRO_COMBAT_EVALUATION_SCHEMA_VERSION,
-        ruleset_hash: ruleset_hash.expect("a nonempty suite and seed list create an environment"),
+        ruleset_hash,
         suite_sha256,
         seeds: seeds.to_vec(),
         scenarios: all_metrics,
@@ -881,5 +884,34 @@ mod tests {
         assert!(tampered
             .validate_against(&report.ruleset_hash, &suite, &seeds)
             .is_err());
+    }
+
+    #[test]
+    fn maintained_ablation_suite_binds_to_training_ruleset() {
+        let config = crate::config::TrainingConfig::from_toml_str(include_str!(
+            "../config/micro_combat_ablation_256_v2_base.toml"
+        ))
+        .unwrap();
+        let suite = config
+            .combat_curriculum
+            .micro_combat
+            .suite
+            .as_ref()
+            .unwrap();
+        let seeds = [config.evaluation_seed];
+        let expected_ruleset_hash =
+            BlobEnv::new(config.env.clone(), config.reward.clone(), config.seed)
+                .compiled_ruleset_hash();
+        let report = evaluate_micro_combat_baseline(
+            OpponentProfile::Defensive,
+            &config.env,
+            &config.reward,
+            suite,
+            &seeds,
+        );
+        assert_eq!(report.ruleset_hash, expected_ruleset_hash);
+        report
+            .validate_against(&expected_ruleset_hash, suite, &seeds)
+            .unwrap();
     }
 }

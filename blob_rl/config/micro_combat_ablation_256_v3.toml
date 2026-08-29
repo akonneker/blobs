@@ -1,0 +1,25 @@
+# Executable A/B after correcting the micro-combat report's base-world
+# compiled-ruleset binding. The scientific design is unchanged from V2.
+base_config = "micro_combat_ablation_256_v2_base.toml"
+output_dir = "../../sweeps/micro-combat-ablation-256-v3"
+seeds = [256201, 256202, 256203]
+
+[[variants]]
+name = "no-rehearsal"
+description = "Control: checkerboard assembly, shared held-out suite, no named-scenario rollout exposure"
+
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = false
+
+[[variants]]
+name = "balanced-rehearsal"
+description = "Treatment: checkerboard assembly with stage-local round-robin micro-combat exposure"
+
+[variants.scenario]
+starting_cell_layout = "checkerboard"
+
+[variants.combat_curriculum.micro_combat]
+rollout_enabled = true
