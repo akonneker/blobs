@@ -1899,10 +1899,35 @@ hash-bound shard; `feeding-evaluation-merge` validates common config, model,
 rules, and unique seeds, sums only raw counters, and recomputes all rates,
 gates, and the aggregate artifact hash. This also fixed an older validation
 gap where `report_from_metrics` accepted caller-supplied derived rates instead
-of deriving them from counters. The current checkerboard seeds collapse to two
-repeated spatial symmetries, so the next qualification slice must add genuinely
-different valid starting layouts rather than treating eight seed labels as
-eight independent ecologies.
+of deriving them from counters.
+
+Cross-layout qualification now covers line, checkerboard, ring, loose-random,
+and random founder geometries. `feeding-layout-evaluation` publishes the full
+layout/seed Cartesian matrix, and its merger rejects missing, duplicate, or
+mixed-policy shards. The original skill-balanced clone passes checkerboard but
+fails the other four layouts on held-out seed 930000101: adjacent-food survival
+is 75.0% for line, 76.6% for ring, 65.6% for loose-random, and 73.4% for random.
+This confirms that repeated checkerboard seeds were measuring a specialized
+policy rather than general feeding competence.
+
+The first layout sweep also found a curriculum defect: adjacent plants were
+chosen independently, so multiple cells could select the same vacant tile and
+later writes silently replaced earlier plants. Resource initialization now
+uses deterministic augmenting-path matching to assign one distinct visible,
+reachable vacancy to every founder. A 256-cell regression covers all five
+layouts. With corrected placement, the collision-aware teacher passes every
+layout on the held-out seed, with adjacent survival from 91.8% to 99.6%.
+Feeding-promotion schema 3 and demonstration schema 10 prevent pre-fix evidence
+from being mistaken for post-fix evidence.
+
+The warm-start builder therefore gates the teacher across all five layouts and
+collects both on-food and adjacent-food demonstrations for each. The original
+feeding sample budget is divided across layouts so broadening geometry does not
+multiply the feeding corpus or its training cost. Demonstration manifests bind
+both the unmodified source TOML and the validated effective configuration after
+stage/layout overrides. The learned clone must then pass both the aggregate
+feeding gate and the complete cross-layout gate before contact and micro-combat
+qualification can promote it.
 
 Training-artifact schema 40 and checkpoint-evaluation schema 7 bind the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution

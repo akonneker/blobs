@@ -1,6 +1,6 @@
 //! BlobEnv — wraps blob_engine::Engine as an RL environment.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use blob_engine::engine::{CellConfig, Engine, ReferenceRuntimeCheckpoint, TickEvents};
@@ -419,6 +419,11 @@ fn configure_episode_resources(
     training_cells.sort_unstable_by_key(|cell| cell.0);
     let dimensions = engine.world.dimensions;
 
+    let adjacent_targets = (config.resource_placement
+        == ResourcePlacement::AdjacentToTrainingCells)
+        .then(|| adjacent_food_coordinates(engine, config, &training_cells, seed))
+        .transpose()?;
+
     for cell_id in training_cells {
         let origin = *engine
             .inv_coordinate_map
@@ -427,9 +432,10 @@ fn configure_episode_resources(
         let target = match config.resource_placement {
             ResourcePlacement::Random => unreachable!(),
             ResourcePlacement::OnAllCells | ResourcePlacement::OnTrainingCells => origin,
-            ResourcePlacement::AdjacentToTrainingCells => {
-                adjacent_food_coordinate(engine, config, cell_id, origin, seed)?
-            }
+            ResourcePlacement::AdjacentToTrainingCells => *adjacent_targets
+                .as_ref()
+                .and_then(|targets| targets.get(&cell_id))
+                .ok_or("adjacent-food matching omitted a curriculum cell")?,
         };
         let index = target
             .y
@@ -446,13 +452,12 @@ fn configure_episode_resources(
     Ok(())
 }
 
-fn adjacent_food_coordinate(
+fn adjacent_food_coordinates(
     engine: &Engine,
     config: &EnvConfig,
-    cell_id: CellId,
-    origin: Coordinate,
+    cells: &[CellId],
     seed: u64,
-) -> Result<Coordinate, String> {
+) -> Result<HashMap<CellId, Coordinate>, String> {
     let neighborhood = &config.rules.neighborhood;
     let movable = neighborhood.target_mask(TargetingAction::Move);
     let visible = neighborhood.observations.energy;
@@ -460,35 +465,103 @@ fn adjacent_food_coordinate(
     if slot_count == 0 {
         return Err("adjacent-food curriculum requires at least one local slot".into());
     }
-    let rotation = usize::try_from(
-        seed.wrapping_add((cell_id.0 as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15))
-            % slot_count as u64,
-    )
-    .map_err(|_| "curriculum slot rotation does not fit usize")?;
-    for offset_index in 0..slot_count {
-        let slot_index = (rotation + offset_index) % slot_count;
-        let slot = blob_engine::resolution::LocalSlot(slot_index as u8);
-        if !movable.contains(slot) || !visible.contains(slot) {
-            continue;
+    let candidates = cells
+        .iter()
+        .map(|cell_id| {
+            let origin = *engine
+                .inv_coordinate_map
+                .get(cell_id)
+                .ok_or("curriculum cell has no host coordinate")?;
+            let rotation = usize::try_from(
+                seed.wrapping_add((cell_id.0 as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15))
+                    % slot_count as u64,
+            )
+            .map_err(|_| "curriculum slot rotation does not fit usize")?;
+            let mut candidates = Vec::new();
+            for offset_index in 0..slot_count {
+                let slot_index = (rotation + offset_index) % slot_count;
+                let slot = blob_engine::resolution::LocalSlot(slot_index as u8);
+                if !movable.contains(slot) || !visible.contains(slot) {
+                    continue;
+                }
+                let offset = neighborhood.slots[slot_index];
+                let Some(target) = offset_coordinate(
+                    origin,
+                    offset.dx,
+                    offset.dy,
+                    engine.world.dimensions,
+                    neighborhood.boundary_rule,
+                ) else {
+                    continue;
+                };
+                if !engine.coordinate_map.contains_key(&target) && !candidates.contains(&target) {
+                    candidates.push(target);
+                }
+            }
+            if candidates.is_empty() {
+                return Err(format!(
+                    "adjacent-food curriculum found no visible reachable vacancy for cell {}",
+                    cell_id.0
+                ));
+            }
+            Ok(candidates)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    // Deterministic augmenting-path matching prevents several founders from
+    // selecting the same plant tile and silently overwriting one another.
+    let mut cell_to_tile = vec![None; cells.len()];
+    let mut tile_to_cell = HashMap::<Coordinate, usize>::new();
+    for root in 0..cells.len() {
+        let mut queue = VecDeque::from([root]);
+        let mut seen_cells = HashSet::from([root]);
+        let mut seen_tiles = HashSet::new();
+        let mut tile_parent = HashMap::<Coordinate, usize>::new();
+        let mut free_tile = None;
+
+        while let Some(cell_index) = queue.pop_front() {
+            for &tile in &candidates[cell_index] {
+                if !seen_tiles.insert(tile) {
+                    continue;
+                }
+                tile_parent.insert(tile, cell_index);
+                if let Some(&matched_cell) = tile_to_cell.get(&tile) {
+                    if seen_cells.insert(matched_cell) {
+                        queue.push_back(matched_cell);
+                    }
+                } else {
+                    free_tile = Some(tile);
+                    break;
+                }
+            }
+            if free_tile.is_some() {
+                break;
+            }
         }
-        let offset = neighborhood.slots[slot_index];
-        let Some(target) = offset_coordinate(
-            origin,
-            offset.dx,
-            offset.dy,
-            engine.world.dimensions,
-            neighborhood.boundary_rule,
-        ) else {
-            continue;
+
+        let Some(mut tile) = free_tile else {
+            return Err(format!(
+                "adjacent-food curriculum cannot assign distinct visible reachable vacancies to all {} cells",
+                cells.len()
+            ));
         };
-        if !engine.coordinate_map.contains_key(&target) {
-            return Ok(target);
+        loop {
+            let cell_index = tile_parent[&tile];
+            let previous_tile = cell_to_tile[cell_index].replace(tile);
+            tile_to_cell.insert(tile, cell_index);
+            let Some(previous_tile) = previous_tile else {
+                break;
+            };
+            tile_to_cell.remove(&previous_tile);
+            tile = previous_tile;
         }
     }
-    Err(format!(
-        "adjacent-food curriculum found no visible reachable vacancy for cell {}",
-        cell_id.0
-    ))
+
+    Ok(cells
+        .iter()
+        .copied()
+        .zip(cell_to_tile.into_iter().map(Option::unwrap))
+        .collect())
 }
 
 fn offset_coordinate(
@@ -1883,6 +1956,15 @@ mod tests {
         let mut env = BlobEnv::new(config, RewardConfig::default(), 19);
         let inputs = env.prepare_training_reference_inputs().unwrap();
         assert_eq!(inputs.len(), 3);
+        assert_eq!(
+            env.engine
+                .world
+                .energy
+                .iter()
+                .filter(|source| matches!(source, Some(EnergySource::Plant { .. })))
+                .count(),
+            3
+        );
         assert!(inputs.iter().all(|(_, input)| {
             input.current_tile.plant_energy == 0
                 && input.current_tile.loose_energy == 0
@@ -1893,6 +1975,51 @@ mod tests {
                         && slot.plant_energy.unwrap_or(0) > 0
                 })
         }));
+    }
+
+    #[test]
+    fn adjacent_curriculum_assigns_one_distinct_plant_per_founder_across_large_layouts() {
+        use blob_engine::engine::StartingCellLayout;
+
+        for layout in [
+            StartingCellLayout::Line,
+            StartingCellLayout::Checkerboard,
+            StartingCellLayout::Ring,
+            StartingCellLayout::LooseRandom,
+            StartingCellLayout::Random,
+        ] {
+            let config = EnvConfig {
+                world_size: 256,
+                cells_per_team: 256,
+                num_scattered_energy: 0,
+                num_plants: 0,
+                resource_placement: ResourcePlacement::AdjacentToTrainingCells,
+                starting_cell_layout: layout,
+                opponent: OpponentProfile::Wait,
+                ..EnvConfig::default()
+            };
+            let mut env = BlobEnv::new(config, RewardConfig::default(), 930_000_101);
+            assert_eq!(
+                env.engine
+                    .world
+                    .energy
+                    .iter()
+                    .filter(|source| matches!(source, Some(EnergySource::Plant { .. })))
+                    .count(),
+                256,
+                "layout {layout:?} lost a curriculum plant"
+            );
+            let inputs = env.prepare_training_reference_inputs().unwrap();
+            assert_eq!(inputs.len(), 256);
+            assert!(inputs.iter().all(|(_, input)| {
+                input.slots.iter().any(|slot| {
+                    ReferenceActionSpace::allows_target(input.action_space.move_targets, slot.slot)
+                        && slot.reachable
+                        && slot.neighbor.is_none()
+                        && slot.plant_energy.unwrap_or(0) > 0
+                })
+            }));
+        }
     }
 
     #[test]

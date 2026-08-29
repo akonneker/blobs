@@ -89,6 +89,18 @@ name = "feeding-evaluation-merge"
 path = "src/bin/feeding_evaluation_merge.rs"
 
 [[bin]]
+name = "feeding-layout-evaluation"
+path = "src/bin/feeding_layout_evaluation.rs"
+
+[[bin]]
+name = "feeding-layout-evaluation-merge"
+path = "src/bin/feeding_layout_evaluation_merge.rs"
+
+[[bin]]
+name = "feeding-layout-teacher-evaluation"
+path = "src/bin/feeding_layout_teacher_evaluation.rs"
+
+[[bin]]
 name = "contact-evaluation"
 path = "src/bin/contact_evaluation.rs"
 

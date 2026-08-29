@@ -17,6 +17,7 @@ pub mod env;
 pub mod evaluation;
 pub mod feeding_curriculum;
 pub mod feeding_evaluation_artifact;
+pub mod feeding_layout_evaluation;
 pub mod learned_signal_attribution;
 pub mod match_explorer;
 pub mod micro_combat;

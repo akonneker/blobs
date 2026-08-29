@@ -7,6 +7,7 @@ use blob_rl::control_matrix::MaintainedMindProfile;
 use blob_rl::demonstration::{
     generate_demonstrations, publish_demonstrations, DemonstrationOptions,
 };
+use blob_rl::feeding_layout_evaluation::FeedingQualificationLayout;
 use clap::{Parser, ValueEnum};
 use sha2::{Digest, Sha256};
 
@@ -41,6 +42,17 @@ struct Args {
     /// observations and resolver semantics remain unchanged.
     #[arg(long, value_enum)]
     feeding_stage: Option<FeedingStage>,
+
+    /// Founder geometry for a feeding demonstration. Supplying this explicitly
+    /// prevents a single convenient geometry from standing in for ecology as a
+    /// whole.
+    #[arg(
+        long,
+        value_enum,
+        requires = "feeding_stage",
+        conflicts_with = "contact_energy"
+    )]
+    starting_layout: Option<FeedingQualificationLayout>,
 
     /// Generate a paired one-on-one contact scenario at this initial energy.
     /// Must be supplied with --contact-opponent and cannot be combined with a
@@ -127,6 +139,9 @@ fn main() {
         config.env = config.rollout_environment(FeedingCurriculumStage::Contact, contact_start);
         config.env.initial_energy = energy;
         config.env.opponent = opponent;
+    }
+    if let Some(layout) = args.starting_layout {
+        config.env.starting_cell_layout = layout.starting_layout();
     }
     config
         .validate()

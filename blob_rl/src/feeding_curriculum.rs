@@ -17,7 +17,7 @@ use crate::evaluation::greedy_policy_choices;
 use crate::model::PolicyValueNet;
 use crate::telemetry::TelemetryConfig;
 
-pub const FEEDING_PROMOTION_SCHEMA_VERSION: u32 = 2;
+pub const FEEDING_PROMOTION_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]

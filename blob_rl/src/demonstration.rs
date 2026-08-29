@@ -19,7 +19,7 @@ use crate::observation::{Observation, OBS_DIM};
 use crate::sweep::sha256;
 use crate::viability::mind_abi_hash;
 
-pub const DEMONSTRATION_SCHEMA_VERSION: u32 = 9;
+pub const DEMONSTRATION_SCHEMA_VERSION: u32 = 10;
 const PAYLOAD_FILE: &str = "samples.mpk";
 const MANIFEST_FILE: &str = "manifest.json";
 const MAX_DATASET_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -72,7 +72,10 @@ pub struct DemonstrationManifest {
     pub mind_abi_sha256: String,
     pub teacher: MaintainedMindProfile,
     pub seeds: Vec<u64>,
+    /// Hash of the source TOML before CLI scenario overrides.
     pub source_config_sha256: String,
+    /// Hash of the validated effective config used to generate every sample.
+    pub effective_config_sha256: String,
     pub semantic_ruleset_hash: String,
     pub compiled_ruleset_hash: String,
     pub scenario_hash: String,
@@ -123,6 +126,10 @@ pub fn generate_demonstrations(
     config.validate()?;
     validate_options(options)?;
     let scenario_hash = ScenarioProfile::from(&config.env).semantic_hash()?;
+    let effective_config_sha256 =
+        sha256(&serde_json::to_vec(config).map_err(|error| {
+            format!("failed to encode effective demonstration config: {error}")
+        })?);
     let semantic_ruleset_hash = config.env.rules.semantic_hash().to_string();
     let mut samples = Vec::with_capacity(options.max_samples);
     let mut exact_round_trip_samples = 0usize;
@@ -255,6 +262,7 @@ pub fn generate_demonstrations(
         teacher: options.teacher,
         seeds: options.seeds.clone(),
         source_config_sha256,
+        effective_config_sha256,
         semantic_ruleset_hash,
         compiled_ruleset_hash: compiled_ruleset_hash
             .expect("a nonempty demonstration has a compiled ruleset"),
@@ -290,6 +298,8 @@ fn validate_dataset(
         || manifest.signal_choice_count != NUM_SIGNAL_CHOICES
         || manifest.signal_strength_choice_count != NUM_SIGNAL_STRENGTH_CHOICES
         || manifest.mind_abi_sha256 != mind_abi_hash()
+        || !is_sha256(&manifest.source_config_sha256)
+        || !is_sha256(&manifest.effective_config_sha256)
         || manifest.samples != payload.samples.len()
         || manifest.payload_file != PAYLOAD_FILE
     {
@@ -334,6 +344,13 @@ fn validate_dataset(
         return Err("demonstration representability count mismatch".into());
     }
     Ok(())
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 pub fn publish_demonstrations(
@@ -463,11 +480,23 @@ mod tests {
             seeds: vec![11, 12],
             max_samples: 16,
         };
-        let left =
-            generate_demonstrations(&small_config(), "config-hash".into(), &options).unwrap();
-        let right =
-            generate_demonstrations(&small_config(), "config-hash".into(), &options).unwrap();
+        let source_hash = sha256(b"source config");
+        let left = generate_demonstrations(&small_config(), source_hash.clone(), &options).unwrap();
+        let right = generate_demonstrations(&small_config(), source_hash, &options).unwrap();
         assert_eq!(left, right);
+        let mut alternate_layout = small_config();
+        alternate_layout.env.starting_cell_layout = blob_engine::engine::StartingCellLayout::Ring;
+        let alternate = generate_demonstrations(
+            &alternate_layout,
+            left.0.source_config_sha256.clone(),
+            &options,
+        )
+        .unwrap();
+        assert_ne!(
+            left.0.effective_config_sha256,
+            alternate.0.effective_config_sha256
+        );
+        assert_ne!(left.0.scenario_hash, alternate.0.scenario_hash);
         assert_eq!(left.0.samples, 16);
         assert!(options.seeds.iter().all(|seed| {
             left.1
@@ -523,7 +552,7 @@ mod tests {
         };
 
         let (manifest, payload) =
-            generate_demonstrations(&config, "contact-config".into(), &options).unwrap();
+            generate_demonstrations(&config, sha256(b"contact config"), &options).unwrap();
         let attacks = manifest.action_family_samples[PolicyActionFamily::Attack.index()];
         let exact_attacks = payload
             .samples
