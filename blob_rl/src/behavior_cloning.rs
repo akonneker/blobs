@@ -32,7 +32,7 @@ use crate::model::{
 };
 use crate::observation::OBS_DIM;
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 15;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 16;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -157,6 +157,12 @@ pub struct BehaviorCloningMetrics {
     pub validation_samples: usize,
     pub samples_per_epoch: usize,
     pub sample_presentations: usize,
+    /// Actual supervised presentations by physical action family over every
+    /// epoch, ordered as in `PolicyActionFamily`.
+    pub action_family_presentations: Vec<usize>,
+    /// Sum of per-sample loss weights by action family over every epoch. This
+    /// makes the effective, post-resampling supervision mixture auditable.
+    pub action_family_weighted_loss_mass: Vec<f64>,
     pub recurrent_unroll_steps: usize,
     pub training_trajectories: usize,
     pub validation_trajectories: usize,
@@ -171,7 +177,23 @@ pub struct BehaviorCloningMetrics {
     pub final_validation_loss: Option<f64>,
     pub initial_validation_accuracy: Option<f64>,
     pub final_validation_accuracy: Option<f64>,
+    pub initial_training_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
+    pub final_training_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
+    pub initial_validation_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
+    pub final_validation_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
     pub partitions: Vec<BehaviorCloningDatasetPartition>,
+}
+
+/// Exact-label and action-kind accuracy for one physical action family. The
+/// vector containing this record is ordered as Wait, Guard, Consume, Move,
+/// Attack, Split, Regurgitate, Terrain, Signal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BehaviorCloningFamilyMetrics {
+    pub family: String,
+    pub samples: usize,
+    pub action_kind_accuracy: Option<f64>,
+    pub exact_accuracy: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -249,8 +271,8 @@ fn cap_weight_ratio(weights: &mut [f32], represented: &[bool], max_ratio: Option
     }
 }
 
-fn action_weights(
-    partitions: &[DatasetPartition<'_>],
+fn action_weights_for_samples<'a>(
+    samples: impl IntoIterator<Item = &'a DemonstrationSample>,
     strategy: ActionBalancingStrategy,
     exponent: f64,
     max_ratio: Option<f64>,
@@ -259,7 +281,7 @@ fn action_weights(
         return vec![1.0; NUM_ACTIONS];
     }
     let mut action_counts = vec![0usize; NUM_ACTIONS];
-    for sample in partitions.iter().flat_map(|partition| &partition.training) {
+    for sample in samples {
         action_counts[usize::from(sample.action)] += 1;
     }
     let mut represented_actions = vec![false; NUM_ACTIONS];
@@ -642,12 +664,30 @@ fn sample_chunk_epoch<'a>(
     epoch
 }
 
+struct SequenceEvaluation {
+    loss: f64,
+    exact_accuracy: f64,
+    family_metrics: Vec<BehaviorCloningFamilyMetrics>,
+}
+
+fn empty_family_metrics() -> Vec<BehaviorCloningFamilyMetrics> {
+    PolicyActionFamily::ALL
+        .into_iter()
+        .map(|family| BehaviorCloningFamilyMetrics {
+            family: family.name().into(),
+            samples: 0,
+            action_kind_accuracy: None,
+            exact_accuracy: None,
+        })
+        .collect()
+}
+
 fn evaluate_sequences<B: AutodiffBackend>(
     model: &PolicyValueNet<B>,
     sequences: &[DemonstrationSequence<'_>],
     sequence_batch_size: usize,
     device: &B::Device,
-) -> Option<(f64, f64)>
+) -> Option<SequenceEvaluation>
 where
     f32: From<B::FloatElem>,
 {
@@ -658,6 +698,9 @@ where
     let mut total_loss = 0.0_f64;
     let mut correct = 0usize;
     let mut total = 0usize;
+    let mut family_samples = [0usize; PolicyActionFamily::COUNT];
+    let mut family_kind_correct = [0usize; PolicyActionFamily::COUNT];
+    let mut family_exact_correct = [0usize; PolicyActionFamily::COUNT];
     for sequence_batch in sequences.chunks(sequence_batch_size.max(1)) {
         let mut positions = vec![0usize; sequence_batch.len()];
         let mut memories = vec![vec![0.0; recurrent_size]; sequence_batch.len()];
@@ -853,14 +896,20 @@ where
                             .then_with(|| right.cmp(left))
                     })
                     .unwrap_or(0);
-                correct += usize::from(
-                    predicted_kind == hierarchical.kind
-                        && predicted_target == hierarchical.target
-                        && predicted_effort == hierarchical.effort
-                        && predicted_amount == amount
-                        && predicted_signal == signal
-                        && predicted_signal_strength == signal_strength,
-                );
+                let kind_correct = predicted_kind == hierarchical.kind;
+                let exact = kind_correct
+                    && predicted_target == hierarchical.target
+                    && predicted_effort == hierarchical.effort
+                    && predicted_amount == amount
+                    && predicted_signal == signal
+                    && predicted_signal_strength == signal_strength;
+                correct += usize::from(exact);
+                let family = policy_action_family(action)
+                    .expect("validated demonstration action belongs to a policy family")
+                    .index();
+                family_samples[family] += 1;
+                family_kind_correct[family] += usize::from(kind_correct);
+                family_exact_correct[family] += usize::from(exact);
                 memories[index] = canonicalize_memory(
                     &data[signal_strength_start + NUM_SIGNAL_STRENGTH_CHOICES..start + width],
                 );
@@ -869,10 +918,25 @@ where
             }
         }
     }
-    Some((
-        total_loss / total.max(1) as f64,
-        correct as f64 / total.max(1) as f64,
-    ))
+    Some(SequenceEvaluation {
+        loss: total_loss / total.max(1) as f64,
+        exact_accuracy: correct as f64 / total.max(1) as f64,
+        family_metrics: PolicyActionFamily::ALL
+            .into_iter()
+            .map(|family| {
+                let family_index = family.index();
+                let samples = family_samples[family_index];
+                BehaviorCloningFamilyMetrics {
+                    family: family.name().into(),
+                    samples,
+                    action_kind_accuracy: (samples > 0)
+                        .then_some(family_kind_correct[family_index] as f64 / samples as f64),
+                    exact_accuracy: (samples > 0)
+                        .then_some(family_exact_correct[family_index] as f64 / samples as f64),
+                }
+            })
+            .collect(),
+    })
 }
 
 fn quantize_straight_through<B: Backend>(memory: Tensor<B, 2>) -> Tensor<B, 2> {
@@ -1102,12 +1166,6 @@ where
         .filter(|sample| sample.exact_round_trip)
         .count();
     let partitions = partition_datasets(datasets, config)?;
-    let action_weights = action_weights(
-        &partitions,
-        config.action_balancing,
-        config.action_balance_exponent,
-        config.action_balance_max_ratio,
-    );
     let training_sequences_by_dataset = partitions
         .iter()
         .map(|partition| build_sequences(&partition.training))
@@ -1181,20 +1239,19 @@ where
     let mut optimizer = AdamWConfig::new()
         .init()
         .with_grad_clipping(GradientClipping::Norm(1.0));
-    let (initial_training_loss, initial_training_accuracy) =
+    let initial_training =
         evaluate_sequences(&model, &training_sequences, config.minibatch_size, &device)
             .expect("a nonempty training partition has a trajectory");
-    let (initial_validation_loss, initial_validation_accuracy) = match evaluate_sequences(
+    let initial_validation = evaluate_sequences(
         &model,
         &validation_sequences,
         config.minibatch_size,
         &device,
-    ) {
-        Some((loss, accuracy)) => (Some(loss), Some(accuracy)),
-        None => (None, None),
-    };
+    );
     let mut rng = ChaCha12Rng::seed_from_u64(config.seed ^ 0x4245_4841_5649_4f52);
     let mut optimizer_steps = 0usize;
+    let mut action_family_presentations = vec![0usize; PolicyActionFamily::COUNT];
+    let mut action_family_weighted_loss_mass = vec![0.0_f64; PolicyActionFamily::COUNT];
     for _ in 0..config.epochs {
         let chunks_by_dataset = training_sequences_by_dataset
             .iter()
@@ -1209,6 +1266,20 @@ where
             })
             .collect::<Vec<_>>();
         let epoch = sample_chunk_epoch(&chunks_by_dataset, &per_dataset, &mut rng);
+        let action_weights = action_weights_for_samples(
+            epoch.iter().flat_map(|chunk| chunk.samples.iter().copied()),
+            config.action_balancing,
+            config.action_balance_exponent,
+            config.action_balance_max_ratio,
+        );
+        for sample in epoch.iter().flat_map(|chunk| chunk.samples.iter().copied()) {
+            let family = policy_action_family(usize::from(sample.action))
+                .expect("validated demonstration action belongs to a policy family")
+                .index();
+            action_family_presentations[family] += 1;
+            action_family_weighted_loss_mass[family] +=
+                f64::from(action_weights[usize::from(sample.action)]);
+        }
         let mut by_length = BTreeMap::<usize, Vec<SequenceChunk<'_>>>::new();
         for chunk in epoch {
             by_length
@@ -1237,18 +1308,15 @@ where
             optimizer_steps += 1;
         }
     }
-    let (final_training_loss, final_training_accuracy) =
+    let final_training =
         evaluate_sequences(&model, &training_sequences, config.minibatch_size, &device)
             .expect("a nonempty training partition has a trajectory");
-    let (final_validation_loss, final_validation_accuracy) = match evaluate_sequences(
+    let final_validation = evaluate_sequences(
         &model,
         &validation_sequences,
         config.minibatch_size,
         &device,
-    ) {
-        Some((loss, accuracy)) => (Some(loss), Some(accuracy)),
-        None => (None, None),
-    };
+    );
     Ok((
         model,
         BehaviorCloningMetrics {
@@ -1259,20 +1327,34 @@ where
             validation_samples,
             samples_per_epoch,
             sample_presentations,
+            action_family_presentations,
+            action_family_weighted_loss_mass,
             recurrent_unroll_steps: config.recurrent_unroll_steps,
             training_trajectories: training_sequences.len(),
             validation_trajectories: validation_sequences.len(),
             exact_round_trip_samples,
             epochs: config.epochs,
             optimizer_steps,
-            initial_training_loss,
-            final_training_loss,
-            initial_training_accuracy,
-            final_training_accuracy,
-            initial_validation_loss,
-            final_validation_loss,
-            initial_validation_accuracy,
-            final_validation_accuracy,
+            initial_training_loss: initial_training.loss,
+            final_training_loss: final_training.loss,
+            initial_training_accuracy: initial_training.exact_accuracy,
+            final_training_accuracy: final_training.exact_accuracy,
+            initial_validation_loss: initial_validation.as_ref().map(|metrics| metrics.loss),
+            final_validation_loss: final_validation.as_ref().map(|metrics| metrics.loss),
+            initial_validation_accuracy: initial_validation
+                .as_ref()
+                .map(|metrics| metrics.exact_accuracy),
+            final_validation_accuracy: final_validation
+                .as_ref()
+                .map(|metrics| metrics.exact_accuracy),
+            initial_training_family_metrics: initial_training.family_metrics,
+            final_training_family_metrics: final_training.family_metrics,
+            initial_validation_family_metrics: initial_validation
+                .map(|metrics| metrics.family_metrics)
+                .unwrap_or_else(empty_family_metrics),
+            final_validation_family_metrics: final_validation
+                .map(|metrics| metrics.family_metrics)
+                .unwrap_or_else(empty_family_metrics),
             partitions: partition_metrics,
         },
     ))
@@ -1575,6 +1657,37 @@ mod tests {
     }
 
     #[test]
+    fn family_balancing_uses_the_effective_presented_sample_mix() {
+        let mut samples = demonstration_samples(4);
+        let consume =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Consume.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        let attack =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Attack.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        for sample in &mut samples[..3] {
+            sample.action = consume as u16;
+        }
+        samples[3].action = attack as u16;
+
+        let weights =
+            action_weights_for_samples(samples.iter(), ActionBalancingStrategy::Family, 1.0, None);
+
+        let consume_mass = 3.0 * weights[consume];
+        let attack_mass = weights[attack];
+        assert!((consume_mass - attack_mass).abs() < 1.0e-6);
+        assert!(weights[attack] > weights[consume]);
+    }
+
+    #[test]
     fn recurrent_chunk_sampling_preserves_the_exact_sample_budget() {
         let samples = demonstration_samples(5);
         let first = SequenceChunk {
@@ -1648,6 +1761,25 @@ mod tests {
         assert!(metrics.validation_samples > 0);
         assert!(metrics.final_validation_loss.is_some());
         assert_eq!(metrics.recurrent_unroll_steps, 4);
+        assert_eq!(
+            metrics.action_family_presentations.iter().sum::<usize>(),
+            metrics.sample_presentations
+        );
+        assert_eq!(
+            metrics.final_validation_family_metrics.len(),
+            PolicyActionFamily::COUNT
+        );
+        assert_eq!(
+            metrics
+                .final_validation_family_metrics
+                .iter()
+                .map(|family| family.family.as_str())
+                .collect::<Vec<_>>(),
+            PolicyActionFamily::ALL
+                .into_iter()
+                .map(PolicyActionFamily::name)
+                .collect::<Vec<_>>()
+        );
         assert!(metrics.training_trajectories > 0);
         assert!(metrics.validation_trajectories > 0);
 

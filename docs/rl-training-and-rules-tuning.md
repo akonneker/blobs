@@ -636,7 +636,11 @@ uses `feeding-evaluation --require-pass`, so it preserves that evidence and
 returns unsuccessfully rather than silently treating an unqualified model as a
 warm start. Per-dataset action-label histograms and the artifact-bound
 `--action-balancing {none,family,label}` plus weighting exponent expose catalog
-imbalance for controlled follow-up sweeps.
+imbalance for controlled follow-up sweeps. Balancing is computed from the exact
+post-resampling samples presented in each epoch, not the raw source-corpus
+sizes. Behavior-cloning artifacts record actual family presentations, weighted
+loss mass, and initial/final action-kind and exact accuracy for every family on
+both training and seed-held-out partitions.
 
 The first bounded run found a structural learning seam. With no balancing the
 flat action head predicts `Consume` on empty adjacent tiles: on-food evaluation
@@ -1987,7 +1991,9 @@ The default model shrinks from 188,848 to 84,848 parameters, although its
 structured CPU matrix operations are slower per training epoch.
 
 Because the model record changed, behavior-cloning schema 15 and training
-artifact schema 41 reject flat-model checkpoints. The warm-start builder now
+artifact schema 41 reject flat-model checkpoints. Behavior-cloning schema 16
+then adds effective-mixture family balancing and family-resolved diagnostics.
+The warm-start builder now
 starts without a parent by default and accepts an explicit compatible parent
 only when supplied. A first eight-epoch scratch run was visibly undertrained
 (72.7% exact validation accuracy and zero feeding survival). After 24 more
@@ -1995,9 +2001,35 @@ epochs it reached 90.3% exact validation accuracy: loose-random and random
 adjacent survival improved to 90.6% and 100%, but line, checkerboard, and ring
 remained 75.0%, 72.3%, and 79.7%. It also made zero attacks in both contact and
 micro-combat evaluation. The architecture corrects slot generalization but
-does not make exact-label likelihood equivalent to long-horizon competence;
-the next slice should add competency/phase-aware supervision and direct
-rollout fine-tuning while retaining these gates.
+does not make exact-label likelihood equivalent to long-horizon competence.
+
+The first competency-aware supervision pass found that the former family
+balancer used raw corpus counts even when explicit dataset weights resampled a
+very different mixture. In the maintained 12-corpus build, raw counts contained
+only 224 Attack labels versus 44,559 Consume labels, while one effective epoch
+presented about 10,919 Attack, 29,674 Consume, and 17,213 Move labels. The
+corrected trainer derives weights from the actual deterministic epoch. With
+full family balancing, its recorded cumulative weighted mass agrees across the
+three families to within floating-point accumulation error.
+
+That correction makes the interference visible but does not solve it. At eight
+epochs the phase-balanced scratch model had 50% held-out Attack kind/exact
+accuracy and, unlike the prior zero-attack model at the same budget, attacked
+in all 48 contact episodes: 1,700 attempts, 1,312 damage, 12 kills, and 4.5
+greedy micro attacks per scenario episode. It was still undertrained for
+feeding, at 0% survival. After continuing to 32 total epochs, Consume reached
+100%, Move reached 99.7% kind and 60.1% exact accuracy, but Attack collapsed to
+0%. Rollouts matched: loose-random and random feeding passed while the three
+dense layouts remained at 72.3%--75.0%, and contact/micro evaluation recorded
+zero attacks. Equal loss mass therefore cannot prevent representational or
+gradient interference in the shared action-kind head.
+
+The next model slice should add separately parameterized feeding and combat
+action-kind experts trained from explicit hash-bound dataset phase labels, plus
+a cell-local observation-driven gate. The gate and experts must remain
+row-separable and receive only the same anonymous observation and private
+memory as the current policy. Held-out family metrics and the existing rollout
+gates should then test coexistence before direct rollout fine-tuning.
 
 Training-artifact schema 41 and checkpoint-evaluation schema 7 bind the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution

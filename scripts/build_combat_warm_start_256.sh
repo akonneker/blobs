@@ -35,6 +35,8 @@ consolidation_epochs=${BLOB_COMBAT_CONSOLIDATION_EPOCHS:-32}
 # feeding budget on the critical target-selection transition while retaining a
 # smaller stationary-consume rehearsal.
 consolidation_weights=${BLOB_COMBAT_CONSOLIDATION_WEIGHTS:-0.25,1.75,0.25,1.75,0.25,1.75,0.25,1.75,0.25,1.75,2.5,2.5}
+action_balance_exponent=${BLOB_ACTION_BALANCE_EXPONENT:-1}
+action_balance_max_ratio=${BLOB_ACTION_BALANCE_MAX_RATIO:-4}
 min_micro_attacks=${BLOB_MIN_MICRO_ATTACKS_PER_EPISODE:-0.25}
 
 "$feeding_layout_teacher_evaluation_bin" \
@@ -97,8 +99,8 @@ run_behavior_clone() {
         --dataset-sampling proportional \
         --exact-round-trip-only \
         --action-balancing family \
-        --action-balance-exponent 0.5 \
-        --action-balance-max-ratio 2 \
+        --action-balance-exponent "$action_balance_exponent" \
+        --action-balance-max-ratio "$action_balance_max_ratio" \
         --output "$output_root/behavior-clone"
 }
 if [[ -n "$combat_parent" && "$combat_parent" != "none" ]]; then

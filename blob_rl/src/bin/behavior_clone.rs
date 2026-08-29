@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use blob_rl::behavior_cloning::{
     behavior_clone_artifact_sha256, behavior_clone_from_model, load_dataset_directories,
     publish_behavior_clone, verify_behavior_clone_artifact, ActionBalancingStrategy,
-    BehaviorCloningConfig, DatasetSamplingStrategy,
+    BehaviorCloningConfig, BehaviorCloningFamilyMetrics, DatasetSamplingStrategy,
 };
 use blob_rl::config::TrainingConfig;
 use blob_rl::model::PolicyValueNetConfig;
@@ -50,6 +50,23 @@ fn format_optional_metric(value: Option<f64>) -> String {
     value
         .map(|value| format!("{value:.4}"))
         .unwrap_or_else(|| "disabled".into())
+}
+
+fn format_family_metrics(metrics: &[BehaviorCloningFamilyMetrics]) -> String {
+    metrics
+        .iter()
+        .filter(|metrics| metrics.samples > 0)
+        .map(|metrics| {
+            format!(
+                "{}={:.1}% kind/{:.1}% exact (n={})",
+                metrics.family,
+                metrics.action_kind_accuracy.unwrap_or(0.0) * 100.0,
+                metrics.exact_accuracy.unwrap_or(0.0) * 100.0,
+                metrics.samples,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[derive(Debug, Parser)]
@@ -206,6 +223,10 @@ fn main() {
             format_optional_metric(metrics.final_validation_loss),
             artifact_sha256,
         );
+        println!(
+            "Held-out family accuracy: {}",
+            format_family_metrics(&metrics.final_validation_family_metrics)
+        );
     }
 
     #[cfg(all(not(feature = "wgpu"), feature = "ndarray"))]
@@ -260,6 +281,10 @@ fn main() {
             format_optional_metric(metrics.initial_validation_loss),
             format_optional_metric(metrics.final_validation_loss),
             artifact_sha256,
+        );
+        println!(
+            "Held-out family accuracy: {}",
+            format_family_metrics(&metrics.final_validation_family_metrics)
         );
     }
 

@@ -224,6 +224,7 @@ pub fn policy_effort_mask(
 /// balancing. Target slots and effort variants remain distinct policy labels,
 /// but should not each receive the weight of an independent behavior family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
 pub enum PolicyActionFamily {
     Wait,
     Guard,
@@ -238,9 +239,34 @@ pub enum PolicyActionFamily {
 
 impl PolicyActionFamily {
     pub const COUNT: usize = 9;
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Wait,
+        Self::Guard,
+        Self::Consume,
+        Self::Move,
+        Self::Attack,
+        Self::Split,
+        Self::Regurgitate,
+        Self::Terrain,
+        Self::Signal,
+    ];
 
     pub const fn index(self) -> usize {
         self as usize
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Wait => "wait",
+            Self::Guard => "guard",
+            Self::Consume => "consume",
+            Self::Move => "move",
+            Self::Attack => "attack",
+            Self::Split => "split",
+            Self::Regurgitate => "regurgitate",
+            Self::Terrain => "terrain",
+            Self::Signal => "signal",
+        }
     }
 }
 
