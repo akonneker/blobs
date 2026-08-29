@@ -1,0 +1,118 @@
+{
+  "schema_version": 7,
+  "package_version": "0.1.0",
+  "spec_file": "/Users/adam/code/blobs/blob_rl/config/micro_combat_ablation_256_v3.toml",
+  "spec_sha256": "81f2da6776a500706d2d7aa36fcc1ea33d9d3ebcfe35d9a25acb8e41c6b33530",
+  "base_config_file": "/Users/adam/code/blobs/blob_rl/config/micro_combat_ablation_256_v2_base.toml",
+  "base_config_sha256": "69d3de2f0da1fef9e3bca1a3c0f6361488cfa9286f6cd3944b77b2b3cefc2aee",
+  "output_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3",
+  "seeds": [
+    256201,
+    256202,
+    256203
+  ],
+  "variants": [
+    {
+      "name": "no-rehearsal",
+      "description": "Control: checkerboard assembly, shared held-out suite, no named-scenario rollout exposure",
+      "rules": {},
+      "scenario": {
+        "starting_cell_layout": "checkerboard"
+      },
+      "combat_curriculum": {
+        "micro_combat": {
+          "rollout_enabled": false
+        }
+      },
+      "specialist_distillation": {}
+    },
+    {
+      "name": "balanced-rehearsal",
+      "description": "Treatment: checkerboard assembly with stage-local round-robin micro-combat exposure",
+      "rules": {},
+      "scenario": {
+        "starting_cell_layout": "checkerboard"
+      },
+      "combat_curriculum": {
+        "micro_combat": {
+          "rollout_enabled": true
+        }
+      },
+      "specialist_distillation": {}
+    }
+  ],
+  "runs": [
+    {
+      "variant": "no-rehearsal",
+      "replicate": 0,
+      "training_seed": 256201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "1b8f02a17d434c7be46d17f1b55e8069ed41ecaba89b6540120efd948e544af2",
+      "config_file_sha256": "37908126543fa0d5a8af76723e0b2b7c9ca08ac6d7cd808a66ae8c378726ff6b",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/no-rehearsal/seed-256201",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/no-rehearsal/seed-256201/config.toml"
+    },
+    {
+      "variant": "no-rehearsal",
+      "replicate": 1,
+      "training_seed": 256202,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "018c689900534a3e677b1488db9a6441546fd8ac29f0e3b0718a9a8b1787e96b",
+      "config_file_sha256": "cd3dcecab0dda1452398a7068b162586f2611bf8908a7167779b5eba926ed2b1",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/no-rehearsal/seed-256202",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/no-rehearsal/seed-256202/config.toml"
+    },
+    {
+      "variant": "no-rehearsal",
+      "replicate": 2,
+      "training_seed": 256203,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "d2556f0029648c4ae5532d0e3a6a90009ba4417022201dcf8163c4539e383355",
+      "config_file_sha256": "5cdf31ca7bffdd2ecd3acc6704a9ee6a81248250aecf131f5bcf4b4773b3facd",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/no-rehearsal/seed-256203",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/no-rehearsal/seed-256203/config.toml"
+    },
+    {
+      "variant": "balanced-rehearsal",
+      "replicate": 0,
+      "training_seed": 256201,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "fb0c6d77f7d5572463a2ec66847d0c17506d5e278a66e3f732db0cd8d7866242",
+      "config_file_sha256": "0a0fc219b8f26ff58e78a84fbd4e53186d7e3c660d9dac18cd93e60cc9761221",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/balanced-rehearsal/seed-256201",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/balanced-rehearsal/seed-256201/config.toml"
+    },
+    {
+      "variant": "balanced-rehearsal",
+      "replicate": 1,
+      "training_seed": 256202,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "0f679a3ce5add5a1c3caa8c27e9bab89c2742df6bc1cce44815894ab57f4c95a",
+      "config_file_sha256": "92c9dcef4da3c45b2d63cbf15bec71f22cd3ef894e8e2928fb2e57420e644ad0",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/balanced-rehearsal/seed-256202",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/balanced-rehearsal/seed-256202/config.toml"
+    },
+    {
+      "variant": "balanced-rehearsal",
+      "replicate": 2,
+      "training_seed": 256203,
+      "semantic_ruleset_hash": "b63585a768dd07290131c3882c3bd78a9c80342660079bcdad4c931a35ff63b2",
+      "compiled_ruleset_hash": "3d6f1676c57ba75f07ffc7814c9c1b0121aaf0ce77c05c7ffb6858c1b3661855",
+      "scenario_hash": "f0c7ec9680afc9dae4d15ac68757973290a85e04088a807caa47142d103806c5",
+      "experiment_config_sha256": "d2a73c96a2850b9ea955492784b7b9c8d6d015a9547ebdeb651abbf2b770bc9f",
+      "config_file_sha256": "bafabf3b09bd318d81781ff0aca9d7ba1c70e33fd27846e822b04b946318700c",
+      "run_directory": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/balanced-rehearsal/seed-256203",
+      "config_file": "/Users/adam/code/blobs/sweeps/micro-combat-ablation-256-v3/balanced-rehearsal/seed-256203/config.toml"
+    }
+  ]
+}
