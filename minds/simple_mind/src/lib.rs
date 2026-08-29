@@ -7,8 +7,8 @@ use blob_interface::reference_mind_converter::{
     capnp_to_reference_mind_input, reference_mind_decision_to_capnp, ReferenceMindLimits,
 };
 use blob_mind_utils::{
-    best_energy_slot, choose_slot, current_food, legal_action_or_wait, preferred_effort,
-    random_best_energy_slot, safe_empty_slots,
+    best_energy_slot, choose_slot, choose_slot_by_quantile, current_food, legal_action_or_wait,
+    preferred_effort, random_best_energy_slot, safe_empty_slots,
 };
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
@@ -49,7 +49,12 @@ fn choose_action(input: &ReferenceMindInput, randomize_energy_ties: bool) -> Ref
         return ReferenceMindAction::Guard { effort: standard };
     }
     let candidates = safe_empty_slots(input, input.action_space.move_targets);
-    if let Some(target_slot) = choose_slot(&candidates, input.randomness.sample_u64(0)) {
+    let fallback_target = if randomize_energy_ties {
+        choose_slot_by_quantile(&candidates, input.randomness.sample_u64(0))
+    } else {
+        choose_slot(&candidates, input.randomness.sample_u64(0))
+    };
+    if let Some(target_slot) = fallback_target {
         return ReferenceMindAction::Move {
             target_slot,
             effort: standard,

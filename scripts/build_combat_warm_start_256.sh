@@ -19,7 +19,8 @@ contact_evaluation_bin=${BLOB_CONTACT_EVALUATION_BIN:-target/release/contact-eva
 micro_combat_evaluation_bin=${BLOB_MICRO_COMBAT_EVALUATION_BIN:-target/release/micro-combat-evaluation}
 config=${BLOB_COMBAT_WARM_START_256_CONFIG:-blob_rl/config/combat_warm_start_256.toml}
 scenarios=${BLOB_MICRO_COMBAT_SCENARIOS:-blob_rl/config/micro_combat_scenarios.toml}
-demonstration_seeds=${BLOB_FEEDING_DEMONSTRATION_SEEDS:-6101,6201,6301,6401,6501,6601,6701,6801,6901,7001,7101,7201,7301,7401,7501,7601,7701,7801,7901,8001,8101,8201,8301,8401,8501,8601,8701,8801,8901,9001,9101,9201}
+feeding_demonstration_seeds=${BLOB_FEEDING_DEMONSTRATION_SEEDS:-6101,6201,6301,6401,6501,6601,6701,6801}
+contact_demonstration_seeds=${BLOB_CONTACT_DEMONSTRATION_SEEDS:-6101,6201,6301,6401,6501,6601,6701,6801,6901,7001,7101,7201,7301,7401,7501,7601,7701,7801,7901,8001,8101,8201,8301,8401,8501,8601,8701,8801,8901,9001,9101,9201}
 feeding_evaluation_seeds=${BLOB_FEEDING_EVALUATION_SEEDS:-900000101,900000201,900000301,900000401,900000501,900000601,900000701,900000801}
 feeding_layout_evaluation_seeds=${BLOB_FEEDING_LAYOUT_EVALUATION_SEEDS:-930000101,930000202}
 feeding_layouts=${BLOB_FEEDING_LAYOUTS:-line,checkerboard,ring,loose-random,random}
@@ -28,10 +29,12 @@ micro_evaluation_seeds=${BLOB_MICRO_COMBAT_EVALUATION_SEEDS:-920000101,920000201
 samples=${BLOB_FEEDING_DEMONSTRATION_SAMPLES:-32768}
 contact_samples=${BLOB_CONTACT_DEMONSTRATION_SAMPLES:-512}
 consolidation_epochs=${BLOB_COMBAT_CONSOLIDATION_EPOCHS:-8}
-# The exact contact datasets are only 544 samples combined versus 65,536
-# feeding samples. These weights make combat roughly one third of each epoch
-# instead of silently reducing it below one percent.
-consolidation_weights=${BLOB_COMBAT_CONSOLIDATION_WEIGHTS:-1,1,1,1,1,1,1,1,1,1,64,64}
+# Explicit weights are direct dataset mixture shares, independent of shard
+# length. Each layout contributes 0.25 on-food plus 1.75 adjacent-food; the two
+# 2.5-share contact shards retain one third of the epoch. This concentrates the
+# feeding budget on the critical target-selection transition while retaining a
+# smaller stationary-consume rehearsal.
+consolidation_weights=${BLOB_COMBAT_CONSOLIDATION_WEIGHTS:-0.25,1.75,0.25,1.75,0.25,1.75,0.25,1.75,0.25,1.75,2.5,2.5}
 min_micro_attacks=${BLOB_MIN_MICRO_ATTACKS_PER_EPISODE:-0.25}
 
 "$feeding_layout_teacher_evaluation_bin" \
@@ -57,7 +60,7 @@ for layout in "${feeding_layout_array[@]}"; do
             --teacher collision-aware-forager \
             --feeding-stage "$stage" \
             --starting-layout "$layout" \
-            --seeds "$demonstration_seeds" \
+            --seeds "$feeding_demonstration_seeds" \
             --max-samples "$samples_per_layout" \
             --output "$dataset"
         feeding_dataset_args+=(--dataset "$dataset")
@@ -73,7 +76,7 @@ for contact_spec in 60:aggressive 180:defensive; do
         --teacher aggressive \
         --contact-energy "$energy" \
         --contact-opponent "$opponent" \
-        --seeds "$demonstration_seeds" \
+        --seeds "$contact_demonstration_seeds" \
         --max-samples "$contact_samples" \
         --output "$dataset"
 done

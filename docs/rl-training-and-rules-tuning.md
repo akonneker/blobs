@@ -1884,15 +1884,31 @@ The initial sequential clone exposed a sampling error rather than a capacity
 limit. Its feeding corpora contained 65,536 exact labels while the two exact
 contact corpora contributed only 544; the former 4:1 feeding weights reduced
 combat below one percent of effective examples, and a feeding-only intermediate
-erased attacks before consolidation. `build_combat_warm_start_256.sh` now
-starts from the combat parent once and uses 1,1,64,64 proportional weights,
-placing roughly one third of sampled examples on combat. A bounded four-epoch
-candidate passes the merged eight-seed 256 feeding gate at 100% on-food and
-91.4% adjacent survival, attacks and damages in 100% of the 12 contact/skirmish
-variants (282 total damage), and makes 1.833 greedy attacks per micro scenario
-episode. It still records no kills in the short elimination probes, so it is
-an action-acquisition/retention warm start, not yet an elimination-qualified
-combat policy.
+erased attacks before consolidation. A bounded four-epoch candidate recovered
+both skills: it passes the merged eight-seed 256 feeding gate at 100% on-food
+and 91.4% adjacent survival, attacks and damages in 100% of the 12
+contact/skirmish variants (282 total damage), and makes 1.833 greedy attacks per
+micro scenario episode. It still records no kills in the short elimination
+probes, so it is an action-acquisition/retention warm start, not yet an
+elimination-qualified combat policy.
+
+The first multi-layout build then exposed a second weighting mistake. Explicit
+behavior-cloning weights are direct dataset mixture shares; they do not
+multiply each shard's sample count. Repeating weight 1 for ten feeding shards
+and 64 for each contact shard therefore allocated 92.7% of every epoch to
+combat, leaving only 419 presentations per feeding layout. That candidate
+failed the ordinary adjacent-food gate at 78.9% survival. The corrected default
+uses ten feeding shares of 1 and two contact shares of 2.5, allocating two
+thirds of each epoch to feeding and one third to combat independent of shard
+length.
+
+That corrected global mixture still overvalues the easy stationary state: five
+on-food shards plus post-arrival labels make exact Consume accuracy dominate,
+while one wrong initial target can strand a cell. The maintained default keeps
+the same two-thirds feeding/one-third combat split but assigns each layout 0.25
+on-food and 1.75 adjacent-food shares. This makes the scarce, decision-critical
+Move/target transition the primary feeding rehearsal without removing the
+stationary Consume check.
 
 Large feeding qualification is now resumable. Each seed publishes a complete
 hash-bound shard; `feeding-evaluation-merge` validates common config, model,
@@ -1928,6 +1944,37 @@ both the unmodified source TOML and the validated effective configuration after
 stage/layout overrides. The learned clone must then pass both the aggregate
 feeding gate and the complete cross-layout gate before contact and micro-combat
 qualification can promote it.
+
+Per-layout sample division also constrains seed count. A 6,553-sample shard
+spread over 32 seeds gives each seed only 205 labels, less than one 256-cell
+decision frontier; adjacent-food corpora then contain initial Move labels but
+no post-arrival Consume labels. The maintained build uses eight feeding seeds
+per layout, retaining full-frontier coverage across several decisions while
+keeping the 32-seed contact suite. Feeding evaluation remains on separate
+held-out seeds.
+
+The resulting bounded trials reject further blind mixture tuning. The first
+multi-layout candidate accidentally devoted 92.7% of its epoch to combat and
+failed aggregate adjacent feeding at 78.9%. Correct direct weights recovered
+the ordinary checkerboard aggregate at 81.4%, but line, loose-random, and random
+remained below the per-layout gate. Adding temporal post-arrival labels reduced
+aggregate survival to 59.4% because easy repeated Consume decisions dominated
+target accuracy. An adjacency-heavy continuation then passed checkerboard,
+ring, loose-random, and random pilots (83.6%, 87.5%, 88.3%, and 99.2%) but line
+remained at 75.0%; it also forgot combat completely, with zero attacks across
+48 contact episodes and zero greedy attacks in the micro-combat suite.
+
+The collision-aware teacher had one additional representability defect:
+energy-tie choices used contiguous random quantiles, but no-food fallback used
+integer modulo over the private random word. Because the policy observes
+normalized random bytes, modulo creates a discontinuous target function. The
+teacher now uses uniform contiguous quantiles in both paths and still passes
+the complete two-seed layout gate (89.5%--98.8% adjacent survival). A fresh
+clone nevertheless reached only 61.5% aggregate adjacent survival. Combined
+with the combat-forgetting result, this is evidence that the flat shared MLP
+and scalar mixture are the next constraint. The next model slice should use a
+shared per-slot encoder/target scorer (or local attention) and keep explicit
+feeding and combat heads or anchors, then rerun these exact immutable gates.
 
 Training-artifact schema 40 and checkpoint-evaluation schema 7 bind the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution
