@@ -2024,14 +2024,42 @@ dense layouts remained at 72.3%--75.0%, and contact/micro evaluation recorded
 zero attacks. Equal loss mass therefore cannot prevent representational or
 gradient interference in the shared action-kind head.
 
-The next model slice should add separately parameterized feeding and combat
-action-kind experts trained from explicit hash-bound dataset phase labels, plus
-a cell-local observation-driven gate. The gate and experts must remain
-row-separable and receive only the same anonymous observation and private
-memory as the current policy. Held-out family metrics and the existing rollout
-gates should then test coexistence before direct rollout fine-tuning.
+The phase-expert model slice is now implemented. Feeding and combat have
+separate action-kind heads, while downstream target, effort, amount, signal,
+value, and recurrent paths remain shared. Every demonstration dataset receives
+an explicit feeding or combat phase in artifact-bound CLI order. Recurrent
+chunks retain that label across shuffling and truncation; action-kind loss is
+routed only to the assigned expert. Phase loss is independently balanced from
+the exact post-resampling epoch, and artifacts report combined, routed-expert,
+gate, and exact accuracy by action family plus phase-level gate accuracy.
 
-Training-artifact schema 41 and checkpoint-evaluation schema 7 bind the split
+Inference receives no phase label. A local gate mixes the two experts in
+probability space from the same anonymous observation. The first shared-trunk
+gate trial proved the experts worked—held-out Attack remained 100% in the
+combat expert—but the gate classified every Attack sample as feeding after 32
+epochs. A 4x auxiliary gate continuation recovered only 50% held-out Attack
+routing and four attacks across 48 contact episodes. The final design gives the
+gate its own shared-per-slot encoder and pooled feed-forward path, still without
+batch-row, cell, team, or identity aggregation. It does not enlarge per-cell
+memory or alter the Mind ABI. The default model is 96,444 parameters, versus
+84,848 for the single-head slot model, but the second slot pass materially
+increases CPU cloning and inference cost.
+
+At 32 epochs the dedicated gate achieves held-out coexistence: Consume is 99.5%
+combined/expert/exact, Move is 96.1% combined and 59.0% exact, Attack is 100%
+combined/expert/gate and 75.0% exact, and phase gating is 99.9% feeding / 100%
+combat. Actual rollouts nevertheless reject the candidate. Contact and micro
+suites record zero attacks; dense-layout adjacent survival is 50.0% line,
+66.8% checkerboard, and 68.4% ring, while loose-random and random pass at 84.0%
+and 99.2%. The gap is now demonstrably distribution shift between held-out
+teacher trajectories and policy-induced states, not shared-head forgetting.
+The next slice should use direct rollout fine-tuning and/or deterministic
+on-policy correction-label collection from failed states, retaining the expert
+and rollout gates. This candidate is evidence, not a promotable warm start.
+
+Behavior-cloning schema 17 and training-artifact schema 42 bind the expert
+record, dataset phases, balanced phase loss, and diagnostics. Checkpoint-
+evaluation schema 7 binds the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution
 schema 10 reconstructs every complete micro-combat evaluation
 boundary and binds terminal/best survival and elimination, joint-gate reach,

@@ -11,6 +11,7 @@ use crate::observation::{HEADER_FEATURES, OBS_DIM, SLOT_FEATURES};
 
 const POLICY_MEMORY_MAGIC: [u8; 4] = *b"BRM1";
 const POLICY_MEMORY_HEADER_BYTES: usize = 8;
+pub const NUM_ACTION_KIND_EXPERTS: usize = 2;
 
 /// Actor-critic model with a cell-private recurrent state.
 ///
@@ -21,10 +22,14 @@ const POLICY_MEMORY_HEADER_BYTES: usize = 8;
 #[derive(Module, Debug)]
 pub struct PolicyValueNet<B: Backend> {
     slot_encoder: nn::Linear<B>,
+    phase_slot_encoder: nn::Linear<B>,
+    phase_gate_fc: nn::Linear<B>,
     shared_fc1: nn::Linear<B>,
     recurrent: nn::Linear<B>,
     shared_fc2: nn::Linear<B>,
-    action_kind_head: nn::Linear<B>,
+    feeding_action_kind_head: nn::Linear<B>,
+    combat_action_kind_head: nn::Linear<B>,
+    phase_gate_head: nn::Linear<B>,
     target_query_head: nn::Linear<B>,
     effort_head: nn::Linear<B>,
     amount_head: nn::Linear<B>,
@@ -49,10 +54,13 @@ impl PolicyValueNetConfig {
     pub fn parameter_count(&self) -> usize {
         let linear = |inputs: usize, outputs: usize| inputs * outputs + outputs;
         linear(SLOT_FEATURES, self.hidden2)
+            + linear(SLOT_FEATURES, self.hidden2)
+            + linear(HEADER_FEATURES + self.hidden2, self.hidden2)
             + linear(HEADER_FEATURES + self.hidden2, self.hidden1)
             + linear(self.hidden1 + self.recurrent_size, self.recurrent_size)
             + linear(self.recurrent_size, self.hidden2)
-            + linear(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            + 2 * linear(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            + linear(self.hidden2, NUM_ACTION_KIND_EXPERTS)
             + linear(self.hidden2, NUM_POLICY_ACTION_KINDS * self.hidden2)
             + linear(self.hidden2, NUM_POLICY_EFFORT_LOGITS)
             + linear(self.hidden2, NUM_POLICY_AMOUNT_LOGITS)
@@ -65,6 +73,9 @@ impl PolicyValueNetConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> PolicyValueNet<B> {
         PolicyValueNet {
             slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_gate_fc: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden2)
+                .init(device),
             shared_fc1: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden1)
                 .init(device),
             recurrent: nn::LinearConfig::new(
@@ -73,7 +84,11 @@ impl PolicyValueNetConfig {
             )
             .init(device),
             shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
-            action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            feeding_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+                .init(device),
+            combat_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+                .init(device),
+            phase_gate_head: nn::LinearConfig::new(self.hidden2, NUM_ACTION_KIND_EXPERTS)
                 .init(device),
             target_query_head: nn::LinearConfig::new(
                 self.hidden2,
@@ -92,7 +107,14 @@ impl PolicyValueNetConfig {
 
 /// Output of a forward pass through the model.
 pub struct ModelOutput<B: Backend> {
+    /// Locally gated inference logits consumed by PPO and deployed Minds.
     pub action_kind_logits: Tensor<B, 2>,
+    /// Feeding then combat expert logits, flattened as [expert, action kind].
+    /// Supervised training routes labels to one expert; inference never
+    /// receives the privileged supervision phase.
+    pub action_kind_expert_logits: Tensor<B, 2>,
+    /// Observation-driven feeding/combat gate logits.
+    pub phase_gate_logits: Tensor<B, 2>,
     /// Action-kind-conditioned target logits, flattened as [kind, target].
     pub target_logits: Tensor<B, 2>,
     /// Action-kind-conditioned effort logits, flattened as [kind, effort].
@@ -130,10 +152,18 @@ impl<B: Backend> PolicyValueNet<B> {
         let [batch, observation_width] = obs.dims();
         debug_assert_eq!(observation_width, OBS_DIM);
         let header = obs.clone().slice([0..batch, 0..HEADER_FEATURES]);
-        let slots = obs
+        let raw_slots = obs
             .slice([0..batch, HEADER_FEATURES..OBS_DIM])
             .reshape([batch * NUM_POLICY_TARGETS, SLOT_FEATURES]);
-        let slots = burn::tensor::activation::relu(self.slot_encoder.forward(slots)).reshape([
+        let phase_slots =
+            burn::tensor::activation::relu(self.phase_slot_encoder.forward(raw_slots.clone()))
+                .reshape([batch, NUM_POLICY_TARGETS, self.hidden2()]);
+        let phase_pooled_slots = phase_slots.max_dim(1).reshape([batch, self.hidden2()]);
+        let phase_gate_features = burn::tensor::activation::relu(
+            self.phase_gate_fc
+                .forward(Tensor::cat(vec![header.clone(), phase_pooled_slots], 1)),
+        );
+        let slots = burn::tensor::activation::relu(self.slot_encoder.forward(raw_slots)).reshape([
             batch,
             NUM_POLICY_TARGETS,
             self.hidden2(),
@@ -148,7 +178,27 @@ impl<B: Backend> PolicyValueNet<B> {
         let x = self.shared_fc2.forward(next_memory.clone());
         let x = burn::tensor::activation::relu(x);
 
-        let action_kind_logits = self.action_kind_head.forward(x.clone());
+        let feeding_action_kind_logits = self.feeding_action_kind_head.forward(x.clone());
+        let combat_action_kind_logits = self.combat_action_kind_head.forward(x.clone());
+        let phase_gate_logits = self.phase_gate_head.forward(phase_gate_features);
+        let phase_gate_probs = burn::tensor::activation::softmax(phase_gate_logits.clone(), 1);
+        let feeding_weight = phase_gate_probs
+            .clone()
+            .slice([0..batch, 0..1])
+            .repeat_dim(1, NUM_POLICY_ACTION_KINDS);
+        let combat_weight = phase_gate_probs
+            .slice([0..batch, 1..2])
+            .repeat_dim(1, NUM_POLICY_ACTION_KINDS);
+        let action_kind_probs =
+            burn::tensor::activation::softmax(feeding_action_kind_logits.clone(), 1)
+                * feeding_weight
+                + burn::tensor::activation::softmax(combat_action_kind_logits.clone(), 1)
+                    * combat_weight;
+        let action_kind_logits = action_kind_probs.clamp_min(1.0e-20).log();
+        let action_kind_expert_logits = Tensor::cat(
+            vec![feeding_action_kind_logits, combat_action_kind_logits],
+            1,
+        );
         let target_queries = self.target_query_head.forward(x.clone()).reshape([
             batch,
             NUM_POLICY_ACTION_KINDS,
@@ -166,6 +216,8 @@ impl<B: Backend> PolicyValueNet<B> {
 
         ModelOutput {
             action_kind_logits,
+            action_kind_expert_logits,
+            phase_gate_logits,
             target_logits,
             effort_logits,
             amount_logits,
@@ -253,6 +305,17 @@ mod tests {
             [batch_size, NUM_POLICY_ACTION_KINDS]
         );
         assert_eq!(
+            output.action_kind_expert_logits.dims(),
+            [
+                batch_size,
+                NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS
+            ]
+        );
+        assert_eq!(
+            output.phase_gate_logits.dims(),
+            [batch_size, NUM_ACTION_KIND_EXPERTS]
+        );
+        assert_eq!(
             output.target_logits.dims(),
             [batch_size, NUM_POLICY_TARGET_LOGITS]
         );
@@ -274,7 +337,7 @@ mod tests {
         );
         assert_eq!(output.values.dims(), [batch_size, 1]);
         assert_eq!(output.next_memory.dims(), [batch_size, 64]);
-        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 84_848);
+        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 96_444);
     }
 
     #[test]
@@ -284,7 +347,7 @@ mod tests {
             hidden2: 128,
             recurrent_size: 128,
         };
-        assert_eq!(large.parameter_count(), 300_656);
+        assert_eq!(large.parameter_count(), 332_028);
         assert_eq!(policy_memory_bytes(large.recurrent_size), Some(264));
     }
 
@@ -389,6 +452,22 @@ mod tests {
                 .to_vec::<f32>()
                 .unwrap(),
             NUM_POLICY_ACTION_KINDS,
+        );
+        assert_rows_equal(
+            output
+                .action_kind_expert_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS,
+        );
+        assert_rows_equal(
+            output
+                .phase_gate_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            NUM_ACTION_KIND_EXPERTS,
         );
         assert_rows_equal(
             output.effort_logits.into_data().to_vec::<f32>().unwrap(),

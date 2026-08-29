@@ -29,10 +29,11 @@ use crate::config::ModelConfig;
 use crate::demonstration::{load_demonstrations, DemonstrationSample, LoadedDemonstrations};
 use crate::model::{
     decode_policy_memory, encode_policy_memory, PolicyValueNet, PolicyValueNetConfig,
+    NUM_ACTION_KIND_EXPERTS,
 };
 use crate::observation::OBS_DIM;
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 16;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 17;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,6 +58,31 @@ pub enum ActionBalancingStrategy {
     Label,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SupervisionPhase {
+    Feeding,
+    Combat,
+}
+
+impl SupervisionPhase {
+    pub const ALL: [Self; NUM_ACTION_KIND_EXPERTS] = [Self::Feeding, Self::Combat];
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Feeding => 0,
+            Self::Combat => 1,
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Feeding => "feeding",
+            Self::Combat => "combat",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct BehaviorCloningConfig {
@@ -78,6 +104,13 @@ pub struct BehaviorCloningConfig {
     /// total presentations per epoch.
     #[serde(default)]
     pub dataset_sampling_weights: Vec<f64>,
+    /// Supervised expert assignment for each dataset in CLI order. Empty means
+    /// every dataset is feeding, preserving the simple single-skill workflow.
+    #[serde(default)]
+    pub dataset_phases: Vec<SupervisionPhase>,
+    /// Relative auxiliary loss used to teach the observation-driven phase
+    /// gate. Expert action loss retains unit weight.
+    pub phase_gate_loss_weight: f64,
     /// Maximum number of consecutive decisions from one cell kept in a single
     /// recurrent autodiff graph.
     pub recurrent_unroll_steps: usize,
@@ -111,6 +144,8 @@ impl BehaviorCloningConfig {
                 .dataset_sampling_weights
                 .iter()
                 .any(|weight| !weight.is_finite() || *weight <= 0.0)
+            || !self.phase_gate_loss_weight.is_finite()
+            || self.phase_gate_loss_weight <= 0.0
             || self.recurrent_unroll_steps == 0
             || self.recurrent_unroll_steps > 256
             || !self.action_balance_exponent.is_finite()
@@ -120,7 +155,7 @@ impl BehaviorCloningConfig {
                 .is_some_and(|ratio| !ratio.is_finite() || ratio < 1.0)
         {
             return Err(
-                "behavior-cloning initial artifact must be a SHA-256 hash, epochs, batch size, learning rate, and explicit dataset weights must be positive, validation fraction and action-balance exponent must be in [0, 1], action-balance max ratio must be finite and at least 1, and recurrent unroll steps must be in 1..=256".into(),
+                "behavior-cloning initial artifact must be a SHA-256 hash, epochs, batch size, learning rate, explicit dataset weights, and phase-gate loss weight must be positive, validation fraction and action-balance exponent must be in [0, 1], action-balance max ratio must be finite and at least 1, and recurrent unroll steps must be in 1..=256".into(),
             );
         }
         Ok(())
@@ -138,6 +173,8 @@ impl Default for BehaviorCloningConfig {
             validation_fraction: 0.1,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
             dataset_sampling_weights: Vec::new(),
+            dataset_phases: Vec::new(),
+            phase_gate_loss_weight: 1.0,
             recurrent_unroll_steps: 16,
             exact_round_trip_only: false,
             action_balancing: ActionBalancingStrategy::None,
@@ -163,6 +200,8 @@ pub struct BehaviorCloningMetrics {
     /// Sum of per-sample loss weights by action family over every epoch. This
     /// makes the effective, post-resampling supervision mixture auditable.
     pub action_family_weighted_loss_mass: Vec<f64>,
+    pub supervision_phase_presentations: Vec<usize>,
+    pub supervision_phase_weighted_gate_loss_mass: Vec<f64>,
     pub recurrent_unroll_steps: usize,
     pub training_trajectories: usize,
     pub validation_trajectories: usize,
@@ -181,6 +220,10 @@ pub struct BehaviorCloningMetrics {
     pub final_training_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
     pub initial_validation_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
     pub final_validation_family_metrics: Vec<BehaviorCloningFamilyMetrics>,
+    pub initial_training_phase_metrics: Vec<BehaviorCloningPhaseMetrics>,
+    pub final_training_phase_metrics: Vec<BehaviorCloningPhaseMetrics>,
+    pub initial_validation_phase_metrics: Vec<BehaviorCloningPhaseMetrics>,
+    pub final_validation_phase_metrics: Vec<BehaviorCloningPhaseMetrics>,
     pub partitions: Vec<BehaviorCloningDatasetPartition>,
 }
 
@@ -193,13 +236,24 @@ pub struct BehaviorCloningFamilyMetrics {
     pub family: String,
     pub samples: usize,
     pub action_kind_accuracy: Option<f64>,
+    pub routed_expert_action_kind_accuracy: Option<f64>,
+    pub phase_gate_accuracy: Option<f64>,
     pub exact_accuracy: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BehaviorCloningPhaseMetrics {
+    pub phase: String,
+    pub samples: usize,
+    pub gate_accuracy: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct BehaviorCloningDatasetPartition {
     pub manifest_sha256: String,
+    pub supervision_phase: SupervisionPhase,
     pub eligible_samples: usize,
     pub training_samples: usize,
     pub validation_samples: usize,
@@ -223,6 +277,7 @@ pub struct BehaviorCloningDatasetIdentity {
     pub teacher: String,
     pub samples: usize,
     pub exact_round_trip_samples: usize,
+    pub supervision_phase: SupervisionPhase,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -241,6 +296,7 @@ pub struct BehaviorCloningArtifact {
 
 struct DatasetPartition<'a> {
     manifest_sha256: String,
+    supervision_phase: SupervisionPhase,
     training: Vec<&'a DemonstrationSample>,
     validation: Vec<&'a DemonstrationSample>,
     held_out_seeds: Vec<u64>,
@@ -339,6 +395,28 @@ fn action_weights_for_samples<'a>(
     weights
 }
 
+fn balanced_phase_weights(
+    counts: [usize; NUM_ACTION_KIND_EXPERTS],
+) -> [f32; NUM_ACTION_KIND_EXPERTS] {
+    let represented = counts.iter().filter(|count| **count > 0).count();
+    let total = counts.iter().sum::<usize>();
+    std::array::from_fn(|phase| {
+        if counts[phase] == 0 {
+            1.0
+        } else {
+            total as f32 / (represented * counts[phase]) as f32
+        }
+    })
+}
+
+fn phase_weights_for_chunks(chunks: &[SequenceChunk<'_>]) -> [f32; NUM_ACTION_KIND_EXPERTS] {
+    let mut counts = [0usize; NUM_ACTION_KIND_EXPERTS];
+    for chunk in chunks {
+        counts[chunk.supervision_phase.index()] += chunk.samples.len();
+    }
+    balanced_phase_weights(counts)
+}
+
 fn seed_rank(split_seed: u64, source_seed: u64) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"blob-behavior-cloning-validation-seed-v1");
@@ -347,13 +425,30 @@ fn seed_rank(split_seed: u64, source_seed: u64) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+fn supervision_phases(
+    config: &BehaviorCloningConfig,
+    dataset_count: usize,
+) -> Result<Vec<SupervisionPhase>, String> {
+    if config.dataset_phases.is_empty() {
+        return Ok(vec![SupervisionPhase::Feeding; dataset_count]);
+    }
+    if config.dataset_phases.len() != dataset_count {
+        return Err(format!(
+            "received {} supervision phases for {dataset_count} datasets",
+            config.dataset_phases.len()
+        ));
+    }
+    Ok(config.dataset_phases.clone())
+}
+
 fn partition_datasets<'a>(
     datasets: &'a [LoadedDemonstrations],
+    phases: &[SupervisionPhase],
     config: &BehaviorCloningConfig,
 ) -> Result<Vec<DatasetPartition<'a>>, String> {
     let mut identities = HashSet::with_capacity(datasets.len());
     let mut partitions = Vec::with_capacity(datasets.len());
-    for dataset in datasets {
+    for (dataset, supervision_phase) in datasets.iter().zip(phases) {
         if !identities.insert(&dataset.manifest_sha256) {
             return Err(format!(
                 "duplicate demonstration manifest {}",
@@ -406,6 +501,7 @@ fn partition_datasets<'a>(
         }
         partitions.push(DatasetPartition {
             manifest_sha256: dataset.manifest_sha256.clone(),
+            supervision_phase: *supervision_phase,
             training,
             validation,
             held_out_seeds,
@@ -478,6 +574,27 @@ fn kind_mask_bias(sample: &DemonstrationSample) -> impl Iterator<Item = f32> {
         .map(|allowed| if allowed { 0.0 } else { -1.0e9 })
 }
 
+fn expert_kind_mask_bias(
+    sample: &DemonstrationSample,
+    supervision_phase: SupervisionPhase,
+) -> Vec<f32> {
+    let mask = kind_mask_bias(sample).collect::<Vec<_>>();
+    (0..NUM_ACTION_KIND_EXPERTS)
+        .flat_map(|expert| {
+            (expert == supervision_phase.index())
+                .then_some(mask.iter().copied())
+                .into_iter()
+                .flatten()
+                .chain(
+                    (expert != supervision_phase.index())
+                        .then_some(std::iter::repeat_n(-1.0e9, NUM_POLICY_ACTION_KINDS))
+                        .into_iter()
+                        .flatten(),
+                )
+        })
+        .collect()
+}
+
 fn target_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
     let choice = decompose_policy_action(usize::from(sample.action))
         .expect("validated demonstration action is in the policy catalog");
@@ -537,23 +654,37 @@ fn amount_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
     bias
 }
 
-type DemonstrationSequence<'a> = Vec<&'a DemonstrationSample>;
+#[derive(Clone)]
+struct DemonstrationSequence<'a> {
+    samples: Vec<&'a DemonstrationSample>,
+    supervision_phase: SupervisionPhase,
+}
 
 #[derive(Clone)]
 struct SequenceChunk<'a> {
     samples: Vec<&'a DemonstrationSample>,
     initial_memory: Vec<f32>,
+    supervision_phase: SupervisionPhase,
 }
 
-fn build_sequences<'a>(samples: &[&'a DemonstrationSample]) -> Vec<DemonstrationSequence<'a>> {
-    let mut sequences = BTreeMap::<(u64, u64), DemonstrationSequence<'a>>::new();
+fn build_sequences<'a>(
+    samples: &[&'a DemonstrationSample],
+    supervision_phase: SupervisionPhase,
+) -> Vec<DemonstrationSequence<'a>> {
+    let mut sequences = BTreeMap::<(u64, u64), Vec<&'a DemonstrationSample>>::new();
     for sample in samples {
         sequences
             .entry((sample.source_seed, sample.source_cell))
             .or_default()
             .push(*sample);
     }
-    sequences.into_values().collect()
+    sequences
+        .into_values()
+        .map(|samples| DemonstrationSequence {
+            samples,
+            supervision_phase,
+        })
+        .collect()
 }
 
 fn canonicalize_memory(memory: &[f32]) -> Vec<f32> {
@@ -578,30 +709,31 @@ where
         while positions
             .iter()
             .zip(sequence_batch)
-            .any(|(position, sequence)| *position < sequence.len())
+            .any(|(position, sequence)| *position < sequence.samples.len())
         {
             let active = positions
                 .iter()
                 .zip(sequence_batch)
                 .enumerate()
                 .filter_map(|(index, (position, sequence))| {
-                    (*position < sequence.len()).then_some(index)
+                    (*position < sequence.samples.len()).then_some(index)
                 })
                 .collect::<Vec<_>>();
             for index in &active {
                 let position = positions[*index];
                 if position.is_multiple_of(unroll_steps) {
-                    let end = (position + unroll_steps).min(sequence_batch[*index].len());
+                    let end = (position + unroll_steps).min(sequence_batch[*index].samples.len());
                     chunks.push(SequenceChunk {
-                        samples: sequence_batch[*index][position..end].to_vec(),
+                        samples: sequence_batch[*index].samples[position..end].to_vec(),
                         initial_memory: memories[*index].clone(),
+                        supervision_phase: sequence_batch[*index].supervision_phase,
                     });
                 }
             }
             let observations = active
                 .iter()
                 .flat_map(|index| {
-                    sequence_batch[*index][positions[*index]]
+                    sequence_batch[*index].samples[positions[*index]]
                         .observation
                         .iter()
                         .copied()
@@ -668,6 +800,7 @@ struct SequenceEvaluation {
     loss: f64,
     exact_accuracy: f64,
     family_metrics: Vec<BehaviorCloningFamilyMetrics>,
+    phase_metrics: Vec<BehaviorCloningPhaseMetrics>,
 }
 
 fn empty_family_metrics() -> Vec<BehaviorCloningFamilyMetrics> {
@@ -677,7 +810,20 @@ fn empty_family_metrics() -> Vec<BehaviorCloningFamilyMetrics> {
             family: family.name().into(),
             samples: 0,
             action_kind_accuracy: None,
+            routed_expert_action_kind_accuracy: None,
+            phase_gate_accuracy: None,
             exact_accuracy: None,
+        })
+        .collect()
+}
+
+fn empty_phase_metrics() -> Vec<BehaviorCloningPhaseMetrics> {
+    SupervisionPhase::ALL
+        .into_iter()
+        .map(|phase| BehaviorCloningPhaseMetrics {
+            phase: phase.name().into(),
+            samples: 0,
+            gate_accuracy: None,
         })
         .collect()
 }
@@ -686,6 +832,7 @@ fn evaluate_sequences<B: AutodiffBackend>(
     model: &PolicyValueNet<B>,
     sequences: &[DemonstrationSequence<'_>],
     sequence_batch_size: usize,
+    phase_gate_loss_weight: f64,
     device: &B::Device,
 ) -> Option<SequenceEvaluation>
 where
@@ -695,31 +842,44 @@ where
         return None;
     }
     let recurrent_size = model.recurrent_size();
+    let mut evaluation_phase_counts = [0usize; NUM_ACTION_KIND_EXPERTS];
+    for sequence in sequences {
+        evaluation_phase_counts[sequence.supervision_phase.index()] += sequence.samples.len();
+    }
+    let evaluation_phase_weights = balanced_phase_weights(evaluation_phase_counts);
     let mut total_loss = 0.0_f64;
     let mut correct = 0usize;
     let mut total = 0usize;
     let mut family_samples = [0usize; PolicyActionFamily::COUNT];
     let mut family_kind_correct = [0usize; PolicyActionFamily::COUNT];
+    let mut family_expert_kind_correct = [0usize; PolicyActionFamily::COUNT];
+    let mut family_gate_correct = [0usize; PolicyActionFamily::COUNT];
     let mut family_exact_correct = [0usize; PolicyActionFamily::COUNT];
+    let mut phase_samples = [0usize; NUM_ACTION_KIND_EXPERTS];
+    let mut phase_gate_correct = [0usize; NUM_ACTION_KIND_EXPERTS];
     for sequence_batch in sequences.chunks(sequence_batch_size.max(1)) {
         let mut positions = vec![0usize; sequence_batch.len()];
         let mut memories = vec![vec![0.0; recurrent_size]; sequence_batch.len()];
         while positions
             .iter()
             .zip(sequence_batch)
-            .any(|(position, sequence)| *position < sequence.len())
+            .any(|(position, sequence)| *position < sequence.samples.len())
         {
             let active = positions
                 .iter()
                 .zip(sequence_batch)
                 .enumerate()
                 .filter_map(|(index, (position, sequence))| {
-                    (*position < sequence.len()).then_some(index)
+                    (*position < sequence.samples.len()).then_some(index)
                 })
                 .collect::<Vec<_>>();
             let samples = active
                 .iter()
-                .map(|index| sequence_batch[*index][positions[*index]])
+                .map(|index| sequence_batch[*index].samples[positions[*index]])
+                .collect::<Vec<_>>();
+            let phases = active
+                .iter()
+                .map(|index| sequence_batch[*index].supervision_phase)
                 .collect::<Vec<_>>();
             let observations = samples
                 .iter()
@@ -728,6 +888,11 @@ where
             let kind_masks = samples
                 .iter()
                 .flat_map(|sample| kind_mask_bias(sample))
+                .collect::<Vec<_>>();
+            let expert_kind_masks = samples
+                .iter()
+                .zip(&phases)
+                .flat_map(|(sample, phase)| expert_kind_mask_bias(sample, *phase))
                 .collect::<Vec<_>>();
             let target_masks = samples
                 .iter()
@@ -768,6 +933,17 @@ where
                     TensorData::new(kind_masks, [active.len(), NUM_POLICY_ACTION_KINDS]),
                     device,
                 );
+            let expert_kind_logits = output.action_kind_expert_logits
+                + Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        expert_kind_masks,
+                        [
+                            active.len(),
+                            NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS,
+                        ],
+                    ),
+                    device,
+                );
             let target_logits = output.target_logits
                 + Tensor::<B, 2>::from_data(
                     TensorData::new(target_masks, [active.len(), NUM_POLICY_TARGET_LOGITS]),
@@ -797,20 +973,24 @@ where
                     device,
                 );
             let width = NUM_POLICY_ACTION_KINDS
+                + NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS
                 + NUM_POLICY_TARGET_LOGITS
                 + NUM_POLICY_EFFORT_LOGITS
                 + NUM_POLICY_AMOUNT_LOGITS
                 + NUM_SIGNAL_CHOICES
                 + NUM_SIGNAL_STRENGTH_CHOICES
+                + NUM_ACTION_KIND_EXPERTS
                 + recurrent_size;
             let data = Tensor::cat(
                 vec![
                     burn::tensor::activation::log_softmax(kind_logits, 1),
+                    burn::tensor::activation::log_softmax(expert_kind_logits, 1),
                     burn::tensor::activation::log_softmax(target_logits, 1),
                     burn::tensor::activation::log_softmax(effort_logits, 1),
                     burn::tensor::activation::log_softmax(amount_logits, 1),
                     burn::tensor::activation::log_softmax(signal_logits, 1),
                     burn::tensor::activation::log_softmax(signal_strength_logits, 1),
+                    burn::tensor::activation::log_softmax(output.phase_gate_logits, 1),
                     output.next_memory,
                 ],
                 1,
@@ -818,7 +998,9 @@ where
             .into_data()
             .to_vec::<f32>()
             .expect("behavior-cloning evaluation uses f32");
-            for (row, (index, sample)) in active.into_iter().zip(samples).enumerate() {
+            for (row, ((index, sample), phase)) in
+                active.into_iter().zip(samples).zip(phases).enumerate()
+            {
                 let start = row * width;
                 let action = usize::from(sample.action);
                 let hierarchical = decompose_policy_action(action)
@@ -826,26 +1008,45 @@ where
                 let amount = usize::from(sample.amount);
                 let signal = usize::from(sample.signal);
                 let signal_strength = usize::from(sample.signal_strength);
-                let target_logits_start = start + NUM_POLICY_ACTION_KINDS;
+                let expert_kind_start = start + NUM_POLICY_ACTION_KINDS;
+                let target_logits_start =
+                    expert_kind_start + NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS;
                 let effort_logits_start = target_logits_start + NUM_POLICY_TARGET_LOGITS;
                 let amount_logits_start = effort_logits_start + NUM_POLICY_EFFORT_LOGITS;
                 let signal_start = amount_logits_start + NUM_POLICY_AMOUNT_LOGITS;
                 let signal_strength_start = signal_start + NUM_SIGNAL_CHOICES;
+                let phase_start = signal_strength_start + NUM_SIGNAL_STRENGTH_CHOICES;
                 let target_index = hierarchical.kind * NUM_POLICY_TARGETS + hierarchical.target;
                 let effort_index = hierarchical.kind * NUM_POLICY_EFFORTS + hierarchical.effort;
                 let amount_index = hierarchical.kind * NUM_AMOUNT_CHOICES + amount;
                 total_loss -= f64::from(
-                    data[start + hierarchical.kind]
+                    data[expert_kind_start
+                        + phase.index() * NUM_POLICY_ACTION_KINDS
+                        + hierarchical.kind]
                         + data[target_logits_start + target_index]
                         + data[effort_logits_start + effort_index]
                         + data[amount_logits_start + amount_index]
                         + data[signal_start + signal]
-                        + data[signal_strength_start + signal_strength],
+                        + data[signal_strength_start + signal_strength]
+                        + evaluation_phase_weights[phase.index()]
+                            * phase_gate_loss_weight as f32
+                            * data[phase_start + phase.index()],
                 );
                 let predicted_kind = (0..NUM_POLICY_ACTION_KINDS)
                     .max_by(|left, right| {
                         data[start + *left]
                             .total_cmp(&data[start + *right])
+                            .then_with(|| right.cmp(left))
+                    })
+                    .unwrap_or(0);
+                let predicted_expert_kind = (0..NUM_POLICY_ACTION_KINDS)
+                    .max_by(|left, right| {
+                        data[expert_kind_start + phase.index() * NUM_POLICY_ACTION_KINDS + *left]
+                            .total_cmp(
+                                &data[expert_kind_start
+                                    + phase.index() * NUM_POLICY_ACTION_KINDS
+                                    + *right],
+                            )
                             .then_with(|| right.cmp(left))
                     })
                     .unwrap_or(0);
@@ -909,9 +1110,21 @@ where
                     .index();
                 family_samples[family] += 1;
                 family_kind_correct[family] += usize::from(kind_correct);
+                family_expert_kind_correct[family] +=
+                    usize::from(predicted_expert_kind == hierarchical.kind);
                 family_exact_correct[family] += usize::from(exact);
+                let predicted_phase = (0..NUM_ACTION_KIND_EXPERTS)
+                    .max_by(|left, right| {
+                        data[phase_start + *left]
+                            .total_cmp(&data[phase_start + *right])
+                            .then_with(|| right.cmp(left))
+                    })
+                    .unwrap_or(0);
+                phase_samples[phase.index()] += 1;
+                phase_gate_correct[phase.index()] += usize::from(predicted_phase == phase.index());
+                family_gate_correct[family] += usize::from(predicted_phase == phase.index());
                 memories[index] = canonicalize_memory(
-                    &data[signal_strength_start + NUM_SIGNAL_STRENGTH_CHOICES..start + width],
+                    &data[phase_start + NUM_ACTION_KIND_EXPERTS..start + width],
                 );
                 positions[index] += 1;
                 total += 1;
@@ -931,8 +1144,25 @@ where
                     samples,
                     action_kind_accuracy: (samples > 0)
                         .then_some(family_kind_correct[family_index] as f64 / samples as f64),
+                    routed_expert_action_kind_accuracy: (samples > 0).then_some(
+                        family_expert_kind_correct[family_index] as f64 / samples as f64,
+                    ),
+                    phase_gate_accuracy: (samples > 0)
+                        .then_some(family_gate_correct[family_index] as f64 / samples as f64),
                     exact_accuracy: (samples > 0)
                         .then_some(family_exact_correct[family_index] as f64 / samples as f64),
+                }
+            })
+            .collect(),
+        phase_metrics: SupervisionPhase::ALL
+            .into_iter()
+            .map(|phase| {
+                let samples = phase_samples[phase.index()];
+                BehaviorCloningPhaseMetrics {
+                    phase: phase.name().into(),
+                    samples,
+                    gate_accuracy: (samples > 0)
+                        .then_some(phase_gate_correct[phase.index()] as f64 / samples as f64),
                 }
             })
             .collect(),
@@ -945,11 +1175,17 @@ fn quantize_straight_through<B: Backend>(memory: Tensor<B, 2>) -> Tensor<B, 2> {
     memory.clone() + (quantized - memory).detach()
 }
 
+struct SupervisedLossWeights<'a> {
+    actions: &'a [f32],
+    phases: &'a [f32; NUM_ACTION_KIND_EXPERTS],
+    phase_gate: f64,
+}
+
 fn train_chunk_batch<B: AutodiffBackend>(
     mut model: PolicyValueNet<B>,
     optimizer: &mut impl Optimizer<PolicyValueNet<B>, B>,
     chunks: &[SequenceChunk<'_>],
-    action_weights: &[f32],
+    loss_weights: SupervisedLossWeights<'_>,
     learning_rate: f64,
     device: &B::Device,
 ) -> PolicyValueNet<B> {
@@ -976,9 +1212,10 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .iter()
             .flat_map(|sample| sample.observation.iter().copied())
             .collect::<Vec<_>>();
-        let kind_masks = samples
+        let expert_kind_masks = samples
             .iter()
-            .flat_map(|sample| kind_mask_bias(sample))
+            .zip(chunks)
+            .flat_map(|(sample, chunk)| expert_kind_mask_bias(sample, chunk.supervision_phase))
             .collect::<Vec<_>>();
         let target_masks = samples
             .iter()
@@ -1007,9 +1244,16 @@ fn train_chunk_batch<B: AutodiffBackend>(
                     .expect("validated demonstration action is in the policy catalog")
             })
             .collect::<Vec<_>>();
-        let kinds = hierarchical
+        let expert_kinds = hierarchical
             .iter()
-            .map(|choice| choice.kind as i32)
+            .zip(chunks)
+            .map(|(choice, chunk)| {
+                (chunk.supervision_phase.index() * NUM_POLICY_ACTION_KINDS + choice.kind) as i32
+            })
+            .collect::<Vec<_>>();
+        let phases = chunks
+            .iter()
+            .map(|chunk| chunk.supervision_phase.index() as i32)
             .collect::<Vec<_>>();
         let targets = hierarchical
             .iter()
@@ -1021,7 +1265,11 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .collect::<Vec<_>>();
         let sample_weights = samples
             .iter()
-            .map(|sample| action_weights[usize::from(sample.action)])
+            .map(|sample| loss_weights.actions[usize::from(sample.action)])
+            .collect::<Vec<_>>();
+        let phase_sample_weights = chunks
+            .iter()
+            .map(|chunk| loss_weights.phases[chunk.supervision_phase.index()])
             .collect::<Vec<_>>();
         let signals = samples
             .iter()
@@ -1045,9 +1293,15 @@ fn train_chunk_batch<B: AutodiffBackend>(
             ),
             memory,
         );
-        let kind_logits = output.action_kind_logits
+        let expert_kind_logits = output.action_kind_expert_logits
             + Tensor::<B, 2>::from_data(
-                TensorData::new(kind_masks, [chunks.len(), NUM_POLICY_ACTION_KINDS]),
+                TensorData::new(
+                    expert_kind_masks,
+                    [
+                        chunks.len(),
+                        NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS,
+                    ],
+                ),
                 device,
             );
         let target_logits = output.target_logits
@@ -1078,8 +1332,10 @@ fn train_chunk_batch<B: AutodiffBackend>(
                 TensorData::new(amount_masks, [chunks.len(), NUM_POLICY_AMOUNT_LOGITS]),
                 device,
             );
-        let kind_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(kinds, [chunks.len()]), device);
+        let expert_kind_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(expert_kinds, [chunks.len()]), device);
+        let phase_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::new(phases, [chunks.len()]), device);
         let target_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::new(targets, [chunks.len()]), device);
         let effort_tensor =
@@ -1094,8 +1350,12 @@ fn train_chunk_batch<B: AutodiffBackend>(
             Tensor::<B, 1, Int>::from_data(TensorData::new(amounts, [chunks.len()]), device);
         let sample_weight_tensor =
             Tensor::<B, 2>::from_data(TensorData::new(sample_weights, [chunks.len(), 1]), device);
-        let step_loss = ((burn::tensor::activation::log_softmax(kind_logits, 1)
-            .gather(1, kind_tensor.unsqueeze_dim(1))
+        let phase_weight_tensor = Tensor::<B, 2>::from_data(
+            TensorData::new(phase_sample_weights, [chunks.len(), 1]),
+            device,
+        );
+        let action_log_likelihood = burn::tensor::activation::log_softmax(expert_kind_logits, 1)
+            .gather(1, expert_kind_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(target_logits, 1)
                 .gather(1, target_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(effort_logits, 1)
@@ -1105,8 +1365,12 @@ fn train_chunk_batch<B: AutodiffBackend>(
             + burn::tensor::activation::log_softmax(signal_logits, 1)
                 .gather(1, signal_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(signal_strength_logits, 1)
-                .gather(1, signal_strength_tensor.unsqueeze_dim(1)))
-            * sample_weight_tensor)
+                .gather(1, signal_strength_tensor.unsqueeze_dim(1));
+        let phase_log_likelihood =
+            burn::tensor::activation::log_softmax(output.phase_gate_logits, 1)
+                .gather(1, phase_tensor.unsqueeze_dim(1));
+        let step_loss = (action_log_likelihood * sample_weight_tensor
+            + phase_log_likelihood * phase_weight_tensor * loss_weights.phase_gate as f32)
             .mean()
             .neg();
         loss = Some(match loss {
@@ -1156,6 +1420,7 @@ where
     if datasets.is_empty() {
         return Err("behavior cloning requires at least one dataset".into());
     }
+    let supervision_phases = supervision_phases(config, datasets.len())?;
     let available_samples = datasets
         .iter()
         .map(|dataset| dataset.payload.samples.len())
@@ -1165,14 +1430,14 @@ where
         .flat_map(|dataset| &dataset.payload.samples)
         .filter(|sample| sample.exact_round_trip)
         .count();
-    let partitions = partition_datasets(datasets, config)?;
+    let partitions = partition_datasets(datasets, &supervision_phases, config)?;
     let training_sequences_by_dataset = partitions
         .iter()
-        .map(|partition| build_sequences(&partition.training))
+        .map(|partition| build_sequences(&partition.training, partition.supervision_phase))
         .collect::<Vec<_>>();
     let validation_sequences_by_dataset = partitions
         .iter()
-        .map(|partition| build_sequences(&partition.validation))
+        .map(|partition| build_sequences(&partition.validation, partition.supervision_phase))
         .collect::<Vec<_>>();
     let training_sequences = training_sequences_by_dataset
         .iter()
@@ -1207,6 +1472,7 @@ where
         .map(
             |(index, (partition, samples_per_epoch))| BehaviorCloningDatasetPartition {
                 manifest_sha256: partition.manifest_sha256.clone(),
+                supervision_phase: partition.supervision_phase,
                 eligible_samples: partition.training.len() + partition.validation.len(),
                 training_samples: partition.training.len(),
                 validation_samples: partition.validation.len(),
@@ -1239,19 +1505,27 @@ where
     let mut optimizer = AdamWConfig::new()
         .init()
         .with_grad_clipping(GradientClipping::Norm(1.0));
-    let initial_training =
-        evaluate_sequences(&model, &training_sequences, config.minibatch_size, &device)
-            .expect("a nonempty training partition has a trajectory");
+    let initial_training = evaluate_sequences(
+        &model,
+        &training_sequences,
+        config.minibatch_size,
+        config.phase_gate_loss_weight,
+        &device,
+    )
+    .expect("a nonempty training partition has a trajectory");
     let initial_validation = evaluate_sequences(
         &model,
         &validation_sequences,
         config.minibatch_size,
+        config.phase_gate_loss_weight,
         &device,
     );
     let mut rng = ChaCha12Rng::seed_from_u64(config.seed ^ 0x4245_4841_5649_4f52);
     let mut optimizer_steps = 0usize;
     let mut action_family_presentations = vec![0usize; PolicyActionFamily::COUNT];
     let mut action_family_weighted_loss_mass = vec![0.0_f64; PolicyActionFamily::COUNT];
+    let mut supervision_phase_presentations = vec![0usize; NUM_ACTION_KIND_EXPERTS];
+    let mut supervision_phase_weighted_gate_loss_mass = vec![0.0_f64; NUM_ACTION_KIND_EXPERTS];
     for _ in 0..config.epochs {
         let chunks_by_dataset = training_sequences_by_dataset
             .iter()
@@ -1272,6 +1546,7 @@ where
             config.action_balance_exponent,
             config.action_balance_max_ratio,
         );
+        let phase_weights = phase_weights_for_chunks(&epoch);
         for sample in epoch.iter().flat_map(|chunk| chunk.samples.iter().copied()) {
             let family = policy_action_family(usize::from(sample.action))
                 .expect("validated demonstration action belongs to a policy family")
@@ -1279,6 +1554,12 @@ where
             action_family_presentations[family] += 1;
             action_family_weighted_loss_mass[family] +=
                 f64::from(action_weights[usize::from(sample.action)]);
+        }
+        for chunk in &epoch {
+            let phase = chunk.supervision_phase.index();
+            supervision_phase_presentations[phase] += chunk.samples.len();
+            supervision_phase_weighted_gate_loss_mass[phase] +=
+                chunk.samples.len() as f64 * f64::from(phase_weights[phase]);
         }
         let mut by_length = BTreeMap::<usize, Vec<SequenceChunk<'_>>>::new();
         for chunk in epoch {
@@ -1301,20 +1582,30 @@ where
                 model,
                 &mut optimizer,
                 &batch,
-                &action_weights,
+                SupervisedLossWeights {
+                    actions: &action_weights,
+                    phases: &phase_weights,
+                    phase_gate: config.phase_gate_loss_weight,
+                },
                 config.learning_rate,
                 &device,
             );
             optimizer_steps += 1;
         }
     }
-    let final_training =
-        evaluate_sequences(&model, &training_sequences, config.minibatch_size, &device)
-            .expect("a nonempty training partition has a trajectory");
+    let final_training = evaluate_sequences(
+        &model,
+        &training_sequences,
+        config.minibatch_size,
+        config.phase_gate_loss_weight,
+        &device,
+    )
+    .expect("a nonempty training partition has a trajectory");
     let final_validation = evaluate_sequences(
         &model,
         &validation_sequences,
         config.minibatch_size,
+        config.phase_gate_loss_weight,
         &device,
     );
     Ok((
@@ -1329,6 +1620,8 @@ where
             sample_presentations,
             action_family_presentations,
             action_family_weighted_loss_mass,
+            supervision_phase_presentations,
+            supervision_phase_weighted_gate_loss_mass,
             recurrent_unroll_steps: config.recurrent_unroll_steps,
             training_trajectories: training_sequences.len(),
             validation_trajectories: validation_sequences.len(),
@@ -1350,11 +1643,23 @@ where
             initial_training_family_metrics: initial_training.family_metrics,
             final_training_family_metrics: final_training.family_metrics,
             initial_validation_family_metrics: initial_validation
-                .map(|metrics| metrics.family_metrics)
+                .as_ref()
+                .map(|metrics| metrics.family_metrics.clone())
                 .unwrap_or_else(empty_family_metrics),
             final_validation_family_metrics: final_validation
-                .map(|metrics| metrics.family_metrics)
+                .as_ref()
+                .map(|metrics| metrics.family_metrics.clone())
                 .unwrap_or_else(empty_family_metrics),
+            initial_training_phase_metrics: initial_training.phase_metrics,
+            final_training_phase_metrics: final_training.phase_metrics,
+            initial_validation_phase_metrics: initial_validation
+                .as_ref()
+                .map(|metrics| metrics.phase_metrics.clone())
+                .unwrap_or_else(empty_phase_metrics),
+            final_validation_phase_metrics: final_validation
+                .as_ref()
+                .map(|metrics| metrics.phase_metrics.clone())
+                .unwrap_or_else(empty_phase_metrics),
             partitions: partition_metrics,
         },
     ))
@@ -1420,6 +1725,7 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
     datasets: &[LoadedDemonstrations],
     metrics: &BehaviorCloningMetrics,
 ) -> Result<PathBuf, String> {
+    let supervision_phases = supervision_phases(config, datasets.len())?;
     if output.exists() {
         return Err(format!(
             "refusing to replace behavior-cloning artifact {}",
@@ -1453,13 +1759,17 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
             model: model_config.clone(),
             datasets: datasets
                 .iter()
-                .map(|dataset| BehaviorCloningDatasetIdentity {
-                    manifest_sha256: dataset.manifest_sha256.clone(),
-                    payload_sha256: dataset.manifest.payload_sha256.clone(),
-                    teacher: dataset.manifest.teacher.to_string(),
-                    samples: dataset.manifest.samples,
-                    exact_round_trip_samples: dataset.manifest.exact_round_trip_samples,
-                })
+                .zip(&supervision_phases)
+                .map(
+                    |(dataset, supervision_phase)| BehaviorCloningDatasetIdentity {
+                        manifest_sha256: dataset.manifest_sha256.clone(),
+                        payload_sha256: dataset.manifest.payload_sha256.clone(),
+                        teacher: dataset.manifest.teacher.to_string(),
+                        samples: dataset.manifest.samples,
+                        exact_round_trip_samples: dataset.manifest.exact_round_trip_samples,
+                        supervision_phase: *supervision_phase,
+                    },
+                )
                 .collect(),
             metrics: metrics.clone(),
             model_file: "model.mpk".into(),
@@ -1544,10 +1854,11 @@ mod tests {
         samples[1].source_cell = 5;
         let references = samples.iter().collect::<Vec<_>>();
 
-        let sequences = build_sequences(&references);
+        let sequences = build_sequences(&references, SupervisionPhase::Combat);
 
         assert_eq!(sequences.len(), 2);
-        assert!(sequences.iter().all(|sequence| sequence.len() == 1));
+        assert!(sequences.iter().all(|sequence| sequence.samples.len() == 1
+            && sequence.supervision_phase == SupervisionPhase::Combat));
     }
 
     #[test]
@@ -1560,7 +1871,7 @@ mod tests {
             sample.source_cell = 5;
         }
         let references = samples.iter().collect::<Vec<_>>();
-        let sequences = build_sequences(&references);
+        let sequences = build_sequences(&references, SupervisionPhase::Feeding);
         let device = Default::default();
         <TestBackend as Backend>::seed(&device, 123);
         let model = PolicyValueNetConfig {
@@ -1576,6 +1887,9 @@ mod tests {
         assert_eq!(chunks[0].samples.len(), 2);
         assert_eq!(chunks[1].samples.len(), 1);
         assert_eq!(chunks[0].initial_memory, vec![0.0; 8]);
+        assert!(chunks
+            .iter()
+            .all(|chunk| chunk.supervision_phase == SupervisionPhase::Feeding));
         assert!(chunks[1].initial_memory.iter().any(|value| *value != 0.0));
         assert_eq!(
             chunks[1].initial_memory,
@@ -1610,6 +1924,16 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
         assert!(invalid_initial_artifact.validate().is_err());
+        let invalid_phase_gate_weight = BehaviorCloningConfig {
+            phase_gate_loss_weight: 0.0,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(invalid_phase_gate_weight.validate().is_err());
+        let mismatched_phases = BehaviorCloningConfig {
+            dataset_phases: vec![SupervisionPhase::Feeding],
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(supervision_phases(&mismatched_phases, 2).is_err());
     }
 
     #[test]
@@ -1688,17 +2012,43 @@ mod tests {
     }
 
     #[test]
+    fn expert_kind_mask_routes_loss_to_only_the_supervised_phase() {
+        let samples = demonstration_samples(1);
+        let sample = &samples[0];
+        let feeding = expert_kind_mask_bias(sample, SupervisionPhase::Feeding);
+        let combat = expert_kind_mask_bias(sample, SupervisionPhase::Combat);
+        assert!(feeding[..NUM_POLICY_ACTION_KINDS].contains(&0.0));
+        assert!(feeding[NUM_POLICY_ACTION_KINDS..]
+            .iter()
+            .all(|bias| *bias == -1.0e9));
+        assert!(combat[..NUM_POLICY_ACTION_KINDS]
+            .iter()
+            .all(|bias| *bias == -1.0e9));
+        assert!(combat[NUM_POLICY_ACTION_KINDS..].contains(&0.0));
+    }
+
+    #[test]
     fn recurrent_chunk_sampling_preserves_the_exact_sample_budget() {
         let samples = demonstration_samples(5);
         let first = SequenceChunk {
             samples: samples[..3].iter().collect(),
             initial_memory: vec![0.0; 8],
+            supervision_phase: SupervisionPhase::Feeding,
         };
         let second = SequenceChunk {
             samples: samples[3..].iter().collect(),
             initial_memory: vec![0.0; 8],
+            supervision_phase: SupervisionPhase::Combat,
         };
         let mut rng = ChaCha12Rng::seed_from_u64(3);
+
+        let phase_weights = phase_weights_for_chunks(&[first.clone(), second.clone()]);
+        assert!(
+            (3.0 * phase_weights[SupervisionPhase::Feeding.index()]
+                - 2.0 * phase_weights[SupervisionPhase::Combat.index()])
+            .abs()
+                < 1.0e-6
+        );
 
         let epoch = sample_chunk_epoch(&[vec![first, second]], &[7], &mut rng);
 
@@ -1743,6 +2093,8 @@ mod tests {
             validation_fraction: 0.5,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
             dataset_sampling_weights: Vec::new(),
+            dataset_phases: Vec::new(),
+            phase_gate_loss_weight: 1.0,
             recurrent_unroll_steps: 4,
             exact_round_trip_only: false,
             action_balancing: ActionBalancingStrategy::None,
@@ -1762,7 +2114,33 @@ mod tests {
         assert!(metrics.final_validation_loss.is_some());
         assert_eq!(metrics.recurrent_unroll_steps, 4);
         assert_eq!(
+            metrics.partitions[0].supervision_phase,
+            SupervisionPhase::Feeding
+        );
+        assert_eq!(
+            metrics.final_validation_phase_metrics,
+            vec![
+                BehaviorCloningPhaseMetrics {
+                    phase: "feeding".into(),
+                    samples: metrics.validation_samples,
+                    gate_accuracy: metrics.final_validation_phase_metrics[0].gate_accuracy,
+                },
+                BehaviorCloningPhaseMetrics {
+                    phase: "combat".into(),
+                    samples: 0,
+                    gate_accuracy: None,
+                },
+            ]
+        );
+        assert_eq!(
             metrics.action_family_presentations.iter().sum::<usize>(),
+            metrics.sample_presentations
+        );
+        assert_eq!(
+            metrics
+                .supervision_phase_presentations
+                .iter()
+                .sum::<usize>(),
             metrics.sample_presentations
         );
         assert_eq!(
@@ -1884,7 +2262,8 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
 
-        let partitions = partition_datasets(&datasets, &config).unwrap();
+        let phases = supervision_phases(&config, datasets.len()).unwrap();
+        let partitions = partition_datasets(&datasets, &phases, &config).unwrap();
         assert_eq!(partitions[0].held_out_seeds, partitions[1].held_out_seeds);
         for partition in &partitions {
             let held_out = partition
@@ -1943,7 +2322,8 @@ mod tests {
             validation_fraction: 0.25,
             ..BehaviorCloningConfig::default()
         };
-        let partitions = partition_datasets(&datasets, &config).unwrap();
+        let phases = supervision_phases(&config, datasets.len()).unwrap();
+        let partitions = partition_datasets(&datasets, &phases, &config).unwrap();
         let presentations = samples_per_dataset_per_epoch(
             &partitions,
             DatasetSamplingStrategy::Proportional,

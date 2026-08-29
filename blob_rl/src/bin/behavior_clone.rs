@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use blob_rl::behavior_cloning::{
     behavior_clone_artifact_sha256, behavior_clone_from_model, load_dataset_directories,
     publish_behavior_clone, verify_behavior_clone_artifact, ActionBalancingStrategy,
-    BehaviorCloningConfig, BehaviorCloningFamilyMetrics, DatasetSamplingStrategy,
+    BehaviorCloningConfig, BehaviorCloningFamilyMetrics, BehaviorCloningPhaseMetrics,
+    DatasetSamplingStrategy, SupervisionPhase,
 };
 use blob_rl::config::TrainingConfig;
 use blob_rl::model::PolicyValueNetConfig;
@@ -25,6 +26,21 @@ enum ActionBalancing {
     None,
     Family,
     Label,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Phase {
+    Feeding,
+    Combat,
+}
+
+impl From<Phase> for SupervisionPhase {
+    fn from(value: Phase) -> Self {
+        match value {
+            Phase::Feeding => Self::Feeding,
+            Phase::Combat => Self::Combat,
+        }
+    }
 }
 
 impl From<ActionBalancing> for ActionBalancingStrategy {
@@ -58,10 +74,28 @@ fn format_family_metrics(metrics: &[BehaviorCloningFamilyMetrics]) -> String {
         .filter(|metrics| metrics.samples > 0)
         .map(|metrics| {
             format!(
-                "{}={:.1}% kind/{:.1}% exact (n={})",
+                "{}={:.1}% combined/{:.1}% expert/{:.1}% gate/{:.1}% exact (n={})",
                 metrics.family,
                 metrics.action_kind_accuracy.unwrap_or(0.0) * 100.0,
+                metrics.routed_expert_action_kind_accuracy.unwrap_or(0.0) * 100.0,
+                metrics.phase_gate_accuracy.unwrap_or(0.0) * 100.0,
                 metrics.exact_accuracy.unwrap_or(0.0) * 100.0,
+                metrics.samples,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_phase_metrics(metrics: &[BehaviorCloningPhaseMetrics]) -> String {
+    metrics
+        .iter()
+        .filter(|metrics| metrics.samples > 0)
+        .map(|metrics| {
+            format!(
+                "{}={:.1}% gate (n={})",
+                metrics.phase,
+                metrics.gate_accuracy.unwrap_or(0.0) * 100.0,
                 metrics.samples,
             )
         })
@@ -115,6 +149,14 @@ struct Args {
     #[arg(long, value_delimiter = ',')]
     dataset_weight: Vec<f64>,
 
+    /// Supervised expert phase, one per --dataset in order. Omit for all-feeding.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    dataset_phase: Vec<Phase>,
+
+    /// Relative auxiliary loss for the local observation-driven phase gate.
+    #[arg(long, default_value_t = 1.0)]
+    phase_gate_loss_weight: f64,
+
     /// Maximum consecutive decisions per cell in one recurrent graph.
     #[arg(long, default_value_t = 16)]
     recurrent_unroll_steps: usize,
@@ -163,6 +205,8 @@ fn main() {
         validation_fraction: args.validation_fraction,
         dataset_sampling: args.dataset_sampling.into(),
         dataset_sampling_weights: args.dataset_weight,
+        dataset_phases: args.dataset_phase.into_iter().map(Into::into).collect(),
+        phase_gate_loss_weight: args.phase_gate_loss_weight,
         recurrent_unroll_steps: args.recurrent_unroll_steps,
         exact_round_trip_only: args.exact_round_trip_only,
         action_balancing: args.action_balancing.into(),
@@ -227,6 +271,10 @@ fn main() {
             "Held-out family accuracy: {}",
             format_family_metrics(&metrics.final_validation_family_metrics)
         );
+        println!(
+            "Held-out phase accuracy: {}",
+            format_phase_metrics(&metrics.final_validation_phase_metrics)
+        );
     }
 
     #[cfg(all(not(feature = "wgpu"), feature = "ndarray"))]
@@ -285,6 +333,10 @@ fn main() {
         println!(
             "Held-out family accuracy: {}",
             format_family_metrics(&metrics.final_validation_family_metrics)
+        );
+        println!(
+            "Held-out phase accuracy: {}",
+            format_phase_metrics(&metrics.final_validation_phase_metrics)
         );
     }
 

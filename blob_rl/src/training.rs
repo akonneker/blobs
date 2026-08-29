@@ -3968,7 +3968,14 @@ mod tests {
             .expect("evaluated combat checkpoint must embed contact evidence");
         assert_eq!(report.seeds, vec![evaluation_seed]);
         assert_eq!(report.variants.len(), 12);
-        assert!(!report.is_active());
+        assert_eq!(
+            report.episodes,
+            report
+                .variants
+                .iter()
+                .map(|variant| variant.episodes)
+                .sum::<usize>()
+        );
         assert!(metadata.minimum_sim_time_quanta_per_env >= 1);
         let timeline = std::fs::read_to_string(temporary.path().join("competency-timeline.csv"))
             .expect("world-time competency timeline should be published");
