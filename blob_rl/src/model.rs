@@ -5,9 +5,9 @@ use burn::prelude::*;
 
 use crate::action::{
     NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORT_LOGITS,
-    NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
-use crate::observation::OBS_DIM;
+use crate::observation::{HEADER_FEATURES, OBS_DIM, SLOT_FEATURES};
 
 const POLICY_MEMORY_MAGIC: [u8; 4] = *b"BRM1";
 const POLICY_MEMORY_HEADER_BYTES: usize = 8;
@@ -20,11 +20,12 @@ const POLICY_MEMORY_HEADER_BYTES: usize = 8;
 /// stateful Minds.
 #[derive(Module, Debug)]
 pub struct PolicyValueNet<B: Backend> {
+    slot_encoder: nn::Linear<B>,
     shared_fc1: nn::Linear<B>,
     recurrent: nn::Linear<B>,
     shared_fc2: nn::Linear<B>,
     action_kind_head: nn::Linear<B>,
-    target_head: nn::Linear<B>,
+    target_query_head: nn::Linear<B>,
     effort_head: nn::Linear<B>,
     amount_head: nn::Linear<B>,
     signal_head: nn::Linear<B>,
@@ -47,11 +48,12 @@ impl PolicyValueNetConfig {
     /// Exact trainable scalar count for capacity and deployment planning.
     pub fn parameter_count(&self) -> usize {
         let linear = |inputs: usize, outputs: usize| inputs * outputs + outputs;
-        linear(OBS_DIM, self.hidden1)
+        linear(SLOT_FEATURES, self.hidden2)
+            + linear(HEADER_FEATURES + self.hidden2, self.hidden1)
             + linear(self.hidden1 + self.recurrent_size, self.recurrent_size)
             + linear(self.recurrent_size, self.hidden2)
             + linear(self.hidden2, NUM_POLICY_ACTION_KINDS)
-            + linear(self.hidden2, NUM_POLICY_TARGET_LOGITS)
+            + linear(self.hidden2, NUM_POLICY_ACTION_KINDS * self.hidden2)
             + linear(self.hidden2, NUM_POLICY_EFFORT_LOGITS)
             + linear(self.hidden2, NUM_POLICY_AMOUNT_LOGITS)
             + linear(self.hidden2, NUM_SIGNAL_CHOICES)
@@ -62,7 +64,9 @@ impl PolicyValueNetConfig {
     /// Initialize a new PolicyValueNet on the given device.
     pub fn init<B: Backend>(&self, device: &B::Device) -> PolicyValueNet<B> {
         PolicyValueNet {
-            shared_fc1: nn::LinearConfig::new(OBS_DIM, self.hidden1).init(device),
+            slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            shared_fc1: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden1)
+                .init(device),
             recurrent: nn::LinearConfig::new(
                 self.hidden1 + self.recurrent_size,
                 self.recurrent_size,
@@ -71,7 +75,11 @@ impl PolicyValueNetConfig {
             shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
             action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
                 .init(device),
-            target_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_TARGET_LOGITS).init(device),
+            target_query_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS * self.hidden2,
+            )
+            .init(device),
             effort_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_EFFORT_LOGITS).init(device),
             amount_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_AMOUNT_LOGITS).init(device),
             signal_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_CHOICES).init(device),
@@ -119,7 +127,21 @@ impl<B: Backend> PolicyValueNet<B> {
     /// One recurrent decision step. Every output row depends only on the
     /// corresponding observation and private-memory row.
     pub fn forward_with_memory(&self, obs: Tensor<B, 2>, memory: Tensor<B, 2>) -> ModelOutput<B> {
-        let x = self.shared_fc1.forward(obs);
+        let [batch, observation_width] = obs.dims();
+        debug_assert_eq!(observation_width, OBS_DIM);
+        let header = obs.clone().slice([0..batch, 0..HEADER_FEATURES]);
+        let slots = obs
+            .slice([0..batch, HEADER_FEATURES..OBS_DIM])
+            .reshape([batch * NUM_POLICY_TARGETS, SLOT_FEATURES]);
+        let slots = burn::tensor::activation::relu(self.slot_encoder.forward(slots)).reshape([
+            batch,
+            NUM_POLICY_TARGETS,
+            self.hidden2(),
+        ]);
+        let pooled_slots = slots.clone().max_dim(1).reshape([batch, self.hidden2()]);
+        let x = self
+            .shared_fc1
+            .forward(Tensor::cat(vec![header, pooled_slots], 1));
         let x = burn::tensor::activation::relu(x);
         let next_memory =
             burn::tensor::activation::tanh(self.recurrent.forward(Tensor::cat(vec![x, memory], 1)));
@@ -127,7 +149,15 @@ impl<B: Backend> PolicyValueNet<B> {
         let x = burn::tensor::activation::relu(x);
 
         let action_kind_logits = self.action_kind_head.forward(x.clone());
-        let target_logits = self.target_head.forward(x.clone());
+        let target_queries = self.target_query_head.forward(x.clone()).reshape([
+            batch,
+            NUM_POLICY_ACTION_KINDS,
+            self.hidden2(),
+        ]);
+        let target_logits = target_queries
+            .matmul(slots.swap_dims(1, 2))
+            .div_scalar((self.hidden2() as f64).sqrt())
+            .reshape([batch, NUM_POLICY_TARGET_LOGITS]);
         let effort_logits = self.effort_head.forward(x.clone());
         let amount_logits = self.amount_head.forward(x.clone());
         let signal_logits = self.signal_head.forward(x.clone());
@@ -144,6 +174,10 @@ impl<B: Backend> PolicyValueNet<B> {
             values,
             next_memory,
         }
+    }
+
+    fn hidden2(&self) -> usize {
+        self.shared_fc2.weight.val().dims()[1]
     }
 
     /// Get action probabilities via softmax.
@@ -240,7 +274,7 @@ mod tests {
         );
         assert_eq!(output.values.dims(), [batch_size, 1]);
         assert_eq!(output.next_memory.dims(), [batch_size, 64]);
-        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 188_848);
+        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 84_848);
     }
 
     #[test]
@@ -250,7 +284,7 @@ mod tests {
             hidden2: 128,
             recurrent_size: 128,
         };
-        assert_eq!(large.parameter_count(), 410_032);
+        assert_eq!(large.parameter_count(), 300_656);
         assert_eq!(policy_memory_bytes(large.recurrent_size), Some(264));
     }
 
@@ -314,6 +348,86 @@ mod tests {
         let sums_data: Vec<f32> = sums.into_data().to_vec().unwrap();
         for sum in sums_data {
             assert!((sum - 1.0).abs() < 1e-5, "Sum = {}, expected ~1.0", sum);
+        }
+    }
+
+    #[test]
+    fn slot_permutation_preserves_global_outputs_and_permutes_every_target_head() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        TestBackend::seed(&device, 991);
+        let model: PolicyValueNet<TestBackend> = PolicyValueNetConfig {
+            hidden1: 16,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init(&device);
+        let mut original = vec![0.0; OBS_DIM];
+        for (index, value) in original.iter_mut().enumerate() {
+            *value = index as f32 / OBS_DIM as f32;
+        }
+        let mut permuted = original.clone();
+        for feature in 0..SLOT_FEATURES {
+            permuted.swap(
+                HEADER_FEATURES + feature,
+                HEADER_FEATURES + 7 * SLOT_FEATURES + feature,
+            );
+        }
+        let output = model.forward(Tensor::from_data(
+            TensorData::new([original, permuted].concat(), [2, OBS_DIM]),
+            &device,
+        ));
+        let assert_rows_equal = |values: Vec<f32>, width: usize| {
+            for column in 0..width {
+                assert!((values[column] - values[width + column]).abs() < 1.0e-5);
+            }
+        };
+        assert_rows_equal(
+            output
+                .action_kind_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            NUM_POLICY_ACTION_KINDS,
+        );
+        assert_rows_equal(
+            output.effort_logits.into_data().to_vec::<f32>().unwrap(),
+            NUM_POLICY_EFFORT_LOGITS,
+        );
+        assert_rows_equal(
+            output.amount_logits.into_data().to_vec::<f32>().unwrap(),
+            NUM_POLICY_AMOUNT_LOGITS,
+        );
+        assert_rows_equal(
+            output.signal_logits.into_data().to_vec::<f32>().unwrap(),
+            NUM_SIGNAL_CHOICES,
+        );
+        assert_rows_equal(
+            output
+                .signal_strength_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            NUM_SIGNAL_STRENGTH_CHOICES,
+        );
+        assert_rows_equal(output.values.into_data().to_vec::<f32>().unwrap(), 1);
+        assert_rows_equal(
+            output.next_memory.into_data().to_vec::<f32>().unwrap(),
+            model.recurrent_size(),
+        );
+        let targets = output.target_logits.into_data().to_vec::<f32>().unwrap();
+        for kind in 0..NUM_POLICY_ACTION_KINDS {
+            for target in 0..NUM_POLICY_TARGETS {
+                let expected_target = match target {
+                    0 => 7,
+                    7 => 0,
+                    target => target,
+                };
+                let left = targets[kind * NUM_POLICY_TARGETS + target];
+                let right =
+                    targets[NUM_POLICY_TARGET_LOGITS + kind * NUM_POLICY_TARGETS + expected_target];
+                assert!((left - right).abs() < 1.0e-5);
+            }
         }
     }
 

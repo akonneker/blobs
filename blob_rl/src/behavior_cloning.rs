@@ -32,7 +32,7 @@ use crate::model::{
 };
 use crate::observation::OBS_DIM;
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 14;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 15;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

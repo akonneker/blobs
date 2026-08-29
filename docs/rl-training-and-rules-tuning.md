@@ -1976,7 +1976,30 @@ and scalar mixture are the next constraint. The next model slice should use a
 shared per-slot encoder/target scorer (or local attention) and keep explicit
 feeding and combat heads or anchors, then rerun these exact immutable gates.
 
-Training-artifact schema 40 and checkpoint-evaluation schema 7 bind the split
+The shared per-slot architecture is now implemented. Every local slot passes
+through the same 33-feature encoder; max-pooled slot features join the global
+header before the cell-private recurrent transition, and each action kind emits
+a query whose dot product with each slot embedding produces its 32 target
+logits. Permuting complete slot records therefore leaves global outputs
+unchanged and permutes every target head identically, which is enforced by a
+model test. No operation combines batch rows, cells, teams, or hidden identity.
+The default model shrinks from 188,848 to 84,848 parameters, although its
+structured CPU matrix operations are slower per training epoch.
+
+Because the model record changed, behavior-cloning schema 15 and training
+artifact schema 41 reject flat-model checkpoints. The warm-start builder now
+starts without a parent by default and accepts an explicit compatible parent
+only when supplied. A first eight-epoch scratch run was visibly undertrained
+(72.7% exact validation accuracy and zero feeding survival). After 24 more
+epochs it reached 90.3% exact validation accuracy: loose-random and random
+adjacent survival improved to 90.6% and 100%, but line, checkerboard, and ring
+remained 75.0%, 72.3%, and 79.7%. It also made zero attacks in both contact and
+micro-combat evaluation. The architecture corrects slot generalization but
+does not make exact-label likelihood equivalent to long-horizon competence;
+the next slice should add competency/phase-aware supervision and direct
+rollout fine-tuning while retaining these gates.
+
+Training-artifact schema 41 and checkpoint-evaluation schema 7 bind the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution
 schema 10 reconstructs every complete micro-combat evaluation
 boundary and binds terminal/best survival and elimination, joint-gate reach,

@@ -7,7 +7,7 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
 fi
 
 output_root=$1
-combat_parent=${2:-training-output/warmstarts/skirmish-schema35/behavior-clone}
+combat_parent=${2:-}
 demonstrations_bin=${BLOB_DEMONSTRATIONS_BIN:-target/release/demonstrations}
 behavior_clone_bin=${BLOB_BEHAVIOR_CLONE_BIN:-target/release/behavior-clone}
 feeding_layout_teacher_evaluation_bin=${BLOB_FEEDING_LAYOUT_TEACHER_EVALUATION_BIN:-target/release/feeding-layout-teacher-evaluation}
@@ -28,7 +28,7 @@ contact_evaluation_seeds=${BLOB_CONTACT_EVALUATION_SEEDS:-910000101,910000201,91
 micro_evaluation_seeds=${BLOB_MICRO_COMBAT_EVALUATION_SEEDS:-920000101,920000201,920000301,920000401,920000501,920000601,920000701,920000801}
 samples=${BLOB_FEEDING_DEMONSTRATION_SAMPLES:-32768}
 contact_samples=${BLOB_CONTACT_DEMONSTRATION_SAMPLES:-512}
-consolidation_epochs=${BLOB_COMBAT_CONSOLIDATION_EPOCHS:-8}
+consolidation_epochs=${BLOB_COMBAT_CONSOLIDATION_EPOCHS:-32}
 # Explicit weights are direct dataset mixture shares, independent of shard
 # length. Each layout contributes 0.25 on-food plus 1.75 adjacent-food; the two
 # 2.5-share contact shards retain one third of the epoch. This concentrates the
@@ -81,24 +81,31 @@ for contact_spec in 60:aggressive 180:defensive; do
         --output "$dataset"
 done
 
-"$behavior_clone_bin" \
-    --config "$config" \
-    --initial-behavior-clone "$combat_parent" \
-    "${feeding_dataset_args[@]}" \
-    --dataset "$output_root/demonstrations/contact-60-aggressive" \
-    --dataset "$output_root/demonstrations/contact-180-defensive" \
-    --dataset-weight "$consolidation_weights" \
-    --epochs "$consolidation_epochs" \
-    --minibatch-size 256 \
-    --learning-rate 0.0001 \
-    --recurrent-unroll-steps 16 \
-    --validation-fraction 0.125 \
-    --dataset-sampling proportional \
-    --exact-round-trip-only \
-    --action-balancing family \
-    --action-balance-exponent 0.5 \
-    --action-balance-max-ratio 2 \
-    --output "$output_root/behavior-clone"
+run_behavior_clone() {
+    "$behavior_clone_bin" \
+        --config "$config" \
+        "$@" \
+        "${feeding_dataset_args[@]}" \
+        --dataset "$output_root/demonstrations/contact-60-aggressive" \
+        --dataset "$output_root/demonstrations/contact-180-defensive" \
+        --dataset-weight "$consolidation_weights" \
+        --epochs "$consolidation_epochs" \
+        --minibatch-size 256 \
+        --learning-rate 0.0001 \
+        --recurrent-unroll-steps 16 \
+        --validation-fraction 0.125 \
+        --dataset-sampling proportional \
+        --exact-round-trip-only \
+        --action-balancing family \
+        --action-balance-exponent 0.5 \
+        --action-balance-max-ratio 2 \
+        --output "$output_root/behavior-clone"
+}
+if [[ -n "$combat_parent" && "$combat_parent" != "none" ]]; then
+    run_behavior_clone --initial-behavior-clone "$combat_parent"
+else
+    run_behavior_clone
+fi
 
 IFS=',' read -r -a feeding_seed_array <<< "$feeding_evaluation_seeds"
 feeding_merge_args=()
