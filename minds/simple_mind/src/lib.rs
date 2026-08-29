@@ -8,12 +8,12 @@ use blob_interface::reference_mind_converter::{
 };
 use blob_mind_utils::{
     best_energy_slot, choose_slot, current_food, legal_action_or_wait, preferred_effort,
-    safe_empty_slots,
+    random_best_energy_slot, safe_empty_slots,
 };
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 
-fn choose_action(input: &ReferenceMindInput) -> ReferenceMindAction {
+fn choose_action(input: &ReferenceMindInput, randomize_energy_ties: bool) -> ReferenceMindAction {
     let standard = preferred_effort(
         &input.action_space,
         &[
@@ -30,7 +30,16 @@ fn choose_action(input: &ReferenceMindInput) -> ReferenceMindAction {
             amount: input.action_space.max_consume_amount,
         };
     }
-    if let Some(target_slot) = best_energy_slot(input, input.action_space.move_targets) {
+    let food_target = if randomize_energy_ties {
+        random_best_energy_slot(
+            input,
+            input.action_space.move_targets,
+            input.randomness.sample_u64(0),
+        )
+    } else {
+        best_energy_slot(input, input.action_space.move_targets)
+    };
+    if let Some(target_slot) = food_target {
         return ReferenceMindAction::Move {
             target_slot,
             effort: standard,
@@ -51,7 +60,17 @@ fn choose_action(input: &ReferenceMindInput) -> ReferenceMindAction {
 
 pub fn decide(input: &ReferenceMindInput) -> ReferenceMindDecision {
     ReferenceMindDecision {
-        action: legal_action_or_wait(input, choose_action(input), false),
+        action: legal_action_or_wait(input, choose_action(input, false), false),
+        signal: None,
+        memory_update: ReferenceMemoryUpdate::Retain,
+    }
+}
+
+/// Feeding teacher that preserves Simple's action priorities while using the
+/// cell-private randomness input to disperse equal-energy movement targets.
+pub fn decide_collision_aware(input: &ReferenceMindInput) -> ReferenceMindDecision {
+    ReferenceMindDecision {
+        action: legal_action_or_wait(input, choose_action(input, true), false),
         signal: None,
         memory_update: ReferenceMemoryUpdate::Retain,
     }

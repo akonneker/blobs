@@ -617,7 +617,8 @@ start with:
 
 ```sh
 cargo build --release -p blob_rl --no-default-features --features ndarray \
-  --bin demonstrations --bin behavior-clone --bin feeding-evaluation
+  --bin demonstrations --bin behavior-clone --bin feeding-evaluation \
+  --bin feeding-evaluation-merge --bin feeding-teacher-evaluation
 bash scripts/build_feeding_warm_start.sh pretrained/feeding-simple-v1
 ```
 
@@ -1867,6 +1868,41 @@ timing. The next acquisition path is an attack-dense supervised combat
 specialist or multi-task warm start, followed by PPO with explicit feeding
 retention and held-out greedy gates. The immutable aggregate and the sampled
 training-mechanism caveat are recorded in the sweep README.
+
+The supervised acquisition follow-up adds a prospective-teacher gate before
+collecting labels. `feeding-teacher-evaluation` drives a maintained Mind
+through independently prepared anonymous inputs and the ordinary resolver,
+then applies the same full-population feeding thresholds used for learned
+policies. A collision-aware Simple variant changes only equal-energy movement
+ties: it maps cell-private random input to contiguous uniform target ranges,
+so nearby cells disperse without shared identity/state and the mapping remains
+learnable by the neural policy. On the eight-seed 256×256 checkerboard suite,
+the teacher passes with 98.1% on-food survival and 93.4% adjacent-food
+survival.
+
+The initial sequential clone exposed a sampling error rather than a capacity
+limit. Its feeding corpora contained 65,536 exact labels while the two exact
+contact corpora contributed only 544; the former 4:1 feeding weights reduced
+combat below one percent of effective examples, and a feeding-only intermediate
+erased attacks before consolidation. `build_combat_warm_start_256.sh` now
+starts from the combat parent once and uses 1,1,64,64 proportional weights,
+placing roughly one third of sampled examples on combat. A bounded four-epoch
+candidate passes the merged eight-seed 256 feeding gate at 100% on-food and
+91.4% adjacent survival, attacks and damages in 100% of the 12 contact/skirmish
+variants (282 total damage), and makes 1.833 greedy attacks per micro scenario
+episode. It still records no kills in the short elimination probes, so it is
+an action-acquisition/retention warm start, not yet an elimination-qualified
+combat policy.
+
+Large feeding qualification is now resumable. Each seed publishes a complete
+hash-bound shard; `feeding-evaluation-merge` validates common config, model,
+rules, and unique seeds, sums only raw counters, and recomputes all rates,
+gates, and the aggregate artifact hash. This also fixed an older validation
+gap where `report_from_metrics` accepted caller-supplied derived rates instead
+of deriving them from counters. The current checkerboard seeds collapse to two
+repeated spatial symmetries, so the next qualification slice must add genuinely
+different valid starting layouts rather than treating eight seed labels as
+eight independent ecologies.
 
 Training-artifact schema 40 and checkpoint-evaluation schema 7 bind the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution

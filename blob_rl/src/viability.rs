@@ -97,7 +97,7 @@ pub(crate) fn hash_json(value: &impl Serialize) -> Result<String, String> {
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-pub(crate) fn mind_abi_hash() -> String {
+pub fn mind_abi_hash() -> String {
     blob_interface::abi::reference_mind_abi_hash()
         .iter()
         .map(|byte| format!("{byte:02x}"))

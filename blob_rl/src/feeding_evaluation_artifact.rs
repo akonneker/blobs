@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::{FeedingCurriculumStage, TrainingConfig};
 use crate::env::BlobEnv;
 use crate::feeding_curriculum::FeedingPromotionReport;
+use crate::feeding_curriculum::{report_from_metrics, FeedingStageMetrics};
 use crate::sweep::sha256;
 
 pub const FEEDING_EVALUATION_ARTIFACT_SCHEMA_VERSION: u32 = 3;
@@ -186,6 +187,122 @@ pub fn load_feeding_evaluation(path: &Path) -> Result<FeedingEvaluationArtifact,
     Ok(artifact)
 }
 
+/// Merge independently published evaluation shards without rerunning model
+/// inference. Every input is fully validated first; raw counters are summed,
+/// then all rates, gates, and the artifact identity are recomputed.
+pub fn merge_feeding_evaluations(
+    artifacts: &[FeedingEvaluationArtifact],
+) -> Result<FeedingEvaluationArtifact, String> {
+    let first = artifacts
+        .first()
+        .ok_or_else(|| "feeding-evaluation merge requires at least one artifact".to_string())?;
+    first.validate()?;
+    let mut seeds = Vec::new();
+    let mut seen_seeds = std::collections::HashSet::new();
+    let mut stages = [
+        empty_stage(FeedingCurriculumStage::OnFood),
+        empty_stage(FeedingCurriculumStage::AdjacentFood),
+    ];
+
+    for artifact in artifacts {
+        artifact.validate()?;
+        if artifact.source_config_sha256 != first.source_config_sha256
+            || artifact.behavior_clone_metadata_sha256 != first.behavior_clone_metadata_sha256
+            || artifact.behavior_clone_model_sha256 != first.behavior_clone_model_sha256
+            || artifact.config != first.config
+            || artifact.report.ruleset_hash != first.report.ruleset_hash
+        {
+            return Err(
+                "feeding-evaluation shards name different configs, models, or rulesets".into(),
+            );
+        }
+        for seed in &artifact.report.seeds {
+            if !seen_seeds.insert(*seed) {
+                return Err(format!("duplicate feeding-evaluation seed {seed}"));
+            }
+            seeds.push(*seed);
+        }
+        for (target, source) in stages.iter_mut().zip(&artifact.report.stages) {
+            merge_stage_metrics(target, source)?;
+        }
+    }
+    if stages.iter().any(|stage| stage.episodes != seeds.len()) {
+        return Err("feeding-evaluation shard episode counts do not match their seeds".into());
+    }
+    let report = report_from_metrics(
+        first.report.ruleset_hash.clone(),
+        seeds,
+        stages,
+        &first.config.feeding_curriculum.promotion,
+    );
+    FeedingEvaluationArtifact::new(
+        first.source_config_sha256.clone(),
+        first.behavior_clone_metadata_sha256.clone(),
+        first.behavior_clone_model_sha256.clone(),
+        first.config.clone(),
+        report,
+    )
+}
+
+fn empty_stage(stage: FeedingCurriculumStage) -> FeedingStageMetrics {
+    FeedingStageMetrics {
+        stage,
+        episodes: 0,
+        successful_episodes: 0,
+        initial_cells: 0,
+        surviving_cells: 0,
+        movement_successes: 0,
+        consume_successes: 0,
+        consumed_energy: 0,
+        safety_aborts: 0,
+        episode_success_rate: 0.0,
+        survival_rate: 0.0,
+        consumed_energy_per_initial_cell: 0.0,
+    }
+}
+
+fn merge_stage_metrics(
+    target: &mut FeedingStageMetrics,
+    source: &FeedingStageMetrics,
+) -> Result<(), String> {
+    if target.stage != source.stage {
+        return Err("feeding-evaluation shards have inconsistent stage ordering".into());
+    }
+    target.episodes = target
+        .episodes
+        .checked_add(source.episodes)
+        .ok_or("feeding-evaluation episode counter overflow")?;
+    target.successful_episodes = target
+        .successful_episodes
+        .checked_add(source.successful_episodes)
+        .ok_or("feeding-evaluation success counter overflow")?;
+    target.initial_cells = target
+        .initial_cells
+        .checked_add(source.initial_cells)
+        .ok_or("feeding-evaluation initial-cell counter overflow")?;
+    target.surviving_cells = target
+        .surviving_cells
+        .checked_add(source.surviving_cells)
+        .ok_or("feeding-evaluation survivor counter overflow")?;
+    target.movement_successes = target
+        .movement_successes
+        .checked_add(source.movement_successes)
+        .ok_or("feeding-evaluation movement counter overflow")?;
+    target.consume_successes = target
+        .consume_successes
+        .checked_add(source.consume_successes)
+        .ok_or("feeding-evaluation consume counter overflow")?;
+    target.consumed_energy = target
+        .consumed_energy
+        .checked_add(source.consumed_energy)
+        .ok_or("feeding-evaluation energy counter overflow")?;
+    target.safety_aborts = target
+        .safety_aborts
+        .checked_add(source.safety_aborts)
+        .ok_or("feeding-evaluation safety-abort counter overflow")?;
+    Ok(())
+}
+
 /// Verify that a fresh PPO run is initialized from the exact behavior clone
 /// qualified by a passing report under the same model, environment, rules,
 /// and promotion thresholds. PPO-only controls and rollout-stage scheduling
@@ -228,7 +345,6 @@ pub fn verify_feeding_initial_policy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::feeding_curriculum::{report_from_metrics, FeedingStageMetrics};
 
     fn test_artifact() -> FeedingEvaluationArtifact {
         let config = TrainingConfig::default();
@@ -324,5 +440,30 @@ mod tests {
         publish_feeding_evaluation(&output, &artifact).unwrap();
         assert_eq!(load_feeding_evaluation(&output).unwrap(), artifact);
         assert!(publish_feeding_evaluation(&output, &artifact).is_err());
+    }
+
+    #[test]
+    fn merge_recomputes_rates_and_rejects_duplicate_or_mismatched_shards() {
+        let first = test_artifact();
+        let mut second = first.clone();
+        second.report.seeds = vec![72];
+        second.artifact_hash = second.recompute_hash().unwrap();
+        second.validate().unwrap();
+
+        let merged = merge_feeding_evaluations(&[first.clone(), second.clone()]).unwrap();
+        assert_eq!(merged.report.seeds, vec![71, 72]);
+        assert_eq!(merged.report.stages[0].episodes, 2);
+        assert_eq!(merged.report.stages[0].initial_cells, 2);
+        merged.validate().unwrap();
+
+        assert!(merge_feeding_evaluations(&[first.clone(), first])
+            .unwrap_err()
+            .contains("duplicate"));
+        second.behavior_clone_model_sha256 = "d".repeat(64);
+        second.artifact_hash = second.recompute_hash().unwrap();
+        second.validate().unwrap();
+        assert!(merge_feeding_evaluations(&[test_artifact(), second])
+            .unwrap_err()
+            .contains("different"));
     }
 }

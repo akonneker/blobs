@@ -2970,6 +2970,31 @@ mod tests {
     }
 
     #[test]
+    fn combat_warm_start_qualification_profile_is_large_world_and_local_only() {
+        let path = format!(
+            "{}/config/combat_warm_start_256.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let config = TrainingConfig::from_file(&path).unwrap();
+        config.validate().unwrap();
+
+        assert_eq!(config.env.world_size, 256);
+        assert_eq!(config.env.cells_per_team, 256);
+        assert_eq!(
+            config.env.starting_cell_layout,
+            StartingCellLayout::Checkerboard
+        );
+        assert_eq!(config.model.hidden1, 256);
+        assert_eq!(config.model.hidden2, 128);
+        assert_eq!(config.model.recurrent_size, 128);
+        assert!(config.feeding_curriculum.enabled);
+        assert!(config.combat_curriculum.enabled);
+        assert!(!config.combat_curriculum.micro_combat.enabled);
+        assert_eq!(crate::model::policy_memory_bytes(128), Some(264));
+        assert!(264 <= config.env.rules.max_private_memory_bytes);
+    }
+
+    #[test]
     fn competitive_transfer_profile_keeps_retention_without_rollout_staging() {
         let path = format!(
             "{}/config/competitive_transfer.toml",

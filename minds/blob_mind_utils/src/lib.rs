@@ -77,8 +77,52 @@ pub fn best_energy_slot(input: &ReferenceMindInput, mask: u32) -> Option<u8> {
         .map(|slot| slot.slot)
 }
 
+/// Choose uniformly among the locally visible vacant slots tied for the most
+/// observed energy. The caller supplies a cell-private random word; no shared
+/// state or team identity participates in the tie break.
+pub fn random_best_energy_slot(
+    input: &ReferenceMindInput,
+    mask: u32,
+    random_word: u64,
+) -> Option<u8> {
+    let best_energy = input
+        .slots
+        .iter()
+        .filter(|slot| {
+            slot.reachable
+                && slot.neighbor.is_none()
+                && ReferenceActionSpace::allows_target(mask, slot.slot)
+        })
+        .map(observed_slot_energy)
+        .max()
+        .filter(|energy| *energy > 0)?;
+    let candidates = input
+        .slots
+        .iter()
+        .filter(|slot| {
+            slot.reachable
+                && slot.neighbor.is_none()
+                && ReferenceActionSpace::allows_target(mask, slot.slot)
+                && observed_slot_energy(slot) == best_energy
+        })
+        .map(|slot| slot.slot)
+        .collect::<Vec<_>>();
+    choose_slot_by_quantile(&candidates, random_word)
+}
+
 pub fn choose_slot(candidates: &[u8], random_word: u64) -> Option<u8> {
     (!candidates.is_empty()).then(|| candidates[random_word as usize % candidates.len()])
+}
+
+/// Map a uniformly random word onto ordered candidates as contiguous ranges.
+/// This remains uniform (up to unavoidable integer rounding), while making a
+/// teacher's target a smooth threshold function of the exposed random input.
+pub fn choose_slot_by_quantile(candidates: &[u8], random_word: u64) -> Option<u8> {
+    if candidates.is_empty() {
+        return None;
+    }
+    let index = (u128::from(random_word) * candidates.len() as u128) >> u64::BITS;
+    Some(candidates[index as usize])
 }
 
 fn multiply_ratio_ceil(value: u128, numerator: u64, denominator: u64) -> Option<u64> {
@@ -380,4 +424,22 @@ pub fn legal_action_or_wait(
     // frontier. Preserve the canonical inert fallback if the input violates
     // that invariant; the resolver will report the malformed frontier.
     wait
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quantile_slot_choice_has_contiguous_balanced_ranges() {
+        let candidates = [3, 7];
+        assert_eq!(choose_slot_by_quantile(&candidates, 0), Some(3));
+        assert_eq!(
+            choose_slot_by_quantile(&candidates, (1_u64 << 63) - 1),
+            Some(3)
+        );
+        assert_eq!(choose_slot_by_quantile(&candidates, 1_u64 << 63), Some(7));
+        assert_eq!(choose_slot_by_quantile(&candidates, u64::MAX), Some(7));
+        assert_eq!(choose_slot_by_quantile(&[], u64::MAX), None);
+    }
 }

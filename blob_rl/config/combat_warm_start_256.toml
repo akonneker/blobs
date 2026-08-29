@@ -1,0 +1,118 @@
+# Qualification and behavior-cloning profile for a local, row-separable combat
+# specialist intended for 256x256 PPO worlds. The local combat stages stay
+# small; feeding evidence is evaluated with the full 256-cell checkerboard
+# population so a smaller-world artifact cannot silently qualify this profile.
+seed = 256401
+num_envs = 2
+rollout_length = 2048
+total_timesteps = 20000000
+total_simulation_quanta_per_env = 1048576
+eval_interval = 8
+eval_episodes = 8
+evaluation_opponents = ["wait", "random", "forager", "aggressive"]
+evaluation_seed = 1256400000
+checkpoint_interval = 16
+checkpoint_dir = "./checkpoints/combat-warm-start-256"
+
+[feeding_curriculum]
+enabled = true
+rollout_stages_enabled = false
+
+[feeding_curriculum.promotion]
+min_on_food_episode_success_rate = 0.95
+min_adjacent_episode_success_rate = 0.80
+min_survival_rate = 0.80
+min_consumed_energy_per_initial_cell = 1.0
+evaluation_max_episode_len = 4096
+evaluation_sim_time_limit_quanta = 262144
+
+[combat_curriculum]
+enabled = true
+cycle_sim_time_quanta_per_env = 262144
+on_food_sim_time_quanta_per_cycle = 32768
+adjacent_food_sim_time_quanta_per_cycle = 32768
+contact_sim_time_quanta_per_cycle = 65536
+skirmish_sim_time_quanta_per_cycle = 65536
+retention_episode_sim_time_limit_quanta = 32768
+contact_episode_sim_time_limit_quanta = 32768
+skirmish_episode_sim_time_limit_quanta = 65536
+contact_evaluation_sim_time_limit_quanta = 32768
+skirmish_evaluation_sim_time_limit_quanta = 65536
+contact_action_kind_exploration_floor = 0.50
+skirmish_action_kind_exploration_floor = 0.25
+contact_cells_per_team = 1
+skirmish_cells_per_team = 4
+contact_initial_energies = [60, 100, 180]
+contact_opponents = ["aggressive", "defensive"]
+min_contact_kills_for_promotion = 0
+min_skirmish_kills_for_promotion = 1
+
+[telemetry]
+enabled = true
+state_sample_interval_steps = 256
+max_state_samples_per_episode = 128
+episode_log_stride = 8
+
+[ppo]
+gamma = 0.9995
+gae_lambda = 0.995
+epochs_per_update = 4
+minibatch_size = 1024
+recurrent_unroll_steps = 64
+learning_rate = 1e-5
+entropy_coeff = 0.01
+action_kind_exploration_floor = 0.10
+initial_policy_anchor_coeff = 0.25
+
+[model]
+hidden1 = 256
+hidden2 = 128
+recurrent_size = 128
+
+[env]
+world_size = 256
+cells_per_team = 256
+starting_cell_layout = "checkerboard"
+max_episode_len = 65536
+victory = { immediate = "extermination", deadline = "draw", sim_time_limit_quanta = 16777216 }
+num_teams = 2
+opponent = "aggressive"
+min_energy = 10
+initial_energy = 100
+max_energy = 500
+min_attack_power = 5
+max_attack_power = 50
+max_energy_for_attack_scaling = 200
+num_scattered_energy = 2048
+scattered_energy_layout = { mode = "uniform" }
+scattered_energy_amount = 25
+num_plants = 256
+plant_layout = { mode = "uniform" }
+plant_rate = 3
+plant_max_energy = 100
+resource_placement = "random"
+
+[reward]
+survive_tick = 0.0
+eat_energy = 0.002
+damage_enemy = 0.02
+kill_enemy = 1.0
+cell_died = -1.0
+split_success = 2.0
+team_wins = 10.0
+team_loses = -10.0
+move_toward_food = 0.0
+move_toward_enemy = 0.0
+proximity_search_radius = 10
+
+[self_play]
+start_after_sim_time_quanta_per_env = 33554432
+opponent_update_interval = 25
+max_opponent_pool = 0
+baseline_probability = 0.2
+min_pool_win_rate = 0.4
+max_fixed_worst_case_regression = 0.05
+initial_rating = 1000.0
+elo_k_factor = 32.0
+rating_temperature = 200.0
+exposure_exponent = 0.5

@@ -37,6 +37,7 @@ type ControlProgressObserver<'a> =
 #[serde(rename_all = "snake_case")]
 pub enum MaintainedMindProfile {
     Simple,
+    CollisionAwareForager,
     Aggressive,
     Defensive,
     Explorer,
@@ -58,6 +59,7 @@ impl MaintainedMindProfile {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Simple => "simple",
+            Self::CollisionAwareForager => "collision_aware_forager",
             Self::Aggressive => "aggressive",
             Self::Defensive => "defensive",
             Self::Explorer => "explorer",
@@ -83,6 +85,7 @@ impl MaintainedMindProfile {
     pub fn decide(self, input: &ReferenceMindInput) -> ReferenceMindDecision {
         match self {
             Self::Simple => simple_mind::decide(input),
+            Self::CollisionAwareForager => simple_mind::decide_collision_aware(input),
             Self::Aggressive => aggressive_mind::decide(input),
             Self::Defensive => defensive_mind::decide(input),
             Self::Explorer => explorer_mind::decide(input),

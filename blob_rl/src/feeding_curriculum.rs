@@ -11,6 +11,7 @@ use crate::config::{
     EnvConfig, FeedingCurriculumConfig, FeedingCurriculumStage, FeedingPromotionGateConfig,
     OpponentProfile, RewardConfig,
 };
+use crate::control_matrix::MaintainedMindProfile;
 use crate::env::{BlobEnv, EpisodeOutcome};
 use crate::evaluation::greedy_policy_choices;
 use crate::model::PolicyValueNet;
@@ -153,6 +154,47 @@ where
     report_from_metrics(ruleset_hash, seeds.to_vec(), stages, &curriculum.promotion)
 }
 
+/// Evaluate a maintained native Mind against the same full-population feeding
+/// prerequisites used to qualify learned policies. This is a teacher-quality
+/// check, not a shortcut around the canonical Mind boundary: each cell still
+/// receives its own anonymous input and private randomness before its decision
+/// is routed back to the resolver.
+pub fn evaluate_feeding_teacher(
+    teacher: MaintainedMindProfile,
+    base_env: &EnvConfig,
+    reward: &RewardConfig,
+    curriculum: &FeedingCurriculumConfig,
+    seeds: &[u64],
+) -> FeedingPromotionReport {
+    assert!(
+        !seeds.is_empty(),
+        "feeding teacher evaluation requires at least one seed"
+    );
+    let stages = [
+        evaluate_teacher_stage(
+            teacher,
+            base_env,
+            reward,
+            curriculum,
+            FeedingCurriculumStage::OnFood,
+            seeds,
+        ),
+        evaluate_teacher_stage(
+            teacher,
+            base_env,
+            reward,
+            curriculum,
+            FeedingCurriculumStage::AdjacentFood,
+            seeds,
+        ),
+    ];
+    let ruleset_hash = {
+        let env = curriculum.environment_for_stage(base_env, FeedingCurriculumStage::OnFood);
+        BlobEnv::new(env, reward.clone(), seeds[0]).compiled_ruleset_hash()
+    };
+    report_from_metrics(ruleset_hash, seeds.to_vec(), stages, &curriculum.promotion)
+}
+
 fn evaluate_stage<B: Backend>(
     model: &PolicyValueNet<B>,
     base_env: &EnvConfig,
@@ -165,6 +207,40 @@ fn evaluate_stage<B: Backend>(
 where
     f32: From<B::FloatElem>,
 {
+    evaluate_stage_with(base_env, reward, curriculum, stage, seeds, |env| {
+        let observations = env.get_policy_observations();
+        let actions = greedy_policy_choices(model, &observations, device);
+        env.step_with_policy_memory(&actions)
+    })
+}
+
+fn evaluate_teacher_stage(
+    teacher: MaintainedMindProfile,
+    base_env: &EnvConfig,
+    reward: &RewardConfig,
+    curriculum: &FeedingCurriculumConfig,
+    stage: FeedingCurriculumStage,
+    seeds: &[u64],
+) -> FeedingStageMetrics {
+    evaluate_stage_with(base_env, reward, curriculum, stage, seeds, |env| {
+        let decisions = env
+            .prepare_training_reference_inputs()
+            .expect("failed to prepare feeding-teacher Mind inputs")
+            .into_iter()
+            .map(|(cell_id, input)| (cell_id, teacher.decide(&input)))
+            .collect();
+        env.step_with_training_decisions(decisions)
+    })
+}
+
+fn evaluate_stage_with(
+    base_env: &EnvConfig,
+    reward: &RewardConfig,
+    curriculum: &FeedingCurriculumConfig,
+    stage: FeedingCurriculumStage,
+    seeds: &[u64],
+    mut step: impl FnMut(&mut BlobEnv) -> crate::env::StepOutput,
+) -> FeedingStageMetrics {
     let mut successful_episodes = 0usize;
     let mut initial_cells = 0usize;
     let mut surviving_cells = 0usize;
@@ -192,11 +268,9 @@ where
         let mut episode_consumes = 0u64;
         let mut episode_energy = 0u128;
         let mut episode_safety_abort = false;
-        let mut observations = env.get_policy_observations();
 
         loop {
-            let actions = greedy_policy_choices(model, &observations, device);
-            let result = env.step_with_policy_memory(&actions);
+            let result = step(&mut env);
             let telemetry = result
                 .telemetry
                 .as_ref()
@@ -217,7 +291,6 @@ where
                 }
                 break;
             }
-            observations = result.policy_observations;
         }
 
         let succeeded = !episode_safety_abort
@@ -256,12 +329,18 @@ where
 pub fn report_from_metrics(
     ruleset_hash: String,
     seeds: Vec<u64>,
-    stages: [FeedingStageMetrics; 2],
+    mut stages: [FeedingStageMetrics; 2],
     gate: &FeedingPromotionGateConfig,
 ) -> FeedingPromotionReport {
     assert_eq!(stages[0].stage, FeedingCurriculumStage::OnFood);
     assert_eq!(stages[1].stage, FeedingCurriculumStage::AdjacentFood);
-    let mut checks = Vec::with_capacity(6);
+    for stage in &mut stages {
+        stage.episode_success_rate = ratio(stage.successful_episodes, stage.episodes);
+        stage.survival_rate = ratio(stage.surviving_cells, stage.initial_cells);
+        stage.consumed_energy_per_initial_cell =
+            ratio_u128(stage.consumed_energy, stage.initial_cells);
+    }
+    let mut checks = Vec::with_capacity(8);
     add_check(
         &mut checks,
         "on_food_episode_success_rate",
@@ -340,15 +419,16 @@ mod tests {
         survival: f64,
         energy: f64,
     ) -> FeedingStageMetrics {
+        const SAMPLE_COUNT: usize = 100;
         FeedingStageMetrics {
             stage,
-            episodes: 10,
-            successful_episodes: (success * 10.0) as usize,
-            initial_cells: 10,
-            surviving_cells: (survival * 10.0) as usize,
+            episodes: SAMPLE_COUNT,
+            successful_episodes: (success * SAMPLE_COUNT as f64).round() as usize,
+            initial_cells: SAMPLE_COUNT,
+            surviving_cells: (survival * SAMPLE_COUNT as f64).round() as usize,
             movement_successes: 10,
             consume_successes: 10,
-            consumed_energy: (energy * 10.0) as u128,
+            consumed_energy: (energy * SAMPLE_COUNT as f64).round() as u128,
             safety_aborts: 0,
             episode_success_rate: success,
             survival_rate: survival,
@@ -408,20 +488,20 @@ mod tests {
             metrics(FeedingCurriculumStage::OnFood, 1.0, 1.0, 2.0),
             metrics(FeedingCurriculumStage::AdjacentFood, 1.0, 1.0, 2.0),
         ];
-        let report = report_from_metrics("rules".into(), vec![7; 10], stages, &gate);
-        assert!(report.validate_against("rules", &[7; 10], &gate).is_ok());
+        let report = report_from_metrics("rules".into(), vec![7; 100], stages, &gate);
+        assert!(report.validate_against("rules", &[7; 100], &gate).is_ok());
 
         let mut verdict = report.clone();
         verdict.passed = false;
-        assert!(verdict.validate_against("rules", &[7; 10], &gate).is_err());
+        assert!(verdict.validate_against("rules", &[7; 100], &gate).is_err());
         let mut threshold = report.clone();
         threshold.checks[0].minimum = 0.0;
         assert!(threshold
-            .validate_against("rules", &[7; 10], &gate)
+            .validate_against("rules", &[7; 100], &gate)
             .is_err());
         let mut rate = report;
         rate.stages[0].episode_success_rate = 0.5;
-        assert!(rate.validate_against("rules", &[7; 10], &gate).is_err());
+        assert!(rate.validate_against("rules", &[7; 100], &gate).is_err());
     }
 
     #[test]

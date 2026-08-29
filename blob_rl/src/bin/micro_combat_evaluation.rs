@@ -45,6 +45,11 @@ struct Args {
     /// zero successful episodes.
     #[arg(long)]
     require_all_objectives: bool,
+
+    /// Exit with status 2 after publishing when the greedy learned policy
+    /// commits fewer attacks per evaluated scenario episode than this floor.
+    #[arg(long)]
+    require_attack_commitments_per_episode: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -71,7 +76,7 @@ struct EvaluationInputs<'a> {
     output: &'a Path,
 }
 
-fn run<B: Backend>(inputs: EvaluationInputs<'_>, device: B::Device) -> bool
+fn run<B: Backend>(inputs: EvaluationInputs<'_>, device: B::Device) -> (bool, f64)
 where
     B::FloatElem: From<f32>,
     f32: From<B::FloatElem>,
@@ -105,6 +110,7 @@ where
         .scenarios
         .iter()
         .all(|metrics| metrics.objective_successes > 0);
+    let attack_commitments_per_episode = report.gate_summary().attack_commitments_per_episode;
     let evidence = MicroCombatEvidence {
         schema_version: MICRO_COMBAT_EVIDENCE_SCHEMA_VERSION,
         package_version: env!("CARGO_PKG_VERSION").into(),
@@ -136,10 +142,11 @@ where
     file.sync_all()
         .unwrap_or_else(|error| panic!("failed to sync micro-combat evidence: {error}"));
     println!(
-        "Published {} micro-combat scenarios to {} (SHA-256 {:x})",
+        "Published {} micro-combat scenarios to {} (SHA-256 {:x}); greedy attacks {:.3} per episode",
         evidence.report.scenarios.len(),
         inputs.output.display(),
         Sha256::digest(&bytes),
+        attack_commitments_per_episode,
     );
     for metrics in &evidence.report.scenarios {
         println!(
@@ -156,13 +163,19 @@ where
             metrics.training_kills,
         );
     }
-    objectives_passed
+    (objectives_passed, attack_commitments_per_episode)
 }
 
 fn main() {
     let args = Args::parse();
     if args.seeds.is_empty() {
         panic!("micro-combat evaluation requires at least one seed");
+    }
+    if args
+        .require_attack_commitments_per_episode
+        .is_some_and(|value| !value.is_finite() || value < 0.0)
+    {
+        panic!("required attack commitments per episode must be finite and nonnegative");
     }
     let config_bytes = fs::read(&args.config)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", args.config.display()));
@@ -206,19 +219,23 @@ fn main() {
     let require_all_objectives = args.require_all_objectives;
 
     #[cfg(feature = "wgpu")]
-    let passed = run::<burn::backend::Autodiff<burn::backend::Wgpu>>(
-        inputs,
-        burn::backend::wgpu::WgpuDevice::default(),
-    );
+    let (objectives_passed, attack_commitments_per_episode) =
+        run::<burn::backend::Autodiff<burn::backend::Wgpu>>(
+            inputs,
+            burn::backend::wgpu::WgpuDevice::default(),
+        );
 
     #[cfg(all(not(feature = "wgpu"), feature = "ndarray"))]
-    let passed =
+    let (objectives_passed, attack_commitments_per_episode) =
         run::<burn::backend::Autodiff<burn::backend::NdArray<f32>>>(inputs, Default::default());
 
     #[cfg(not(any(feature = "wgpu", feature = "ndarray")))]
     compile_error!("micro-combat-evaluation requires the wgpu or ndarray feature");
 
-    if require_all_objectives && !passed {
+    let attacks_passed = args
+        .require_attack_commitments_per_episode
+        .is_none_or(|minimum| attack_commitments_per_episode >= minimum);
+    if require_all_objectives && !objectives_passed || !attacks_passed {
         std::process::exit(2);
     }
 }
