@@ -7,7 +7,7 @@ use blob_rl::behavior_cloning::{
     behavior_clone_artifact_sha256, behavior_clone_from_model, load_dataset_directories,
     publish_behavior_clone, verify_behavior_clone_artifact, ActionBalancingStrategy,
     BehaviorCloningConfig, BehaviorCloningFamilyMetrics, BehaviorCloningPhaseMetrics,
-    DatasetSamplingStrategy, SupervisionPhase,
+    DatasetSamplingStrategy, ExpertRoutingStrategy,
 };
 use blob_rl::config::TrainingConfig;
 use blob_rl::model::PolicyValueNetConfig;
@@ -26,21 +26,6 @@ enum ActionBalancing {
     None,
     Family,
     Label,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum Phase {
-    Feeding,
-    Combat,
-}
-
-impl From<Phase> for SupervisionPhase {
-    fn from(value: Phase) -> Self {
-        match value {
-            Phase::Feeding => Self::Feeding,
-            Phase::Combat => Self::Combat,
-        }
-    }
 }
 
 impl From<ActionBalancing> for ActionBalancingStrategy {
@@ -149,11 +134,7 @@ struct Args {
     #[arg(long, value_delimiter = ',')]
     dataset_weight: Vec<f64>,
 
-    /// Supervised expert phase, one per --dataset in order. Omit for all-feeding.
-    #[arg(long, value_enum, value_delimiter = ',')]
-    dataset_phase: Vec<Phase>,
-
-    /// Relative auxiliary loss for the local observation-driven phase gate.
+    /// Relative auxiliary loss for the local per-decision expert gate.
     #[arg(long, default_value_t = 1.0)]
     phase_gate_loss_weight: f64,
 
@@ -205,7 +186,7 @@ fn main() {
         validation_fraction: args.validation_fraction,
         dataset_sampling: args.dataset_sampling.into(),
         dataset_sampling_weights: args.dataset_weight,
-        dataset_phases: args.dataset_phase.into_iter().map(Into::into).collect(),
+        expert_routing: ExpertRoutingStrategy::LocalActionFamily,
         phase_gate_loss_weight: args.phase_gate_loss_weight,
         recurrent_unroll_steps: args.recurrent_unroll_steps,
         exact_round_trip_only: args.exact_round_trip_only,

@@ -110,8 +110,8 @@ pub struct ModelOutput<B: Backend> {
     /// Locally gated inference logits consumed by PPO and deployed Minds.
     pub action_kind_logits: Tensor<B, 2>,
     /// Feeding then combat expert logits, flattened as [expert, action kind].
-    /// Supervised training routes labels to one expert; inference never
-    /// receives the privileged supervision phase.
+    /// Supervised training routes each local action-family label to one expert;
+    /// inference receives neither that label nor host scenario metadata.
     pub action_kind_expert_logits: Tensor<B, 2>,
     /// Observation-driven feeding/combat gate logits.
     pub phase_gate_logits: Tensor<B, 2>,

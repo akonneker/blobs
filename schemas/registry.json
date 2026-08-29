@@ -17,7 +17,7 @@
     {"kind":"mind", "source":"blob_interface/src/abi.rs", "symbol":"REFERENCE_MIND_ABI_VERSION", "version":8},
     {"kind":"analysis", "source":"blob_rl/src/adjudication_sensitivity.rs", "symbol":"ADJUDICATION_SENSITIVITY_SCHEMA_VERSION", "version":2, "mirrors":[{"source":"blob_web/viewer/adjudication-sensitivity-viewer.js", "symbol":"ADJUDICATION_SENSITIVITY_SCHEMA_VERSION"}]},
     {"kind":"training", "source":"blob_rl/src/artifact.rs", "symbol":"TRAINING_ARTIFACT_SCHEMA_VERSION", "version":42},
-    {"kind":"training", "source":"blob_rl/src/behavior_cloning.rs", "symbol":"BEHAVIOR_CLONING_SCHEMA_VERSION", "version":17},
+    {"kind":"training", "source":"blob_rl/src/behavior_cloning.rs", "symbol":"BEHAVIOR_CLONING_SCHEMA_VERSION", "version":18},
     {"kind":"evaluation", "source":"blob_rl/src/checkpoint_evaluation.rs", "symbol":"CHECKPOINT_EVALUATION_SCHEMA_VERSION", "version":7},
     {"kind":"evaluation", "source":"blob_rl/src/checkpoint_promotion.rs", "symbol":"CHECKPOINT_PROMOTION_SCHEMA_VERSION", "version":1},
     {"kind":"evaluation", "source":"blob_rl/src/combat_horizon_evaluation.rs", "symbol":"COMBAT_HORIZON_EVALUATION_SCHEMA_VERSION", "version":1},

@@ -33,6 +33,7 @@ contact_samples=${BLOB_CONTACT_DEMONSTRATION_SAMPLES:-512}
 consolidation_epochs=${BLOB_COMBAT_CONSOLIDATION_EPOCHS:-32}
 correction_samples=${BLOB_POLICY_CORRECTION_SAMPLES:-2048}
 correction_epochs=${BLOB_POLICY_CORRECTION_EPOCHS:-1}
+correction_enabled=${BLOB_POLICY_CORRECTION_ENABLED:-0}
 # Explicit weights are direct dataset mixture shares, independent of shard
 # length. Each layout contributes 0.25 on-food plus 1.75 adjacent-food; the two
 # 2.5-share contact shards retain one third of the epoch. This concentrates the
@@ -41,11 +42,15 @@ correction_epochs=${BLOB_POLICY_CORRECTION_EPOCHS:-1}
 consolidation_weights=${BLOB_COMBAT_CONSOLIDATION_WEIGHTS:-0.25,1.75,0.25,1.75,0.25,1.75,0.25,1.75,0.25,1.75,2.5,2.5}
 correction_weight=${BLOB_POLICY_CORRECTION_WEIGHT:-1.25}
 correction_learning_rate=${BLOB_POLICY_CORRECTION_LEARNING_RATE:-0.00001}
-base_phases=feeding,feeding,feeding,feeding,feeding,feeding,feeding,feeding,feeding,feeding,combat,combat
 action_balance_exponent=${BLOB_ACTION_BALANCE_EXPONENT:-1}
 action_balance_max_ratio=${BLOB_ACTION_BALANCE_MAX_RATIO:-4}
 phase_gate_loss_weight=${BLOB_PHASE_GATE_LOSS_WEIGHT:-1}
 min_micro_attacks=${BLOB_MIN_MICRO_ATTACKS_PER_EPISODE:-0.25}
+
+if [[ "$correction_enabled" != 0 && "$correction_enabled" != 1 ]]; then
+    echo "BLOB_POLICY_CORRECTION_ENABLED must be 0 or 1" >&2
+    exit 2
+fi
 
 "$feeding_layout_teacher_evaluation_bin" \
     --config "$config" \
@@ -97,9 +102,8 @@ run_behavior_clone() {
     local clone_output=$1
     local clone_epochs=$2
     local clone_weights=$3
-    local clone_phases=$4
-    local clone_learning_rate=$5
-    shift 5
+    local clone_learning_rate=$4
+    shift 4
     local clone_args=(
         --config "$config"
         "$@"
@@ -112,7 +116,6 @@ run_behavior_clone() {
     fi
     clone_args+=(
         --dataset-weight "$clone_weights"
-        --dataset-phase "$clone_phases"
         --phase-gate-loss-weight "$phase_gate_loss_weight"
         --epochs "$clone_epochs"
         --minibatch-size 256
@@ -128,40 +131,44 @@ run_behavior_clone() {
     )
     "$behavior_clone_bin" "${clone_args[@]}"
 }
-bootstrap="$output_root/behavior-clone-bootstrap"
+if [[ "$correction_enabled" == 1 ]]; then
+    bootstrap="$output_root/behavior-clone-bootstrap"
+else
+    bootstrap="$output_root/behavior-clone"
+fi
 if [[ -n "$combat_parent" && "$combat_parent" != "none" ]]; then
-    run_behavior_clone "$bootstrap" "$consolidation_epochs" "$consolidation_weights" "$base_phases" 0.0001 \
+    run_behavior_clone "$bootstrap" "$consolidation_epochs" "$consolidation_weights" 0.0001 \
         --initial-behavior-clone "$combat_parent"
 else
-    run_behavior_clone "$bootstrap" "$consolidation_epochs" "$consolidation_weights" "$base_phases" 0.0001
+    run_behavior_clone "$bootstrap" "$consolidation_epochs" "$consolidation_weights" 0.0001
 fi
 
-for contact_spec in 60:aggressive 180:defensive; do
-    energy=${contact_spec%%:*}
-    opponent=${contact_spec##*:}
-    correction="$output_root/demonstrations/policy-correction-$energy-$opponent"
-    "$policy_corrections_bin" \
-        --config "$config" \
-        --behavior-clone "$bootstrap" \
-        --teacher aggressive \
-        --contact-energy "$energy" \
-        --contact-opponent "$opponent" \
-        --seeds "$correction_seeds" \
-        --max-samples "$correction_samples" \
-        --output "$correction"
-    correction_dataset_args+=(--dataset "$correction")
-done
-corrections_ready=1
+if [[ "$correction_enabled" == 1 ]]; then
+    for contact_spec in 60:aggressive 180:defensive; do
+        energy=${contact_spec%%:*}
+        opponent=${contact_spec##*:}
+        correction="$output_root/demonstrations/policy-correction-$energy-$opponent"
+        "$policy_corrections_bin" \
+            --config "$config" \
+            --behavior-clone "$bootstrap" \
+            --teacher aggressive \
+            --contact-energy "$energy" \
+            --contact-opponent "$opponent" \
+            --seeds "$correction_seeds" \
+            --max-samples "$correction_samples" \
+            --output "$correction"
+        correction_dataset_args+=(--dataset "$correction")
+    done
+    corrections_ready=1
 
-correction_weights="$consolidation_weights,$correction_weight,$correction_weight"
-correction_phases="$base_phases,combat,combat"
-run_behavior_clone \
-    "$output_root/behavior-clone" \
-    "$correction_epochs" \
-    "$correction_weights" \
-    "$correction_phases" \
-    "$correction_learning_rate" \
-    --initial-behavior-clone "$bootstrap"
+    correction_weights="$consolidation_weights,$correction_weight,$correction_weight"
+    run_behavior_clone \
+        "$output_root/behavior-clone" \
+        "$correction_epochs" \
+        "$correction_weights" \
+        "$correction_learning_rate" \
+        --initial-behavior-clone "$bootstrap"
+fi
 
 IFS=',' read -r -a feeding_seed_array <<< "$feeding_evaluation_seeds"
 feeding_merge_args=()

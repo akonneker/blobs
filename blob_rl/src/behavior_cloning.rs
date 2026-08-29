@@ -1,6 +1,6 @@
 //! Masked supervised pretraining from verified demonstration datasets.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ use crate::model::{
 };
 use crate::observation::OBS_DIM;
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 17;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 18;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +63,15 @@ pub enum ActionBalancingStrategy {
 pub enum SupervisionPhase {
     Feeding,
     Combat,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExpertRoutingStrategy {
+    /// Attack and Guard use the combat expert; every other physical action
+    /// uses the general/feeding expert. The assignment is per decision and
+    /// contains no host scenario phase.
+    LocalActionFamily,
 }
 
 impl SupervisionPhase {
@@ -104,10 +113,9 @@ pub struct BehaviorCloningConfig {
     /// total presentations per epoch.
     #[serde(default)]
     pub dataset_sampling_weights: Vec<f64>,
-    /// Supervised expert assignment for each dataset in CLI order. Empty means
-    /// every dataset is feeding, preserving the simple single-skill workflow.
-    #[serde(default)]
-    pub dataset_phases: Vec<SupervisionPhase>,
+    /// Per-decision expert assignment. This is explicit in the artifact even
+    /// though only the strictly local action-family rule is currently valid.
+    pub expert_routing: ExpertRoutingStrategy,
     /// Relative auxiliary loss used to teach the observation-driven phase
     /// gate. Expert action loss retains unit weight.
     pub phase_gate_loss_weight: f64,
@@ -173,7 +181,7 @@ impl Default for BehaviorCloningConfig {
             validation_fraction: 0.1,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
             dataset_sampling_weights: Vec::new(),
-            dataset_phases: Vec::new(),
+            expert_routing: ExpertRoutingStrategy::LocalActionFamily,
             phase_gate_loss_weight: 1.0,
             recurrent_unroll_steps: 16,
             exact_round_trip_only: false,
@@ -253,7 +261,9 @@ pub struct BehaviorCloningPhaseMetrics {
 #[serde(deny_unknown_fields)]
 pub struct BehaviorCloningDatasetPartition {
     pub manifest_sha256: String,
-    pub supervision_phase: SupervisionPhase,
+    pub eligible_phase_samples: Vec<usize>,
+    pub training_phase_samples: Vec<usize>,
+    pub validation_phase_samples: Vec<usize>,
     pub eligible_samples: usize,
     pub training_samples: usize,
     pub validation_samples: usize,
@@ -277,7 +287,6 @@ pub struct BehaviorCloningDatasetIdentity {
     pub teacher: String,
     pub samples: usize,
     pub exact_round_trip_samples: usize,
-    pub supervision_phase: SupervisionPhase,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -296,7 +305,6 @@ pub struct BehaviorCloningArtifact {
 
 struct DatasetPartition<'a> {
     manifest_sha256: String,
-    supervision_phase: SupervisionPhase,
     training: Vec<&'a DemonstrationSample>,
     validation: Vec<&'a DemonstrationSample>,
     held_out_seeds: Vec<u64>,
@@ -409,10 +417,29 @@ fn balanced_phase_weights(
     })
 }
 
+fn supervision_phase(sample: &DemonstrationSample) -> SupervisionPhase {
+    match policy_action_family(usize::from(sample.action))
+        .expect("validated demonstration action belongs to a policy family")
+    {
+        PolicyActionFamily::Attack | PolicyActionFamily::Guard => SupervisionPhase::Combat,
+        _ => SupervisionPhase::Feeding,
+    }
+}
+
+fn phase_histogram<'a>(samples: impl IntoIterator<Item = &'a DemonstrationSample>) -> Vec<usize> {
+    let mut counts = vec![0usize; NUM_ACTION_KIND_EXPERTS];
+    for sample in samples {
+        counts[supervision_phase(sample).index()] += 1;
+    }
+    counts
+}
+
 fn phase_weights_for_chunks(chunks: &[SequenceChunk<'_>]) -> [f32; NUM_ACTION_KIND_EXPERTS] {
     let mut counts = [0usize; NUM_ACTION_KIND_EXPERTS];
     for chunk in chunks {
-        counts[chunk.supervision_phase.index()] += chunk.samples.len();
+        for sample in &chunk.samples {
+            counts[supervision_phase(sample).index()] += 1;
+        }
     }
     balanced_phase_weights(counts)
 }
@@ -425,30 +452,13 @@ fn seed_rank(split_seed: u64, source_seed: u64) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn supervision_phases(
-    config: &BehaviorCloningConfig,
-    dataset_count: usize,
-) -> Result<Vec<SupervisionPhase>, String> {
-    if config.dataset_phases.is_empty() {
-        return Ok(vec![SupervisionPhase::Feeding; dataset_count]);
-    }
-    if config.dataset_phases.len() != dataset_count {
-        return Err(format!(
-            "received {} supervision phases for {dataset_count} datasets",
-            config.dataset_phases.len()
-        ));
-    }
-    Ok(config.dataset_phases.clone())
-}
-
 fn partition_datasets<'a>(
     datasets: &'a [LoadedDemonstrations],
-    phases: &[SupervisionPhase],
     config: &BehaviorCloningConfig,
 ) -> Result<Vec<DatasetPartition<'a>>, String> {
     let mut identities = HashSet::with_capacity(datasets.len());
     let mut partitions = Vec::with_capacity(datasets.len());
-    for (dataset, supervision_phase) in datasets.iter().zip(phases) {
+    for dataset in datasets {
         if !identities.insert(&dataset.manifest_sha256) {
             return Err(format!(
                 "duplicate demonstration manifest {}",
@@ -501,13 +511,40 @@ fn partition_datasets<'a>(
         }
         partitions.push(DatasetPartition {
             manifest_sha256: dataset.manifest_sha256.clone(),
-            supervision_phase: *supervision_phase,
             training,
             validation,
             held_out_seeds,
         });
     }
     Ok(partitions)
+}
+
+/// The gate does not receive recurrent memory or host scenario metadata. Fail
+/// closed if the immutable corpus asks it to route an identical anonymous
+/// observation to both experts.
+fn validate_gate_label_consistency(partitions: &[DatasetPartition<'_>]) -> Result<(), String> {
+    let mut labels = HashMap::<[u8; 32], SupervisionPhase>::new();
+    for sample in partitions
+        .iter()
+        .flat_map(|partition| partition.training.iter().chain(&partition.validation))
+    {
+        let mut hasher = Sha256::new();
+        hasher.update(b"blob-expert-gate-observation-v1");
+        for value in &sample.observation {
+            hasher.update(value.to_bits().to_le_bytes());
+        }
+        let key = hasher.finalize().into();
+        let phase = supervision_phase(sample);
+        if labels
+            .insert(key, phase)
+            .is_some_and(|prior| prior != phase)
+        {
+            return Err(
+                "identical anonymous observations have contradictory expert-routing labels".into(),
+            );
+        }
+    }
+    Ok(())
 }
 
 fn samples_per_dataset_per_epoch(
@@ -657,20 +694,15 @@ fn amount_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
 #[derive(Clone)]
 struct DemonstrationSequence<'a> {
     samples: Vec<&'a DemonstrationSample>,
-    supervision_phase: SupervisionPhase,
 }
 
 #[derive(Clone)]
 struct SequenceChunk<'a> {
     samples: Vec<&'a DemonstrationSample>,
     initial_memory: Vec<f32>,
-    supervision_phase: SupervisionPhase,
 }
 
-fn build_sequences<'a>(
-    samples: &[&'a DemonstrationSample],
-    supervision_phase: SupervisionPhase,
-) -> Vec<DemonstrationSequence<'a>> {
+fn build_sequences<'a>(samples: &[&'a DemonstrationSample]) -> Vec<DemonstrationSequence<'a>> {
     let mut sequences = BTreeMap::<(u64, u64), Vec<&'a DemonstrationSample>>::new();
     for sample in samples {
         sequences
@@ -680,10 +712,7 @@ fn build_sequences<'a>(
     }
     sequences
         .into_values()
-        .map(|samples| DemonstrationSequence {
-            samples,
-            supervision_phase,
-        })
+        .map(|samples| DemonstrationSequence { samples })
         .collect()
 }
 
@@ -726,7 +755,6 @@ where
                     chunks.push(SequenceChunk {
                         samples: sequence_batch[*index].samples[position..end].to_vec(),
                         initial_memory: memories[*index].clone(),
-                        supervision_phase: sequence_batch[*index].supervision_phase,
                     });
                 }
             }
@@ -844,7 +872,9 @@ where
     let recurrent_size = model.recurrent_size();
     let mut evaluation_phase_counts = [0usize; NUM_ACTION_KIND_EXPERTS];
     for sequence in sequences {
-        evaluation_phase_counts[sequence.supervision_phase.index()] += sequence.samples.len();
+        for sample in &sequence.samples {
+            evaluation_phase_counts[supervision_phase(sample).index()] += 1;
+        }
     }
     let evaluation_phase_weights = balanced_phase_weights(evaluation_phase_counts);
     let mut total_loss = 0.0_f64;
@@ -879,7 +909,7 @@ where
                 .collect::<Vec<_>>();
             let phases = active
                 .iter()
-                .map(|index| sequence_batch[*index].supervision_phase)
+                .map(|index| supervision_phase(sequence_batch[*index].samples[positions[*index]]))
                 .collect::<Vec<_>>();
             let observations = samples
                 .iter()
@@ -1214,8 +1244,7 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .collect::<Vec<_>>();
         let expert_kind_masks = samples
             .iter()
-            .zip(chunks)
-            .flat_map(|(sample, chunk)| expert_kind_mask_bias(sample, chunk.supervision_phase))
+            .flat_map(|sample| expert_kind_mask_bias(sample, supervision_phase(sample)))
             .collect::<Vec<_>>();
         let target_masks = samples
             .iter()
@@ -1246,14 +1275,14 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .collect::<Vec<_>>();
         let expert_kinds = hierarchical
             .iter()
-            .zip(chunks)
-            .map(|(choice, chunk)| {
-                (chunk.supervision_phase.index() * NUM_POLICY_ACTION_KINDS + choice.kind) as i32
+            .zip(&samples)
+            .map(|(choice, sample)| {
+                (supervision_phase(sample).index() * NUM_POLICY_ACTION_KINDS + choice.kind) as i32
             })
             .collect::<Vec<_>>();
-        let phases = chunks
+        let phases = samples
             .iter()
-            .map(|chunk| chunk.supervision_phase.index() as i32)
+            .map(|sample| supervision_phase(sample).index() as i32)
             .collect::<Vec<_>>();
         let targets = hierarchical
             .iter()
@@ -1267,9 +1296,9 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .iter()
             .map(|sample| loss_weights.actions[usize::from(sample.action)])
             .collect::<Vec<_>>();
-        let phase_sample_weights = chunks
+        let phase_sample_weights = samples
             .iter()
-            .map(|chunk| loss_weights.phases[chunk.supervision_phase.index()])
+            .map(|sample| loss_weights.phases[supervision_phase(sample).index()])
             .collect::<Vec<_>>();
         let signals = samples
             .iter()
@@ -1420,7 +1449,6 @@ where
     if datasets.is_empty() {
         return Err("behavior cloning requires at least one dataset".into());
     }
-    let supervision_phases = supervision_phases(config, datasets.len())?;
     let available_samples = datasets
         .iter()
         .map(|dataset| dataset.payload.samples.len())
@@ -1430,14 +1458,15 @@ where
         .flat_map(|dataset| &dataset.payload.samples)
         .filter(|sample| sample.exact_round_trip)
         .count();
-    let partitions = partition_datasets(datasets, &supervision_phases, config)?;
+    let partitions = partition_datasets(datasets, config)?;
+    validate_gate_label_consistency(&partitions)?;
     let training_sequences_by_dataset = partitions
         .iter()
-        .map(|partition| build_sequences(&partition.training, partition.supervision_phase))
+        .map(|partition| build_sequences(&partition.training))
         .collect::<Vec<_>>();
     let validation_sequences_by_dataset = partitions
         .iter()
-        .map(|partition| build_sequences(&partition.validation, partition.supervision_phase))
+        .map(|partition| build_sequences(&partition.validation))
         .collect::<Vec<_>>();
     let training_sequences = training_sequences_by_dataset
         .iter()
@@ -1472,7 +1501,15 @@ where
         .map(
             |(index, (partition, samples_per_epoch))| BehaviorCloningDatasetPartition {
                 manifest_sha256: partition.manifest_sha256.clone(),
-                supervision_phase: partition.supervision_phase,
+                eligible_phase_samples: phase_histogram(
+                    partition
+                        .training
+                        .iter()
+                        .chain(&partition.validation)
+                        .copied(),
+                ),
+                training_phase_samples: phase_histogram(partition.training.iter().copied()),
+                validation_phase_samples: phase_histogram(partition.validation.iter().copied()),
                 eligible_samples: partition.training.len() + partition.validation.len(),
                 training_samples: partition.training.len(),
                 validation_samples: partition.validation.len(),
@@ -1555,11 +1592,10 @@ where
             action_family_weighted_loss_mass[family] +=
                 f64::from(action_weights[usize::from(sample.action)]);
         }
-        for chunk in &epoch {
-            let phase = chunk.supervision_phase.index();
-            supervision_phase_presentations[phase] += chunk.samples.len();
-            supervision_phase_weighted_gate_loss_mass[phase] +=
-                chunk.samples.len() as f64 * f64::from(phase_weights[phase]);
+        for sample in epoch.iter().flat_map(|chunk| &chunk.samples) {
+            let phase = supervision_phase(sample).index();
+            supervision_phase_presentations[phase] += 1;
+            supervision_phase_weighted_gate_loss_mass[phase] += f64::from(phase_weights[phase]);
         }
         let mut by_length = BTreeMap::<usize, Vec<SequenceChunk<'_>>>::new();
         for chunk in epoch {
@@ -1725,7 +1761,6 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
     datasets: &[LoadedDemonstrations],
     metrics: &BehaviorCloningMetrics,
 ) -> Result<PathBuf, String> {
-    let supervision_phases = supervision_phases(config, datasets.len())?;
     if output.exists() {
         return Err(format!(
             "refusing to replace behavior-cloning artifact {}",
@@ -1759,17 +1794,13 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
             model: model_config.clone(),
             datasets: datasets
                 .iter()
-                .zip(&supervision_phases)
-                .map(
-                    |(dataset, supervision_phase)| BehaviorCloningDatasetIdentity {
-                        manifest_sha256: dataset.manifest_sha256.clone(),
-                        payload_sha256: dataset.manifest.payload_sha256.clone(),
-                        teacher: dataset.manifest.teacher.to_string(),
-                        samples: dataset.manifest.samples,
-                        exact_round_trip_samples: dataset.manifest.exact_round_trip_samples,
-                        supervision_phase: *supervision_phase,
-                    },
-                )
+                .map(|dataset| BehaviorCloningDatasetIdentity {
+                    manifest_sha256: dataset.manifest_sha256.clone(),
+                    payload_sha256: dataset.manifest.payload_sha256.clone(),
+                    teacher: dataset.manifest.teacher.to_string(),
+                    samples: dataset.manifest.samples,
+                    exact_round_trip_samples: dataset.manifest.exact_round_trip_samples,
+                })
                 .collect(),
             metrics: metrics.clone(),
             model_file: "model.mpk".into(),
@@ -1854,11 +1885,10 @@ mod tests {
         samples[1].source_cell = 5;
         let references = samples.iter().collect::<Vec<_>>();
 
-        let sequences = build_sequences(&references, SupervisionPhase::Combat);
+        let sequences = build_sequences(&references);
 
         assert_eq!(sequences.len(), 2);
-        assert!(sequences.iter().all(|sequence| sequence.samples.len() == 1
-            && sequence.supervision_phase == SupervisionPhase::Combat));
+        assert!(sequences.iter().all(|sequence| sequence.samples.len() == 1));
     }
 
     #[test]
@@ -1871,7 +1901,7 @@ mod tests {
             sample.source_cell = 5;
         }
         let references = samples.iter().collect::<Vec<_>>();
-        let sequences = build_sequences(&references, SupervisionPhase::Feeding);
+        let sequences = build_sequences(&references);
         let device = Default::default();
         <TestBackend as Backend>::seed(&device, 123);
         let model = PolicyValueNetConfig {
@@ -1889,7 +1919,8 @@ mod tests {
         assert_eq!(chunks[0].initial_memory, vec![0.0; 8]);
         assert!(chunks
             .iter()
-            .all(|chunk| chunk.supervision_phase == SupervisionPhase::Feeding));
+            .flat_map(|chunk| &chunk.samples)
+            .all(|sample| { supervision_phase(sample) == SupervisionPhase::Feeding }));
         assert!(chunks[1].initial_memory.iter().any(|value| *value != 0.0));
         assert_eq!(
             chunks[1].initial_memory,
@@ -1929,11 +1960,6 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
         assert!(invalid_phase_gate_weight.validate().is_err());
-        let mismatched_phases = BehaviorCloningConfig {
-            dataset_phases: vec![SupervisionPhase::Feeding],
-            ..BehaviorCloningConfig::default()
-        };
-        assert!(supervision_phases(&mismatched_phases, 2).is_err());
     }
 
     #[test]
@@ -2028,17 +2054,57 @@ mod tests {
     }
 
     #[test]
+    fn identical_gate_observations_cannot_receive_conflicting_local_routes() {
+        let mut samples = demonstration_samples(2);
+        samples[1].observation = samples[0].observation.clone();
+        let consume =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Consume.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        let attack =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Attack.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        samples[0].action = consume as u16;
+        samples[1].action = attack as u16;
+        let partition = DatasetPartition {
+            manifest_sha256: "manifest".into(),
+            training: samples.iter().collect(),
+            validation: Vec::new(),
+            held_out_seeds: Vec::new(),
+        };
+
+        assert!(validate_gate_label_consistency(&[partition])
+            .unwrap_err()
+            .contains("contradictory"));
+    }
+
+    #[test]
     fn recurrent_chunk_sampling_preserves_the_exact_sample_budget() {
-        let samples = demonstration_samples(5);
+        let mut samples = demonstration_samples(5);
+        let attack =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Attack.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        for sample in &mut samples[3..] {
+            sample.action = attack as u16;
+        }
         let first = SequenceChunk {
             samples: samples[..3].iter().collect(),
             initial_memory: vec![0.0; 8],
-            supervision_phase: SupervisionPhase::Feeding,
         };
         let second = SequenceChunk {
             samples: samples[3..].iter().collect(),
             initial_memory: vec![0.0; 8],
-            supervision_phase: SupervisionPhase::Combat,
         };
         let mut rng = ChaCha12Rng::seed_from_u64(3);
 
@@ -2093,7 +2159,7 @@ mod tests {
             validation_fraction: 0.5,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
             dataset_sampling_weights: Vec::new(),
-            dataset_phases: Vec::new(),
+            expert_routing: ExpertRoutingStrategy::LocalActionFamily,
             phase_gate_loss_weight: 1.0,
             recurrent_unroll_steps: 4,
             exact_round_trip_only: false,
@@ -2113,10 +2179,7 @@ mod tests {
         assert!(metrics.validation_samples > 0);
         assert!(metrics.final_validation_loss.is_some());
         assert_eq!(metrics.recurrent_unroll_steps, 4);
-        assert_eq!(
-            metrics.partitions[0].supervision_phase,
-            SupervisionPhase::Feeding
-        );
+        assert_eq!(metrics.partitions[0].eligible_phase_samples[1], 0);
         assert_eq!(
             metrics.final_validation_phase_metrics,
             vec![
@@ -2262,8 +2325,7 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
 
-        let phases = supervision_phases(&config, datasets.len()).unwrap();
-        let partitions = partition_datasets(&datasets, &phases, &config).unwrap();
+        let partitions = partition_datasets(&datasets, &config).unwrap();
         assert_eq!(partitions[0].held_out_seeds, partitions[1].held_out_seeds);
         for partition in &partitions {
             let held_out = partition
@@ -2322,8 +2384,7 @@ mod tests {
             validation_fraction: 0.25,
             ..BehaviorCloningConfig::default()
         };
-        let phases = supervision_phases(&config, datasets.len()).unwrap();
-        let partitions = partition_datasets(&datasets, &phases, &config).unwrap();
+        let partitions = partition_datasets(&datasets, &config).unwrap();
         let presentations = samples_per_dataset_per_epoch(
             &partitions,
             DatasetSamplingStrategy::Proportional,

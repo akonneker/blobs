@@ -2094,10 +2094,11 @@ of projected labels, and the stored label then round-trips exactly. This avoids
 silently dropping the exact attack corrections that motivated collection.
 Behavior-cloning schema 17 already
 binds each dataset's complete manifest hash, so no clone-format change is
-needed to carry the new collection identity. The 256-cell warm-start
-builder now produces a bootstrap clone, collects separate 60-energy/aggressive
-and 180-energy/defensive correction trajectories on disjoint seeds, and runs a
-bounded continuation with both the original rehearsal corpus and corrections.
+needed to carry the new collection identity. When correction is explicitly
+enabled, the 256-cell warm-start builder produces a bootstrap clone, collects
+separate 60-energy/aggressive and 180-energy/defensive correction trajectories
+on disjoint seeds, and runs a bounded continuation with both the original
+rehearsal corpus and corrections.
 The immutable feeding, contact, and micro-combat gates still decide whether the
 result is promotable; correction labels alone are not evidence of competence.
 
@@ -2106,8 +2107,8 @@ explicit projection, the 60-energy policy rollout produced 120 missed teacher
 attacks, but exact-round-trip filtering removed every one because their payload
 values fell between catalog tiers. Projected correction retains all 120. A
 four-epoch, `1e-4` continuation then recovered 100% routed-expert Attack but
-erased held-out Consume, so the maintained builder now defaults to one
-correction epoch at `1e-5` and half the former correction share. That
+erased held-out Consume, so an enabled correction experiment defaults to one
+epoch at `1e-5` and half the former correction share. That
 conservative candidate retained 97.0% held-out Consume and 100% routed-expert
 Attack, but its gate selected combat for only 66.7% of held-out Attack labels.
 It committed 16 attacks across 48 contact episodes and about 0.021 attacks per
@@ -2122,6 +2123,35 @@ per decision using a locally derivable interaction predicate or the projected
 action family, permit phase changes inside a recurrent trajectory, and verify
 that identical observations cannot receive conflicting gate labels. Only then
 should another multi-round correction schedule be tuned.
+
+That routing correction is now implemented in behavior-cloning schema 18.
+Attack and Guard decisions route to the combat expert; every other physical
+action routes to the general/feeding expert. The label is recomputed for every
+decision, so a single cell can Move, Attack, and Move again without assigning
+the entire recurrent trajectory to a host scenario phase. Dataset manifests
+remain responsible only for provenance and sampling weight. Artifact dataset
+partitions now report eligible, training, and validation route counts instead
+of one phase label. Before training, a domain-separated digest of each exact
+bitwise observation fails closed if the same anonymous gate input has both
+routes anywhere in the eligible corpus. The gate still receives neither cell
+identity, team state,
+host scenario metadata, nor recurrent private memory; Mind ABI separation is
+unchanged.
+
+On the reduced 1,638-sample-per-layout corpus, a 32-epoch scratch baseline
+without policy-correction shards reached 76.0% held-out Consume, 99.6% Move,
+100% Attack, 98.4% general-route gating, and 96.9% combat-route gating. More
+importantly, action acquisition transferred to rollouts: all 48 contact
+episodes attacked and dealt damage, totaling 1,332 committed attacks, 2,716
+damage, and 28 kills. The micro suite averaged 8.67 attacks per episode. This
+is not combat competence: one-versus-three survival was 0%, both elimination
+objectives were 0%, and most contact variants still lost. The same routing run
+with correction shards retained Attack but collapsed Consume, confirming that
+the correction mixture—not local routing alone—is the immediate interference
+source. Consequently, the maintained builder defaults correction continuation
+off; `BLOB_POLICY_CORRECTION_ENABLED=1` makes it an explicit experiment. The
+next training slice should improve combat target/effort sequencing and revisit
+correction sampling without sacrificing the expanded full-size feeding corpus.
 
 The completed V3 evidence used the faster measured CPU NdArray backend and one
 serial worker:
