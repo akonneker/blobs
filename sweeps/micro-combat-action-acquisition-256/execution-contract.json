@@ -1,0 +1,9 @@
+{
+  "schema_version": 10,
+  "manifest_sha256": "f49e74771971171827d5798a54bdcc31d1d9e3f1e44d531df4aeeb16255d6f90",
+  "trainer_sha256": "626cba7d230c8b02a97c4ab5974bfd470ea5e9bc0bd2deff0beb8713b106e96d",
+  "trainer_size_bytes": 11630496,
+  "trainer_container_digest": null,
+  "train_arguments": [],
+  "threads_per_run": null
+}

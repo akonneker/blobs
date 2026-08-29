@@ -1850,6 +1850,24 @@ The sole intervention is a 0.50 direct Attack mixture versus 0.0 in control.
 This tests action acquisition before spending another full budget on reward or
 physics tuning.
 
+That A/B completed all six bounded-world-time runs. The 50% Attack mixture
+substantially increased attacks inside sampled training scenarios (233 commits,
+36 successes, 594 applied damage, and 5 kills versus 62, 8, 95, and 0), proving
+that the behavior-policy intervention was active. It nevertheless produced
+zero greedy held-out attack commitments at every evaluation boundary in both
+arms, zero elimination success, zero terminal survival, and zero joint
+qualifications. Best survival changed by only +1.04 percentage points with a
+±4.48-point paired 95% interval. No treatment checkpoint met feeding
+qualification either.
+
+This rejects additional kind-only forced exploration as the next step. The
+fixed Attack component can dominate sampled attacks while contributing only a
+small learned-policy score gradient, and it does not teach target, effort, or
+timing. The next acquisition path is an attack-dense supervised combat
+specialist or multi-task warm start, followed by PPO with explicit feeding
+retention and held-out greedy gates. The immutable aggregate and the sampled
+training-mechanism caveat are recorded in the sweep README.
+
 Training-artifact schema 40 and checkpoint-evaluation schema 7 bind the split
 evaluation/rehearsal and exact behavior-policy contracts. Sweep-execution
 schema 10 reconstructs every complete micro-combat evaluation

@@ -38,3 +38,44 @@ feeding retention, fixed-match performance, throughput, and peak host RSS
 remain required secondary evidence. Three pairs provide a directional result;
 expand the seed set before policy selection if confidence intervals remain
 wide.
+
+## Result
+
+All six runs completed successfully after every environment reached the
+1,048,576-quanta authoritative world-time budget. Five stopped exactly at the
+frontier; one control environment crossed it by one 256-quanta resolver batch.
+The intervention changed training behavior
+but did not produce a greedy combat policy and must not be promoted:
+
+| held-out metric | uniform rehearsal | attack acquisition | paired change (95% CI) |
+| --- | ---: | ---: | ---: |
+| final survival success | 0% | 0% | 0 pp |
+| best survival success | 0% | 1.04% | +1.04 pp ± 4.48 pp |
+| final/best elimination success | 0% | 0% | 0 pp |
+| final/best committed attacks per episode | 0 | 0 | 0 |
+| micro-combat qualification | 0/3 | 0/3 | none |
+| fixed-suite terminal win rate | 0% | 0% | 0 pp |
+
+The training-time intervention itself worked. Across stride-sampled named
+micro-combat episodes, control committed 62 attacks in 65 episodes, with 8
+successful attacks, 95 applied damage, and no kills. Treatment committed 233
+attacks in 92 episodes, with 36 successful attacks, 594 applied damage, and 5
+kills. Because telemetry samples every eighth completed episode and the arms
+have different episode counts, these totals characterize the mechanism rather
+than serve as the held-out endpoint.
+
+The failure is therefore not lack of attack exposure. A fixed 50% behavior
+mixture generates attacks but weakens their policy-gradient attribution: when
+the fixed component dominates an Attack sample, only the smaller learned
+component responds to its return. Kind-only forcing also leaves the policy to
+learn target, effort, timing, and survival together from sparse outcomes. At
+the terminal boundary no run met the full feeding gate; only one control seed
+showed successful consumption in both feeding scenarios, but its cells did not
+meet the survival requirement.
+
+Mean throughput was 2,463 actions/s for control and 2,142 actions/s for
+treatment; the paired change was −321 ± 1,142 actions/s and is not resolved by
+three pairs. Mean peak host RSS was approximately 641 MB and 625 MB,
+respectively. The next experiment should use attack-dense supervised combat
+demonstrations or a verified combat specialist as a warm start, then retain
+feeding through multi-task demonstration coverage and functional anchoring.
