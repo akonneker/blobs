@@ -9,7 +9,8 @@ use blob_rl::behavior_cloning::{
 use blob_rl::config::TrainingConfig;
 use blob_rl::feeding_curriculum::evaluate_feeding_promotion;
 use blob_rl::feeding_layout_evaluation::{
-    publish_feeding_layout_evaluation, FeedingLayoutEvaluationArtifact,
+    load_feeding_layout_evaluation, publish_feeding_layout_evaluation,
+    verify_feeding_layout_evaluation_request, FeedingLayoutEvaluationArtifact,
     FeedingLayoutPolicyIdentity, FeedingLayoutTrial, FeedingQualificationLayout,
 };
 use blob_rl::model::PolicyValueNetConfig;
@@ -41,6 +42,10 @@ struct Args {
 
     #[arg(long)]
     require_pass: bool,
+
+    /// Reuse an existing artifact only after exact identity validation.
+    #[arg(long)]
+    resume: bool,
 }
 
 struct EvaluationInputs<'a> {
@@ -147,6 +152,41 @@ fn main() {
     .unwrap_or_else(|error| panic!("failed to decode {}: {error}", metadata_path.display()));
     let source_config_sha256 = format!("{:x}", Sha256::digest(&config_bytes));
     let require_pass = args.require_pass;
+    let policy = FeedingLayoutPolicyIdentity::BehaviorClone {
+        metadata_sha256: metadata_sha256.clone(),
+        model_sha256: metadata.model_sha256.clone(),
+    };
+
+    if args.output.exists() {
+        if !args.resume {
+            panic!(
+                "feeding-layout output {} exists; pass --resume to verify and reuse it",
+                args.output.display()
+            );
+        }
+        let artifact = load_feeding_layout_evaluation(&args.output)
+            .unwrap_or_else(|error| panic!("invalid existing feeding-layout artifact: {error}"));
+        verify_feeding_layout_evaluation_request(
+            &artifact,
+            &source_config_sha256,
+            &policy,
+            &config,
+            &args.layouts,
+            &args.seeds,
+        )
+        .unwrap_or_else(|error| panic!("feeding-layout resume rejected: {error}"));
+        println!(
+            "Reused verified {}x{} feeding-layout evaluation {} at {}",
+            artifact.layouts.len(),
+            artifact.seeds.len(),
+            if artifact.passed { "PASS" } else { "FAIL" },
+            args.output.display(),
+        );
+        if require_pass && !artifact.passed {
+            std::process::exit(2);
+        }
+        return;
+    }
 
     #[cfg(feature = "wgpu")]
     let passed = run::<burn::backend::Autodiff<burn::backend::Wgpu>>(

@@ -1,12 +1,17 @@
 //! BlobEnv — wraps blob_engine::Engine as an RL environment.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-use blob_engine::engine::{CellConfig, Engine, ReferenceRuntimeCheckpoint, TickEvents};
+use blob_engine::engine::ReferenceStateRuntimeCheckpoint;
+use blob_engine::engine::{
+    CellConfig, Engine, ReferencePrivateRandomCheckpoint, ReferenceRuntimeCheckpoint, TickEvents,
+};
 use blob_engine::resolution::{
-    BoundaryRule, CellKey, IntegrityMode, ReferenceCheckpoint, ReferenceSimulation,
-    ReplayBundleLimits, TargetingAction, TileIndex,
+    BoundaryRule, CellKey, IntegrityMode, ReferenceCheckpoint, ReferenceCompiledTopology,
+    ReferenceSimulation, ReferenceStateRestoreProfile, ReplayBundleLimits, TargetingAction,
+    TileIndex,
 };
 use blob_engine::world_gen;
 use blob_interface::cell::Cell;
@@ -18,6 +23,7 @@ use blob_interface::reference_mind::{
 use blob_interface::types::{CellId, Coordinate, TeamId};
 use blob_interface::world::EnergySource;
 use burn::prelude::Backend;
+use sha2::{Digest, Sha256};
 
 use crate::action::{
     action_is_commit_legal, action_mask, attach_policy_memory, decode_action, decode_policy_choice,
@@ -53,6 +59,102 @@ pub struct BlobEnvCheckpoint {
     pub iteration: u64,
     pub host_cells: Vec<Cell>,
     pub episode_step: u64,
+    /// Trusted-host secret continuation; never part of a Mind input or public
+    /// canonical replay artifact.
+    pub private_random: ReferencePrivateRandomCheckpoint,
+    /// A prepared but not yet committed learned-policy frontier. Retaining its
+    /// routing handles and random blocks prevents checkpoint restore or
+    /// repeated inspection from consuming a second block for the same decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_policy_invocations: Option<Vec<PreparedPolicyInvocation>>,
+}
+
+/// Trusted planner checkpoint. Canonical state remains exact, while immutable
+/// compiled rules are supplied and hash-validated by the restoring engine.
+#[derive(Debug, Clone)]
+pub(crate) struct BlobEnvPlannerCheckpoint {
+    pub canonical: ReferenceStateRuntimeCheckpoint,
+    pub host_cells: Vec<Cell>,
+    pub episode_step: u64,
+    pub private_random: ReferencePrivateRandomCheckpoint,
+    pub pending_policy_invocations: Option<Vec<PreparedPolicyInvocation>>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SideEnergyDiagnostics {
+    pub core_mass: u128,
+    pub assimilated_energy: u128,
+    pub gut_energy: u128,
+}
+
+impl SideEnergyDiagnostics {
+    pub const fn stored_energy(self) -> u128 {
+        self.assimilated_energy + self.gut_energy
+    }
+
+    pub const fn total_mass_energy(self) -> u128 {
+        self.core_mass + self.assimilated_energy + self.gut_energy
+    }
+}
+
+const PLANNER_CONTINUATION_IDENTITY_SCHEMA_VERSION: u32 = 3;
+
+#[derive(serde::Serialize)]
+struct BlobEnvPlannerIdentity<'a> {
+    schema_version: u32,
+    width: usize,
+    height: usize,
+    semantic_ruleset_sha256: &'a [u8; 32],
+    compiled_ruleset_sha256: &'a [u8; 32],
+    canonical_state_sha256: &'a [u8; 32],
+    iteration: u64,
+    host_cells: &'a [Cell],
+    episode_step: u64,
+    private_random: &'a ReferencePrivateRandomCheckpoint,
+    pending_policy_invocations: &'a Option<Vec<PreparedPolicyInvocation>>,
+}
+
+struct Sha256Writer(Sha256);
+
+impl Write for Sha256Writer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn planner_continuation_identity(
+    canonical: &ReferenceStateRuntimeCheckpoint,
+    host_cells: &[Cell],
+    episode_step: u64,
+    private_random: &ReferencePrivateRandomCheckpoint,
+    pending_policy_invocations: &Option<Vec<PreparedPolicyInvocation>>,
+) -> Result<[u8; 32], String> {
+    let state = &canonical.canonical;
+    let semantic_ruleset_hash = state.semantic_ruleset_hash();
+    let compiled_ruleset_hash = state.compiled_ruleset_hash();
+    let state_hash = state.state_hash();
+    let identity = BlobEnvPlannerIdentity {
+        schema_version: PLANNER_CONTINUATION_IDENTITY_SCHEMA_VERSION,
+        width: state.width(),
+        height: state.height(),
+        semantic_ruleset_sha256: semantic_ruleset_hash.as_bytes(),
+        compiled_ruleset_sha256: compiled_ruleset_hash.as_bytes(),
+        canonical_state_sha256: state_hash.as_bytes(),
+        iteration: canonical.iteration,
+        host_cells,
+        episode_step,
+        private_random,
+        pending_policy_invocations,
+    };
+    let mut writer = Sha256Writer(Sha256::new());
+    serde_json::to_writer(&mut writer, &identity)
+        .map_err(|error| format!("failed to hash planner continuation: {error}"))?;
+    Ok(writer.0.finalize().into())
 }
 
 /// An RL environment wrapping the blob game engine.
@@ -77,6 +179,10 @@ pub struct BlobEnv {
     opponent_starting_state: Option<OpponentStartingState>,
     telemetry: Option<EnvTelemetryRuntime>,
     match_explorer: Option<MatchExplorerRecorder>,
+    /// Exactly one anonymous input per ready learned-policy cell. Preparation
+    /// consumes the cell-private sequence once; repeated reads clone this
+    /// cache until the corresponding action frontier is committed.
+    pending_policy_invocations: Option<Vec<PreparedPolicyInvocation>>,
 }
 
 /// Minimal trusted-host view of the initial ecology used by offline
@@ -113,6 +219,17 @@ impl ActionBufferMind {
 
 impl ReferenceMind for ActionBufferMind {
     fn decide(&mut self, input: &ReferenceMindInput) -> ReferenceMindDecision {
+        if matches!(
+            self.fallback,
+            OpponentProfile::Pursuer | OpponentProfile::SearchingPursuer
+        ) {
+            let memory_steps = if self.fallback == OpponentProfile::Pursuer {
+                PURSUER_MEMORY_STEPS
+            } else {
+                SEARCHING_PURSUER_MEMORY_STEPS
+            };
+            return pursuer_decision(input, memory_steps);
+        }
         let action = match &self.fallback {
             OpponentProfile::Wait => ReferenceMindAction::Wait,
             OpponentProfile::Random => {
@@ -174,6 +291,11 @@ impl ReferenceMind for ActionBufferMind {
                     }
                 }
             }
+            OpponentProfile::Evasive => evasive_action(input),
+            OpponentProfile::Pursuer | OpponentProfile::SearchingPursuer => {
+                unreachable!("pursuer profiles handled above")
+            }
+            OpponentProfile::ForkingEvader => return forking_evader_decision(input),
             OpponentProfile::Aggressive => aggressive_action(input, false),
             OpponentProfile::StochasticAggressive => aggressive_action(input, true),
             OpponentProfile::Defensive => {
@@ -209,6 +331,174 @@ impl ReferenceMind for ActionBufferMind {
     fn reset(&mut self) -> Result<(), String> {
         Ok(())
     }
+}
+
+const PURSUER_MEMORY_VERSION: u8 = 1;
+const PURSUER_MEMORY_STEPS: u8 = 4;
+const SEARCHING_PURSUER_MEMORY_STEPS: u8 = 1;
+const FORKING_EVADER_MEMORY: &[u8] = b"forked-v1";
+
+/// A deliberately small partial-observation control. On its first decision,
+/// the cell uses one private random bit to move to one of the two local tiles
+/// perpendicular to a visible neighbor. The consequence is observable, but
+/// neither the random bit nor this private marker is exposed to the other cell.
+fn forking_evader_decision(input: &ReferenceMindInput) -> ReferenceMindDecision {
+    if input.private_memory == FORKING_EVADER_MEMORY {
+        return ReferenceMindDecision {
+            action: ReferenceMindAction::Wait,
+            signal: None,
+            memory_update: ReferenceMemoryUpdate::Retain,
+        };
+    }
+    let action = input
+        .slots
+        .iter()
+        .find(|slot| slot.neighbor.is_some())
+        .and_then(|neighbor| {
+            let directions = [
+                (-neighbor.dy.signum(), neighbor.dx.signum()),
+                (neighbor.dy.signum(), -neighbor.dx.signum()),
+            ];
+            let (dx, dy) = directions[input.randomness.sample_u64(0) as usize % directions.len()];
+            input.slots.iter().find(|slot| {
+                slot.dx == dx
+                    && slot.dy == dy
+                    && slot.reachable
+                    && slot.neighbor.is_none()
+                    && ReferenceActionSpace::allows_target(
+                        input.action_space.move_targets,
+                        slot.slot,
+                    )
+            })
+        })
+        .map_or(ReferenceMindAction::Wait, |target| {
+            ReferenceMindAction::Move {
+                target_slot: target.slot,
+                effort: ReferenceEffort::Burst,
+            }
+        });
+    let action = if action_is_commit_legal(input, &action, false) {
+        action
+    } else {
+        ReferenceMindAction::Wait
+    };
+    ReferenceMindDecision {
+        action,
+        signal: None,
+        memory_update: ReferenceMemoryUpdate::Replace(FORKING_EVADER_MEMORY.to_vec()),
+    }
+}
+
+fn encode_pursuer_memory(dx: i8, dy: i8, remaining: u8) -> Vec<u8> {
+    vec![
+        PURSUER_MEMORY_VERSION,
+        dx.cast_unsigned(),
+        dy.cast_unsigned(),
+        remaining,
+    ]
+}
+
+fn decode_pursuer_memory(bytes: &[u8]) -> Option<(i8, i8, u8)> {
+    if bytes.len() != 4 || bytes[0] != PURSUER_MEMORY_VERSION || bytes[3] == 0 {
+        return None;
+    }
+    let dx = bytes[1] as i8;
+    let dy = bytes[2] as i8;
+    (dx != 0 || dy != 0).then_some((dx, dy, bytes[3]))
+}
+
+/// Aggression with strictly cell-private pursuit memory. The remembered vector
+/// is only a last-seen local direction and a bounded search lifetime; it never
+/// contains identity, team membership, or a global coordinate.
+fn pursuer_decision(input: &ReferenceMindInput, memory_steps: u8) -> ReferenceMindDecision {
+    let observed = input.slots.iter().find(|slot| {
+        slot.neighbor.is_some()
+            && slot.reachable
+            && ReferenceActionSpace::allows_target(input.action_space.attack_targets, slot.slot)
+    });
+    let (action, memory_update) = if let Some(target) = observed {
+        (
+            aggressive_action(input, false),
+            ReferenceMemoryUpdate::Replace(encode_pursuer_memory(
+                target.dx.signum(),
+                target.dy.signum(),
+                memory_steps,
+            )),
+        )
+    } else if let Some((dx, dy, remaining)) = decode_pursuer_memory(&input.private_memory) {
+        let action = pursuit_move(input, dx, dy).unwrap_or_else(|| exploratory_move(input));
+        let next = remaining.saturating_sub(1);
+        let update = if next == 0 {
+            ReferenceMemoryUpdate::Replace(Vec::new())
+        } else {
+            ReferenceMemoryUpdate::Replace(encode_pursuer_memory(dx, dy, next))
+        };
+        (action, update)
+    } else {
+        (
+            exploratory_move(input),
+            ReferenceMemoryUpdate::Replace(Vec::new()),
+        )
+    };
+    ReferenceMindDecision {
+        action: if action_is_commit_legal(input, &action, false) {
+            action
+        } else {
+            ReferenceMindAction::Wait
+        },
+        signal: None,
+        memory_update,
+    }
+}
+
+fn pursuit_move(input: &ReferenceMindInput, dx: i8, dy: i8) -> Option<ReferenceMindAction> {
+    let mut targets = input
+        .slots
+        .iter()
+        .filter(|slot| {
+            slot.reachable
+                && slot.neighbor.is_none()
+                && ReferenceActionSpace::allows_target(input.action_space.move_targets, slot.slot)
+        })
+        .collect::<Vec<_>>();
+    targets.sort_unstable_by_key(|target| {
+        let progress = i16::from(target.dx) * i16::from(dx) + i16::from(target.dy) * i16::from(dy);
+        (std::cmp::Reverse(progress), target.slot)
+    });
+    for target in targets {
+        for effort in [
+            ReferenceEffort::Burst,
+            ReferenceEffort::Standard,
+            ReferenceEffort::Gentle,
+        ] {
+            let action = ReferenceMindAction::Move {
+                target_slot: target.slot,
+                effort,
+            };
+            if action_is_commit_legal(input, &action, false) {
+                return Some(action);
+            }
+        }
+    }
+    None
+}
+
+fn exploratory_move(input: &ReferenceMindInput) -> ReferenceMindAction {
+    let targets = input
+        .slots
+        .iter()
+        .filter(|slot| {
+            slot.reachable
+                && slot.neighbor.is_none()
+                && ReferenceActionSpace::allows_target(input.action_space.move_targets, slot.slot)
+        })
+        .collect::<Vec<_>>();
+    if targets.is_empty() {
+        return ReferenceMindAction::Wait;
+    }
+    let rank = input.randomness.sample_u64(3) as usize % targets.len();
+    pursuit_move(input, targets[rank].dx.signum(), targets[rank].dy.signum())
+        .unwrap_or(ReferenceMindAction::Wait)
 }
 
 fn aggressive_action(input: &ReferenceMindInput, stochastic: bool) -> ReferenceMindAction {
@@ -308,6 +598,54 @@ fn forager_move(input: &ReferenceMindInput) -> ReferenceMindAction {
     })
 }
 
+/// Move to the locally visible vacancy that maximizes separation from the
+/// nearest observed cell. The baseline deliberately has no team identity or
+/// global coordinates: in a single-founder micro scenario every observed cell
+/// is a threat, while a multi-cell evaluation exposes the limitation of that
+/// anonymous heuristic honestly.
+fn evasive_action(input: &ReferenceMindInput) -> ReferenceMindAction {
+    let threats = input
+        .slots
+        .iter()
+        .filter(|slot| slot.neighbor.is_some())
+        .collect::<Vec<_>>();
+    if threats.is_empty() {
+        return ReferenceMindAction::Wait;
+    }
+    let effort = [
+        ReferenceEffort::Burst,
+        ReferenceEffort::Standard,
+        ReferenceEffort::Gentle,
+    ]
+    .into_iter()
+    .find(|effort| input.action_space.supports_effort(*effort))
+    .unwrap_or(ReferenceEffort::Standard);
+    input
+        .slots
+        .iter()
+        .filter(|slot| {
+            slot.reachable
+                && slot.neighbor.is_none()
+                && ReferenceActionSpace::allows_target(input.action_space.move_targets, slot.slot)
+        })
+        .max_by_key(|target| {
+            let distances = threats.iter().map(|threat| {
+                let dx = i16::from(threat.dx) - i16::from(target.dx);
+                let dy = i16::from(threat.dy) - i16::from(target.dy);
+                dx.abs().max(dy.abs())
+            });
+            let nearest = distances.clone().min().unwrap_or(0);
+            let total = distances.map(i32::from).sum::<i32>();
+            (nearest, total, std::cmp::Reverse(target.slot))
+        })
+        .map_or(ReferenceMindAction::Wait, |target| {
+            ReferenceMindAction::Move {
+                target_slot: target.slot,
+                effort,
+            }
+        })
+}
+
 /// How an episode ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EpisodeOutcome {
@@ -359,11 +697,18 @@ pub struct StepOutput {
     pub telemetry: Option<StepTelemetry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PolicyObservation {
     pub cell_id: CellId,
     pub observation: Observation,
     pub private_memory: Vec<u8>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PreparedPolicyInvocation {
+    pub cell_id: CellId,
+    pub private_randomness: [u8; 32],
 }
 
 fn configure_episode_resources(
@@ -679,6 +1024,26 @@ impl BlobEnv {
         opponent_batch_policy_factory: Option<OpponentBatchPolicyFactory>,
         opponent_starting_state: Option<OpponentStartingState>,
     ) -> Self {
+        Self::new_with_opponent_factory_and_topology(
+            env_config,
+            reward_config,
+            seed,
+            opponent_mind_factory,
+            opponent_batch_policy_factory,
+            opponent_starting_state,
+            None,
+        )
+    }
+
+    fn new_with_opponent_factory_and_topology(
+        env_config: EnvConfig,
+        reward_config: RewardConfig,
+        seed: u64,
+        opponent_mind_factory: OpponentMindFactory,
+        opponent_batch_policy_factory: Option<OpponentBatchPolicyFactory>,
+        opponent_starting_state: Option<OpponentStartingState>,
+        topology: Option<ReferenceCompiledTopology>,
+    ) -> Self {
         let cell_config = CellConfig {
             starting_cells_per_team: env_config.cells_per_team,
             min_energy: env_config.min_energy,
@@ -727,7 +1092,13 @@ impl BlobEnv {
         }
         configure_episode_resources(&mut engine, &env_config, seed)
             .expect("validated RL resource placement failed");
-        engine.initialize_reference_state().unwrap();
+        if let Some(topology) = topology {
+            engine
+                .initialize_reference_state_with_compiled_topology(topology)
+                .unwrap();
+        } else {
+            engine.initialize_reference_state().unwrap();
+        }
 
         let opponent_batch_policy = opponent_batch_policy_factory
             .as_ref()
@@ -747,6 +1118,7 @@ impl BlobEnv {
             opponent_starting_state,
             telemetry: None,
             match_explorer: None,
+            pending_policy_invocations: None,
         }
     }
 
@@ -830,51 +1202,31 @@ impl BlobEnv {
     }
 
     /// Get observations for all cells on the training team.
-    pub fn get_observations(&self) -> Vec<(CellId, Observation)> {
+    pub fn get_observations(&mut self) -> Vec<(CellId, Observation)> {
         self.get_policy_observations()
             .into_iter()
             .map(|input| (input.cell_id, input.observation))
             .collect()
     }
 
-    /// Get the anonymous observation and isolated private-memory bytes for all
-    /// ready training cells. Cell IDs are host-only routing handles.
-    pub fn get_policy_observations(&self) -> Vec<PolicyObservation> {
-        let Some(simulation) = self.engine.reference_simulation() else {
-            return Vec::new();
-        };
-        let observations = simulation.observation_batch();
-        let mut projected = Vec::new();
-        let mut scratch_input = None;
-        for cell_id in self.engine.ready_cell_ids().into_iter().filter(|cell_id| {
-            self.engine
-                .cells
-                .get(cell_id)
-                .is_some_and(|cell| cell.team_id == self.training_team)
-        }) {
-            let Ok(actor) = u64::try_from(cell_id.0).map(CellKey) else {
-                continue;
-            };
-            let result = if let Some(input) = scratch_input.as_mut() {
-                observations.reference_mind_input_into(actor, PrivateRandom::ZERO, input)
-            } else {
-                observations
-                    .reference_mind_input(actor, PrivateRandom::ZERO)
-                    .map(|input| scratch_input = Some(input))
-            };
-            if result.is_err() {
-                continue;
-            }
-            let Some(input) = scratch_input.as_ref() else {
-                continue;
-            };
-            projected.push(PolicyObservation {
-                cell_id,
-                observation: Observation::from_reference(input),
-                private_memory: input.private_memory.clone(),
-            });
+    /// Invoke the learned-policy side of the Mind boundary for the current
+    /// ready frontier. Canonical private randomness is deterministic for a
+    /// fixed match seed but independent across cells and invocations. Repeated
+    /// reads return the same prepared frontier rather than advancing it again.
+    pub fn get_policy_observations(&mut self) -> Vec<PolicyObservation> {
+        if self.pending_policy_invocations.is_none() {
+            self.prepare_training_reference_inputs()
+                .expect("failed to prepare learned-policy Mind inputs");
         }
-        projected
+        self.prepare_training_reference_inputs()
+            .expect("cached learned-policy Mind inputs became invalid")
+            .into_iter()
+            .map(|(cell_id, input)| PolicyObservation {
+                cell_id,
+                observation: Observation::from_reference(&input),
+                private_memory: input.private_memory,
+            })
+            .collect()
     }
 
     /// Current authoritative event time in resolver quanta.
@@ -903,6 +1255,19 @@ impl BlobEnv {
             .values()
             .filter(|cell| cell.team_id == self.training_team)
             .count()
+    }
+
+    pub(crate) fn ready_training_cell_ids(&self) -> Vec<CellId> {
+        self.engine
+            .ready_cell_ids()
+            .into_iter()
+            .filter(|cell_id| {
+                self.engine
+                    .cells
+                    .get(cell_id)
+                    .is_some_and(|cell| cell.team_id == self.training_team)
+            })
+            .collect()
     }
 
     pub fn compiled_ruleset_hash(&self) -> String {
@@ -968,6 +1333,48 @@ impl BlobEnv {
             .ok_or_else(|| "reference state has not been initialized".to_string())
     }
 
+    /// Host-only cell state for offline diagnostics. The returned state is
+    /// never projected into a Mind observation or deployed policy input.
+    pub(crate) fn cell_state_for_diagnostics(
+        &self,
+        cell_id: CellId,
+    ) -> Result<Option<&blob_engine::resolution::CellState>, String> {
+        let key = u64::try_from(cell_id.0)
+            .map(CellKey)
+            .map_err(|_| "diagnostic cell identity does not fit the canonical key")?;
+        Ok(self
+            .reference_simulation_for_diagnostics()?
+            .cells()
+            .get(&key))
+    }
+
+    /// Exact cell energy compartments by host-private side. This is a scoring
+    /// primitive for trusted offline evaluation only.
+    pub(crate) fn side_energy_for_diagnostics(&self) -> Result<[SideEnergyDiagnostics; 2], String> {
+        let simulation = self.reference_simulation_for_diagnostics()?;
+        let mut totals = [SideEnergyDiagnostics::default(); 2];
+        for (cell_id, host_cell) in &self.engine.cells {
+            let key = u64::try_from(cell_id.0)
+                .map(CellKey)
+                .map_err(|_| "diagnostic cell identity does not fit the canonical key")?;
+            let cell = simulation
+                .cells()
+                .get(&key)
+                .ok_or("host diagnostic cell is absent from canonical state")?;
+            let side = usize::from(host_cell.team_id != self.training_team);
+            totals[side].core_mass = totals[side]
+                .core_mass
+                .saturating_add(u128::from(cell.core_mass));
+            totals[side].assimilated_energy = totals[side]
+                .assimilated_energy
+                .saturating_add(u128::from(cell.assimilated_energy));
+            totals[side].gut_energy = totals[side]
+                .gut_energy
+                .saturating_add(u128::from(cell.gut_energy));
+        }
+        Ok(totals)
+    }
+
     pub fn checkpoint(&self) -> Result<BlobEnvCheckpoint, String> {
         let runtime = self.engine.export_reference_checkpoint()?;
         if runtime.replay.is_some() || runtime.replay_stream.is_some() {
@@ -980,7 +1387,39 @@ impl BlobEnv {
             iteration: runtime.iteration,
             host_cells,
             episode_step: self.episode_step,
+            private_random: self.engine.export_reference_private_random_checkpoint(),
+            pending_policy_invocations: self.pending_policy_invocations.clone(),
         })
+    }
+
+    /// Return compact retained planner state and a domain-versioned streaming
+    /// identity. This path never serializes the full public checkpoint.
+    pub(crate) fn planner_checkpoint(
+        &self,
+        parent: Option<&BlobEnvPlannerCheckpoint>,
+    ) -> Result<(BlobEnvPlannerCheckpoint, [u8; 32]), String> {
+        let parent = parent.map(|parent| &parent.canonical.canonical);
+        let canonical = self.engine.export_reference_state_checkpoint(parent)?;
+        let mut host_cells = self.engine.cells.values().cloned().collect::<Vec<_>>();
+        host_cells.sort_unstable_by_key(|cell| cell.id.0);
+        let private_random = self.engine.export_reference_private_random_checkpoint();
+        let identity = planner_continuation_identity(
+            &canonical,
+            &host_cells,
+            self.episode_step,
+            &private_random,
+            &self.pending_policy_invocations,
+        )?;
+        Ok((
+            BlobEnvPlannerCheckpoint {
+                canonical,
+                host_cells,
+                episode_step: self.episode_step,
+                private_random,
+                pending_policy_invocations: self.pending_policy_invocations.clone(),
+            },
+            identity,
+        ))
     }
 
     pub fn from_checkpoint(
@@ -1006,6 +1445,28 @@ impl BlobEnv {
         .restore_checkpoint(checkpoint)
     }
 
+    pub(crate) fn from_planner_checkpoint_with_topology_profiled(
+        env_config: EnvConfig,
+        reward_config: RewardConfig,
+        opponent_starting_state: OpponentStartingState,
+        topology: ReferenceCompiledTopology,
+        checkpoint: BlobEnvPlannerCheckpoint,
+    ) -> Result<(Self, ReferenceStateRestoreProfile), String> {
+        let profile = env_config.opponent;
+        let opponent_mind_factory: OpponentMindFactory =
+            Arc::new(move || Box::new(ActionBufferMind::new_opponent(profile)));
+        Self::new_with_opponent_factory_and_topology(
+            env_config,
+            reward_config,
+            0,
+            opponent_mind_factory,
+            None,
+            Some(opponent_starting_state),
+            Some(topology),
+        )
+        .restore_planner_checkpoint_profiled(checkpoint)
+    }
+
     pub fn from_checkpoint_with_snapshot<B: Backend>(
         env_config: EnvConfig,
         reward_config: RewardConfig,
@@ -1022,6 +1483,8 @@ impl BlobEnv {
 
     fn restore_checkpoint(mut self, checkpoint: BlobEnvCheckpoint) -> Result<Self, String> {
         let env = &mut self;
+        env.engine
+            .restore_reference_private_random_checkpoint(checkpoint.private_random);
         env.engine.cells = checkpoint
             .host_cells
             .into_iter()
@@ -1037,10 +1500,36 @@ impl BlobEnv {
                 replay_stream: None,
             })?;
         env.episode_step = checkpoint.episode_step;
+        env.pending_policy_invocations = checkpoint.pending_policy_invocations;
+        env.validate_pending_policy_invocations()?;
         env.prev_cell_energies.clear();
         env.prev_cell_count.clear();
         env.prev_cell_positions.clear();
         Ok(self)
+    }
+
+    fn restore_planner_checkpoint_profiled(
+        mut self,
+        checkpoint: BlobEnvPlannerCheckpoint,
+    ) -> Result<(Self, ReferenceStateRestoreProfile), String> {
+        let env = &mut self;
+        env.engine
+            .restore_reference_private_random_checkpoint(checkpoint.private_random);
+        env.engine.cells = checkpoint
+            .host_cells
+            .into_iter()
+            .map(|cell| (cell.id, cell))
+            .collect();
+        let profile = env
+            .engine
+            .restore_reference_state_checkpoint_profiled(checkpoint.canonical)?;
+        env.episode_step = checkpoint.episode_step;
+        env.pending_policy_invocations = checkpoint.pending_policy_invocations;
+        env.validate_pending_policy_invocations()?;
+        env.prev_cell_energies.clear();
+        env.prev_cell_count.clear();
+        env.prev_cell_positions.clear();
+        Ok((self, profile))
     }
 
     /// Step the environment with the given actions for the training team.
@@ -1134,6 +1623,9 @@ impl BlobEnv {
     pub(crate) fn prepare_training_reference_inputs(
         &mut self,
     ) -> Result<Vec<(CellId, ReferenceMindInput)>, String> {
+        if let Some(pending) = &self.pending_policy_invocations {
+            return self.reference_inputs_from_pending(pending);
+        }
         let ready = self
             .engine
             .ready_cell_ids()
@@ -1145,13 +1637,78 @@ impl BlobEnv {
                     .is_some_and(|cell| cell.team_id == self.training_team)
             })
             .collect::<Vec<_>>();
-        self.engine.prepare_reference_mind_inputs(&ready)
+        let prepared = self.engine.prepare_reference_mind_inputs(&ready)?;
+        self.pending_policy_invocations = Some(
+            prepared
+                .iter()
+                .map(|(cell_id, input)| PreparedPolicyInvocation {
+                    cell_id: *cell_id,
+                    private_randomness: *input.randomness.as_bytes(),
+                })
+                .collect(),
+        );
+        Ok(prepared)
+    }
+
+    fn reference_inputs_from_pending(
+        &self,
+        pending: &[PreparedPolicyInvocation],
+    ) -> Result<Vec<(CellId, ReferenceMindInput)>, String> {
+        let ready = self.ready_training_cell_ids();
+        if pending.len() != ready.len()
+            || pending
+                .iter()
+                .zip(&ready)
+                .any(|(policy, ready_cell_id)| policy.cell_id != *ready_cell_id)
+        {
+            return Err("prepared policy frontier does not match ready training cells".into());
+        }
+        let mut seen = HashSet::with_capacity(pending.len());
+        pending
+            .iter()
+            .map(|policy| {
+                if !seen.insert(policy.cell_id) {
+                    return Err("prepared policy frontier contains a duplicate cell".into());
+                }
+                let expected = self
+                    .engine
+                    .last_prepared_reference_randomness(policy.cell_id)?;
+                if expected.as_bytes() != &policy.private_randomness {
+                    return Err(
+                        "prepared policy frontier private randomness is not canonical".into(),
+                    );
+                }
+                let input = self.engine.reference_mind_input_for(
+                    policy.cell_id,
+                    PrivateRandom::from_bytes(policy.private_randomness),
+                )?;
+                if self
+                    .engine
+                    .cells
+                    .get(&policy.cell_id)
+                    .is_none_or(|cell| cell.team_id != self.training_team)
+                {
+                    return Err("prepared policy frontier does not match canonical state".into());
+                }
+                Ok((policy.cell_id, input))
+            })
+            .collect()
+    }
+
+    fn validate_pending_policy_invocations(&self) -> Result<(), String> {
+        if let Some(pending) = &self.pending_policy_invocations {
+            self.reference_inputs_from_pending(pending)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn step_with_training_decisions(
         &mut self,
         training_actions: HashMap<CellId, ReferenceMindDecision>,
     ) -> StepOutput {
+        // The supplied decisions consume exactly the cached invocation. The
+        // next frontier is prepared once after canonical resolution advances.
+        self.pending_policy_invocations = None;
         // Snapshot state before step for reward attribution.
         self.snapshot_state();
 
@@ -1424,6 +1981,7 @@ impl BlobEnv {
         self.prev_cell_energies.clear();
         self.prev_cell_count.clear();
         self.prev_cell_positions.clear();
+        self.pending_policy_invocations = None;
         self.opponent_batch_policy = self
             .opponent_batch_policy_factory
             .as_ref()
@@ -1815,7 +2373,7 @@ mod tests {
 
     #[test]
     fn test_env_creation() {
-        let env = test_env();
+        let mut env = test_env();
         assert_eq!(
             env.engine.reference_integrity_mode(),
             IntegrityMode::OnDemand
@@ -2145,7 +2703,7 @@ mod tests {
         assert_eq!(memories[&ready[1].cell_id], second_memory);
 
         let checkpoint = env.checkpoint().unwrap();
-        let restored =
+        let mut restored =
             BlobEnv::from_checkpoint(config, RewardConfig::default(), checkpoint).unwrap();
         let restored_memories = restored
             .get_policy_observations()
@@ -2153,6 +2711,129 @@ mod tests {
             .map(|input| (input.cell_id, input.private_memory))
             .collect::<HashMap<_, _>>();
         assert_eq!(restored_memories, memories);
+    }
+
+    #[test]
+    fn learned_policy_randomness_is_private_idempotent_and_checkpointed() {
+        let config = EnvConfig {
+            cells_per_team: 2,
+            ..EnvConfig::default()
+        };
+        let mut env = BlobEnv::new(config.clone(), RewardConfig::default(), 731);
+        let first = env.get_policy_observations();
+        assert_eq!(env.get_policy_observations(), first);
+        assert_eq!(first.len(), 2);
+        let random_start = crate::observation::OBS_RANDOMNESS_FEATURE_START;
+        let random_end = crate::observation::OBS_RANDOMNESS_FEATURE_END;
+        assert!(first[0].observation.data[random_start..random_end]
+            .iter()
+            .any(|value| *value != 0.0));
+        assert_ne!(
+            &first[0].observation.data[random_start..random_end],
+            &first[1].observation.data[random_start..random_end]
+        );
+
+        let checkpoint = env.checkpoint().unwrap();
+        let mut restored =
+            BlobEnv::from_checkpoint(config.clone(), RewardConfig::default(), checkpoint.clone())
+                .unwrap();
+        assert_eq!(restored.get_policy_observations(), first);
+
+        let mut tampered = checkpoint.clone();
+        tampered.pending_policy_invocations.as_mut().unwrap()[0].private_randomness[0] ^= 1;
+        assert!(
+            BlobEnv::from_checkpoint(config.clone(), RewardConfig::default(), tampered).is_err()
+        );
+
+        let mut incomplete = checkpoint;
+        incomplete
+            .pending_policy_invocations
+            .as_mut()
+            .unwrap()
+            .pop();
+        assert!(BlobEnv::from_checkpoint(config, RewardConfig::default(), incomplete).is_err());
+    }
+
+    #[test]
+    fn planner_checkpoint_preserves_streaming_identity_and_exact_public_restore() {
+        let config = EnvConfig::default();
+        let mut env = BlobEnv::new(config.clone(), RewardConfig::default(), 7301);
+        let ready = env.get_policy_observations();
+        let _ = env.step_with_policy_memory(&[(
+            ready[0].cell_id,
+            PolicyChoice {
+                action: 0,
+                amount: 0,
+                signal: 0,
+                signal_strength: 0,
+            },
+            Some(vec![7, 0, 9, 0]),
+        )]);
+        let ordinary = env.checkpoint().unwrap();
+        let ordinary_bytes = serde_json::to_vec(&ordinary).unwrap();
+        let topology = env
+            .reference_simulation_for_diagnostics()
+            .unwrap()
+            .compiled_topology();
+        let (planner, planner_identity) = env.planner_checkpoint(None).unwrap();
+
+        let (restored, profile) = BlobEnv::from_planner_checkpoint_with_topology_profiled(
+            config,
+            RewardConfig::default(),
+            OpponentStartingState {
+                cells_per_team: env.env_config.cells_per_team,
+                initial_energy: env.env_config.initial_energy,
+            },
+            topology,
+            planner,
+        )
+        .unwrap();
+        assert!(profile.hash_initialization_ns > 0);
+        assert!(profile.tile_validation_and_passive_index_ns > 0);
+        let classified = profile
+            .topology_validation_ns
+            .saturating_add(profile.cell_validation_store_and_passive_index_ns)
+            .saturating_add(profile.tile_validation_and_passive_index_ns)
+            .saturating_add(profile.hash_initialization_ns)
+            .saturating_add(profile.scratch_initialization_ns)
+            .saturating_add(profile.metabolic_index_ns);
+        assert!(classified <= profile.resolver_reconstruction_ns);
+        assert_eq!(
+            serde_json::to_vec(&restored.checkpoint().unwrap()).unwrap(),
+            ordinary_bytes
+        );
+        let (_, restored_identity) = restored.planner_checkpoint(None).unwrap();
+        assert_eq!(restored_identity, planner_identity);
+    }
+
+    #[test]
+    fn checkpoint_preserves_private_random_continuation_without_collapsing_seeds() {
+        let config = EnvConfig::default();
+        let checkpoint_73 = BlobEnv::new(config.clone(), RewardConfig::default(), 73)
+            .checkpoint()
+            .unwrap();
+        let checkpoint_74 = BlobEnv::new(config.clone(), RewardConfig::default(), 74)
+            .checkpoint()
+            .unwrap();
+
+        let mut left = BlobEnv::from_checkpoint(
+            config.clone(),
+            RewardConfig::default(),
+            checkpoint_73.clone(),
+        )
+        .unwrap();
+        let mut replayed =
+            BlobEnv::from_checkpoint(config.clone(), RewardConfig::default(), checkpoint_73)
+                .unwrap();
+        let mut other_seed =
+            BlobEnv::from_checkpoint(config, RewardConfig::default(), checkpoint_74).unwrap();
+        let random = |env: &mut BlobEnv| {
+            env.prepare_training_reference_inputs().unwrap()[0]
+                .1
+                .randomness
+        };
+        assert_eq!(random(&mut left), random(&mut replayed));
+        assert_ne!(random(&mut left), random(&mut other_seed));
     }
 
     #[test]
@@ -2273,6 +2954,109 @@ mod tests {
                 effort: ReferenceEffort::Standard
             }
         ));
+
+        let evasive = ActionBufferMind::new_opponent(OpponentProfile::Evasive).decide(&input);
+        let ReferenceMindAction::Move {
+            target_slot,
+            effort: ReferenceEffort::Burst,
+        } = evasive.action
+        else {
+            panic!("evasive baseline did not flee a visible neighbor");
+        };
+        let threats = input
+            .slots
+            .iter()
+            .filter(|slot| slot.neighbor.is_some())
+            .collect::<Vec<_>>();
+        let separation = |slot: &blob_interface::reference_mind::LocalObservation| {
+            threats
+                .iter()
+                .map(|threat| {
+                    let dx = i16::from(threat.dx) - i16::from(slot.dx);
+                    let dy = i16::from(threat.dy) - i16::from(slot.dy);
+                    dx.abs().max(dy.abs())
+                })
+                .min()
+                .unwrap_or(0)
+        };
+        let selected = input
+            .slots
+            .iter()
+            .find(|slot| slot.slot == target_slot)
+            .unwrap();
+        let maximum = input
+            .slots
+            .iter()
+            .filter(|slot| {
+                slot.reachable
+                    && slot.neighbor.is_none()
+                    && ReferenceActionSpace::allows_target(
+                        input.action_space.move_targets,
+                        slot.slot,
+                    )
+            })
+            .map(separation)
+            .max()
+            .unwrap();
+        assert_eq!(separation(selected), maximum);
+
+        let fork_targets = (0_u8..32)
+            .map(|seed| {
+                let mut randomized = input.clone();
+                let mut bytes = [0_u8; 32];
+                bytes[0] = seed;
+                randomized.randomness = PrivateRandom::from_bytes(bytes);
+                let decision = ActionBufferMind::new_opponent(OpponentProfile::ForkingEvader)
+                    .decide(&randomized);
+                assert_eq!(
+                    decision.memory_update,
+                    ReferenceMemoryUpdate::Replace(FORKING_EVADER_MEMORY.to_vec())
+                );
+                let ReferenceMindAction::Move { target_slot, .. } = decision.action else {
+                    panic!("forking evader did not move perpendicular to contact");
+                };
+                target_slot
+            })
+            .collect::<HashSet<_>>();
+        assert_eq!(fork_targets.len(), 2);
+        let mut after_fork = input.clone();
+        after_fork.private_memory = FORKING_EVADER_MEMORY.to_vec();
+        let stopped =
+            ActionBufferMind::new_opponent(OpponentProfile::ForkingEvader).decide(&after_fork);
+        assert_eq!(stopped.action, ReferenceMindAction::Wait);
+        assert_eq!(stopped.memory_update, ReferenceMemoryUpdate::Retain);
+
+        let pursuer = ActionBufferMind::new_opponent(OpponentProfile::Pursuer).decide(&input);
+        assert!(matches!(pursuer.action, ReferenceMindAction::Attack { .. }));
+        let ReferenceMemoryUpdate::Replace(memory) = pursuer.memory_update else {
+            panic!("pursuer did not retain its last-seen direction");
+        };
+        let (dx, dy, remaining) = decode_pursuer_memory(&memory).unwrap();
+        assert_eq!(remaining, PURSUER_MEMORY_STEPS);
+
+        let mut lost_contact = input.clone();
+        for slot in &mut lost_contact.slots {
+            slot.neighbor = None;
+        }
+        lost_contact.private_memory = memory;
+        let searching =
+            ActionBufferMind::new_opponent(OpponentProfile::Pursuer).decide(&lost_contact);
+        let ReferenceMindAction::Move { target_slot, .. } = searching.action else {
+            panic!("pursuer did not continue along its last-seen direction");
+        };
+        let target = lost_contact
+            .slots
+            .iter()
+            .find(|slot| slot.slot == target_slot)
+            .unwrap();
+        assert!(i16::from(target.dx) * i16::from(dx) + i16::from(target.dy) * i16::from(dy) > 0);
+        let ReferenceMemoryUpdate::Replace(memory) = searching.memory_update else {
+            panic!("pursuer did not update its search lifetime");
+        };
+        assert_eq!(
+            decode_pursuer_memory(&memory).unwrap().2,
+            PURSUER_MEMORY_STEPS - 1
+        );
     }
 
     #[test]
@@ -2518,8 +3302,10 @@ mod tests {
             BlobEnv::new_with_opponent_factory(config, reward, 808, scalar_factory, None, None);
 
         for _ in 0..4 {
-            let actions = batched
-                .get_observations()
+            let batched_observations = batched.get_observations();
+            let scalar_observations = scalar.get_observations();
+            assert_eq!(batched_observations, scalar_observations);
+            let actions = batched_observations
                 .into_iter()
                 .map(|(cell_id, _)| (cell_id, 0))
                 .collect::<Vec<_>>();
@@ -2693,7 +3479,7 @@ mod tests {
 
     #[test]
     fn test_env_observations_have_correct_dim() {
-        let env = test_env();
+        let mut env = test_env();
         let obs = env.get_observations();
         for (_, o) in &obs {
             assert_eq!(o.data.len(), OBS_DIM);
@@ -2899,7 +3685,7 @@ mod tests {
             num_plants: 0,
             ..EnvConfig::default()
         };
-        let env = BlobEnv::new(config, RewardConfig::default(), 42);
+        let mut env = BlobEnv::new(config, RewardConfig::default(), 42);
         let ready: std::collections::HashSet<CellId> =
             env.engine.ready_cell_ids().into_iter().collect();
 

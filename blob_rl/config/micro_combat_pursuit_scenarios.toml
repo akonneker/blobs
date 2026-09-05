@@ -1,0 +1,139 @@
+# Strict observation-only pursuit controls. These are feasibility probes, not
+# yet part of the training or checkpoint-promotion suite.
+
+schema_version = 1
+
+[[scenarios]]
+name = "one-v-one-pursuer-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 100
+starting_layout = "paired_contact"
+opponent = "pursuer"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-two-pursuer-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 2
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "pursuer"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-three-pursuer-survival"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 3
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "pursuer"
+sim_time_limit_quanta = 8192
+
+[[scenarios]]
+name = "one-v-three-pursuer-survival-h12"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 3
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "pursuer"
+sim_time_limit_quanta = 12288
+
+[[scenarios]]
+name = "one-v-three-pursuer-survival-h16"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 3
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "pursuer"
+sim_time_limit_quanta = 16384
+
+[[scenarios]]
+name = "one-v-three-searching-pursuer-survival-h16"
+objective = "survival"
+world_size = 7
+training_cells = 1
+opponent_cells = 3
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "opposed_lines"
+opponent = "searching_pursuer"
+sim_time_limit_quanta = 16384
+
+[[scenarios]]
+name = "one-v-one-searching-pursuer-survival-h16"
+objective = "survival"
+world_size = 5
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 100
+starting_layout = "paired_contact"
+opponent = "searching_pursuer"
+sim_time_limit_quanta = 16384
+
+[[scenarios]]
+name = "one-v-one-stochastic-aggressor-survival-h16"
+objective = "survival"
+world_size = 5
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 100
+starting_layout = "paired_contact"
+opponent = "stochastic_aggressive"
+sim_time_limit_quanta = 16384
+
+# The opponent consumes one cell-private random bit to choose north/south on
+# its first move, then waits. A controller must observe the resulting local
+# position; a fixed target-slot sequence cannot pursue both branches.
+[[scenarios]]
+name = "one-v-one-forking-evader-elimination-h2"
+objective = "elimination"
+world_size = 5
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "paired_contact"
+opponent = "forking_evader"
+sim_time_limit_quanta = 2048
+
+[[scenarios]]
+name = "one-v-one-forking-evader-elimination-h6"
+objective = "elimination"
+world_size = 5
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "paired_contact"
+opponent = "forking_evader"
+sim_time_limit_quanta = 6144
+
+[[scenarios]]
+name = "one-v-one-forking-evader-elimination-h8"
+objective = "elimination"
+world_size = 5
+training_cells = 1
+opponent_cells = 1
+training_initial_energy = 100
+opponent_initial_energy = 60
+starting_layout = "paired_contact"
+opponent = "forking_evader"
+sim_time_limit_quanta = 8192

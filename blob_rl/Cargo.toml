@@ -77,6 +77,10 @@ name = "policy-corrections"
 path = "src/bin/policy_corrections.rs"
 
 [[bin]]
+name = "observation-policy-demonstrations"
+path = "src/bin/observation_policy_demonstrations.rs"
+
+[[bin]]
 name = "behavior-clone"
 path = "src/bin/behavior_clone.rs"
 
@@ -91,6 +95,22 @@ path = "src/bin/feeding_teacher_evaluation.rs"
 [[bin]]
 name = "feeding-evaluation-merge"
 path = "src/bin/feeding_evaluation_merge.rs"
+
+[[bin]]
+name = "feeding-recovery"
+path = "src/bin/feeding_recovery.rs"
+
+[[bin]]
+name = "feeding-transition-diagnostics"
+path = "src/bin/feeding_transition_diagnostics.rs"
+
+[[bin]]
+name = "feeding-policy-corrections"
+path = "src/bin/feeding_policy_corrections.rs"
+
+[[bin]]
+name = "feeding-correction-pair-verify"
+path = "src/bin/feeding_correction_pair_verify.rs"
 
 [[bin]]
 name = "feeding-layout-evaluation"
@@ -115,6 +135,26 @@ path = "src/bin/micro_combat_evaluation.rs"
 [[bin]]
 name = "demonstration-overlap"
 path = "src/bin/demonstration_overlap.rs"
+
+[[bin]]
+name = "guard-readiness-diagnostics"
+path = "src/bin/guard_readiness_diagnostics.rs"
+
+[[bin]]
+name = "counterfactual-branch-evaluation"
+path = "src/bin/counterfactual_branch_evaluation.rs"
+
+[[bin]]
+name = "counterfactual-value-evaluation"
+path = "src/bin/counterfactual_value_evaluation.rs"
+
+[[bin]]
+name = "counterfactual-effort-corrections"
+path = "src/bin/counterfactual_effort_corrections.rs"
+
+[[bin]]
+name = "counterfactual-evidence-enrich"
+path = "src/bin/counterfactual_evidence_enrich.rs"
 
 [[bin]]
 name = "ecological-characterization"
@@ -155,3 +195,7 @@ path = "src/bin/learned_signal_attribution.rs"
 [[bin]]
 name = "match-explorer"
 path = "src/bin/match_explorer.rs"
+
+[[bin]]
+name = "scenario-diagnosis"
+path = "src/bin/scenario_diagnosis.rs"

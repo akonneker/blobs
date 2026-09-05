@@ -1391,8 +1391,10 @@ pub fn train<B: AutodiffBackend>(
     }
 
     // Get initial observations
-    let mut env_observations: Vec<Vec<PolicyObservation>> =
-        envs.iter().map(BlobEnv::get_policy_observations).collect();
+    let mut env_observations: Vec<Vec<PolicyObservation>> = envs
+        .iter_mut()
+        .map(BlobEnv::get_policy_observations)
+        .collect();
 
     let start_time = Instant::now();
     let mut episode_stats = EpisodeStats::new();

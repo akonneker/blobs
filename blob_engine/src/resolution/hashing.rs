@@ -20,8 +20,44 @@ use super::neighborhood::{
 };
 use super::reference::{
     ActionRequest, CellKey, CellState, CellStore, DurationRule, EffortProfile, EffortTier,
-    OutcomeStatus, PendingAction, ReferenceRuleset, RejectReason, SimTime, TileState, TimeConfig,
+    OutcomeStatus, PendingAction, ReferenceRuleset, ReferenceTileStore, RejectReason, SimTime,
+    TileState, TimeConfig,
 };
+
+pub(crate) trait TileSource: Sync {
+    fn tile_len(&self) -> usize;
+    fn tile_at(&self, index: usize) -> Option<&TileState>;
+}
+
+impl TileSource for [TileState] {
+    fn tile_len(&self) -> usize {
+        self.len()
+    }
+
+    fn tile_at(&self, index: usize) -> Option<&TileState> {
+        self.get(index)
+    }
+}
+
+impl TileSource for Vec<TileState> {
+    fn tile_len(&self) -> usize {
+        self.len()
+    }
+
+    fn tile_at(&self, index: usize) -> Option<&TileState> {
+        self.get(index)
+    }
+}
+
+impl TileSource for ReferenceTileStore {
+    fn tile_len(&self) -> usize {
+        self.len()
+    }
+
+    fn tile_at(&self, index: usize) -> Option<&TileState> {
+        self.get(index)
+    }
+}
 
 pub const CANONICAL_HASH_FORMAT_VERSION: u16 = 7;
 pub const REFERENCE_SEMANTIC_KERNEL_VERSION: u16 = 5;
@@ -216,10 +252,27 @@ pub(crate) struct IncrementalStateHash {
     all_cells_dirty: bool,
 }
 
+/// Trusted in-memory seed for the complete incremental hash cache. Planner
+/// checkpoints chunk and share these derived arrays; public checkpoints never
+/// serialize them and server verification still reconstructs from canonical
+/// state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IncrementalStateHashSeed {
+    pub compiled_ruleset_hash: CanonicalHash,
+    pub tile_page_count: usize,
+    pub tile_base: usize,
+    pub tile_nodes: Vec<CanonicalHash>,
+    pub cell_page_count: usize,
+    pub cell_base: usize,
+    pub cell_nodes: Vec<CanonicalHash>,
+    pub cell_leaves: Vec<Option<CanonicalHash>>,
+    pub cell_memory_hashes: Vec<Option<CanonicalHash>>,
+}
+
 impl IncrementalStateHash {
-    pub(crate) fn new(
+    pub(crate) fn new<T: TileSource + ?Sized>(
         compiled_ruleset_hash: CanonicalHash,
-        tiles: &[TileState],
+        tiles: &T,
         cells: &CellStore,
         next_cell_key: u64,
     ) -> Self {
@@ -238,6 +291,75 @@ impl IncrementalStateHash {
             dirty_cell_memories: BTreeSet::new(),
             all_cells_dirty: false,
         }
+    }
+
+    pub(crate) fn from_seed(
+        seed: IncrementalStateHashSeed,
+        compiled_ruleset_hash: CanonicalHash,
+        tile_count: usize,
+        cells: &CellStore,
+        next_cell_key: u64,
+    ) -> Option<Self> {
+        if seed.compiled_ruleset_hash != compiled_ruleset_hash
+            || seed.tile_page_count != tile_count.div_ceil(STATE_TILE_PAGE_SIZE)
+            || seed.cell_page_count != cell_page_count(next_cell_key)
+        {
+            return None;
+        }
+        let (cell_memory_hashes, cell_leaves) =
+            if seed.cell_leaves.is_empty() && seed.cell_memory_hashes.is_empty() {
+                cell_commitment_slots(cells, next_cell_key)
+            } else if seed.cell_leaves.len() == cell_slot_count(next_cell_key)
+                && seed.cell_memory_hashes.len() == cell_slot_count(next_cell_key)
+            {
+                (seed.cell_memory_hashes, seed.cell_leaves)
+            } else {
+                return None;
+            };
+        let tile_tree = if seed.tile_nodes.len() == seed.tile_page_count {
+            let tree = MerkleCache::new(0, seed.tile_nodes);
+            (tree.base == seed.tile_base).then_some(tree)?
+        } else {
+            MerkleCache::from_seed(0, seed.tile_page_count, seed.tile_base, seed.tile_nodes)?
+        };
+        let cell_tree = if seed.cell_nodes.is_empty() {
+            MerkleCache::new(1, cell_page_hashes_from_slots(&cell_leaves, next_cell_key))
+        } else {
+            MerkleCache::from_seed(1, seed.cell_page_count, seed.cell_base, seed.cell_nodes)?
+        };
+        Some(Self {
+            compiled_ruleset_hash: seed.compiled_ruleset_hash,
+            tile_tree,
+            cell_tree,
+            cell_leaves,
+            cell_memory_hashes,
+            dirty_tile_pages: BTreeSet::new(),
+            dirty_cells: BTreeSet::new(),
+            dirty_cell_memories: BTreeSet::new(),
+            all_cells_dirty: false,
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn seed(&self) -> Option<IncrementalStateHashSeed> {
+        if self.all_cells_dirty
+            || !self.dirty_tile_pages.is_empty()
+            || !self.dirty_cells.is_empty()
+            || !self.dirty_cell_memories.is_empty()
+        {
+            return None;
+        }
+        Some(IncrementalStateHashSeed {
+            compiled_ruleset_hash: self.compiled_ruleset_hash,
+            tile_page_count: self.tile_tree.page_count,
+            tile_base: self.tile_tree.base,
+            tile_nodes: self.tile_tree.nodes.clone(),
+            cell_page_count: self.cell_tree.page_count,
+            cell_base: self.cell_tree.base,
+            cell_nodes: self.cell_tree.nodes.clone(),
+            cell_leaves: self.cell_leaves.clone(),
+            cell_memory_hashes: self.cell_memory_hashes.clone(),
+        })
     }
 
     pub(crate) fn mark_tile(&mut self, tile: TileIndex) {
@@ -310,10 +432,10 @@ impl IncrementalStateHash {
         )
     }
 
-    pub(crate) fn hash(
+    pub(crate) fn hash<T: TileSource + ?Sized>(
         &mut self,
         now: SimTime,
-        tiles: &[TileState],
+        tiles: &T,
         cells: &CellStore,
         next_cell_key: u64,
     ) -> CanonicalHash {
@@ -444,7 +566,7 @@ impl IncrementalStateHash {
             self.compiled_ruleset_hash,
             now,
             next_cell_key,
-            tiles.len(),
+            tiles.tile_len(),
             self.tile_tree.root(),
             cells.len(),
             self.cell_tree.page_count(),
@@ -479,21 +601,30 @@ fn state_root_hash(
     encoder.finish()
 }
 
-fn tile_page_hashes(tiles: &[TileState]) -> Vec<CanonicalHash> {
-    (0..tiles.len().div_ceil(STATE_TILE_PAGE_SIZE))
+fn tile_page_hashes<T: TileSource + ?Sized>(tiles: &T) -> Vec<CanonicalHash> {
+    (0..tiles.tile_len().div_ceil(STATE_TILE_PAGE_SIZE))
         .map(|page| tile_page_hash(page, tiles))
         .collect()
 }
 
-fn tile_page_hash(page: usize, tiles: &[TileState]) -> CanonicalHash {
-    let start = page.saturating_mul(STATE_TILE_PAGE_SIZE).min(tiles.len());
-    let end = start.saturating_add(STATE_TILE_PAGE_SIZE).min(tiles.len());
+fn tile_page_hash<T: TileSource + ?Sized>(page: usize, tiles: &T) -> CanonicalHash {
+    let start = page
+        .saturating_mul(STATE_TILE_PAGE_SIZE)
+        .min(tiles.tile_len());
+    let end = start
+        .saturating_add(STATE_TILE_PAGE_SIZE)
+        .min(tiles.tile_len());
     let mut encoder = CanonicalEncoder::new(STATE_TILE_PAGE_DOMAIN);
     encoder.usize(page);
     encoder.usize(end - start);
-    for (offset, tile) in tiles[start..end].iter().enumerate() {
-        encoder.usize(start + offset);
-        encode_tile(&mut encoder, tile);
+    for index in start..end {
+        encoder.usize(index);
+        encode_tile(
+            &mut encoder,
+            tiles
+                .tile_at(index)
+                .expect("canonical tile source changed length while hashing"),
+        );
     }
     encoder.finish()
 }
@@ -755,6 +886,26 @@ impl MerkleCache {
             base,
             nodes,
         }
+    }
+
+    fn from_seed(
+        kind: u8,
+        page_count: usize,
+        base: usize,
+        nodes: Vec<CanonicalHash>,
+    ) -> Option<Self> {
+        if base != page_count.max(1).next_power_of_two()
+            || nodes.len() != base.checked_mul(2)?
+            || nodes.len() < 2
+        {
+            return None;
+        }
+        Some(Self {
+            kind,
+            page_count,
+            base,
+            nodes,
+        })
     }
 
     const fn page_count(&self) -> usize {

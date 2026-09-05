@@ -160,6 +160,30 @@ pub(crate) fn greedy_policy_choices<B: Backend>(
 where
     f32: From<B::FloatElem>,
 {
+    greedy_policy_choices_with_kind_logits(model, observations, device)
+        .into_iter()
+        .map(|(cell_id, choice, memory, _)| (cell_id, choice, memory))
+        .collect()
+}
+
+/// The deployed greedy decision plus the exact authoritatively-routed action
+/// kind logits that produced it. Correction diagnostics use this single
+/// forward pass so telemetry cannot observe a different recurrent boundary.
+pub(crate) type GreedyPolicyChoiceWithKindLogits = (
+    blob_interface::types::CellId,
+    PolicyChoice,
+    Option<Vec<u8>>,
+    [f32; NUM_POLICY_ACTION_KINDS],
+);
+
+pub(crate) fn greedy_policy_choices_with_kind_logits<B: Backend>(
+    model: &PolicyValueNet<B>,
+    observations: &[crate::env::PolicyObservation],
+    device: &B::Device,
+) -> Vec<GreedyPolicyChoiceWithKindLogits>
+where
+    f32: From<B::FloatElem>,
+{
     let batch_size = observations.len();
     if batch_size == 0 {
         return Vec::new();
@@ -257,6 +281,9 @@ where
                 Some(encode_policy_memory(
                     &output[signal_strength_start + NUM_SIGNAL_STRENGTH_CHOICES..start + width],
                 )),
+                output[start..target_start]
+                    .try_into()
+                    .expect("action-kind logit row has the fixed catalog width"),
             )
         })
         .collect()

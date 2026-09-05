@@ -13,7 +13,10 @@ use crate::feeding_curriculum::FeedingPromotionReport;
 use crate::feeding_curriculum::{report_from_metrics, FeedingStageMetrics};
 use crate::sweep::sha256;
 
-pub const FEEDING_EVALUATION_ARTIFACT_SCHEMA_VERSION: u32 = 3;
+/// Schema 4 establishes canonical per-cell Mind randomness as part of every
+/// learned-policy rollout. Schema-3 metrics used a zero-filled block and are
+/// intentionally not resumable under the corrected evaluation semantics.
+pub const FEEDING_EVALUATION_ARTIFACT_SCHEMA_VERSION: u32 = 4;
 const MAX_ARTIFACT_BYTES: u64 = 4 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -185,6 +188,26 @@ pub fn load_feeding_evaluation(path: &Path) -> Result<FeedingEvaluationArtifact,
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;
     Ok(artifact)
+}
+
+pub fn verify_feeding_evaluation_request(
+    artifact: &FeedingEvaluationArtifact,
+    source_config_sha256: &str,
+    behavior_clone_metadata_sha256: &str,
+    behavior_clone_model_sha256: &str,
+    config: &TrainingConfig,
+    seeds: &[u64],
+) -> Result<(), String> {
+    artifact.validate()?;
+    if artifact.source_config_sha256 != source_config_sha256
+        || artifact.behavior_clone_metadata_sha256 != behavior_clone_metadata_sha256
+        || artifact.behavior_clone_model_sha256 != behavior_clone_model_sha256
+        || artifact.config != *config
+        || artifact.report.seeds != seeds
+    {
+        return Err("feeding-evaluation artifact does not match the requested run".into());
+    }
+    Ok(())
 }
 
 /// Merge independently published evaluation shards without rerunning model
@@ -440,6 +463,38 @@ mod tests {
         publish_feeding_evaluation(&output, &artifact).unwrap();
         assert_eq!(load_feeding_evaluation(&output).unwrap(), artifact);
         assert!(publish_feeding_evaluation(&output, &artifact).is_err());
+    }
+
+    #[test]
+    fn resume_request_requires_exact_config_model_and_seed_order() {
+        let artifact = test_artifact();
+        verify_feeding_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &artifact.behavior_clone_metadata_sha256,
+            &artifact.behavior_clone_model_sha256,
+            &artifact.config,
+            &[71],
+        )
+        .unwrap();
+        assert!(verify_feeding_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &artifact.behavior_clone_metadata_sha256,
+            &artifact.behavior_clone_model_sha256,
+            &artifact.config,
+            &[72],
+        )
+        .is_err());
+        assert!(verify_feeding_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &artifact.behavior_clone_metadata_sha256,
+            &"d".repeat(64),
+            &artifact.config,
+            &[71],
+        )
+        .is_err());
     }
 
     #[test]

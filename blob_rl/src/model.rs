@@ -4,14 +4,21 @@ use burn::nn;
 use burn::prelude::*;
 
 use crate::action::{
-    NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORT_LOGITS,
+    PolicyActionKind, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORT_LOGITS,
     NUM_POLICY_TARGETS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
 };
-use crate::observation::{HEADER_FEATURES, OBS_DIM, SLOT_FEATURES};
+use crate::observation::{
+    ObservationExpertContext, CURRENT_TILE_LOOSE_ENERGY_FEATURE,
+    CURRENT_TILE_PLANT_CAPACITY_FEATURE, HEADER_FEATURES, OBS_DIM, OBS_RANDOMNESS_FEATURE_START,
+    SLOT_FEATURES, SLOT_NEIGHBOR_ACTIVITY_FEATURE, SLOT_NEIGHBOR_PRESENT_FEATURE,
+};
 
 const POLICY_MEMORY_MAGIC: [u8; 4] = *b"BRM1";
 const POLICY_MEMORY_HEADER_BYTES: usize = 8;
-pub const NUM_ACTION_KIND_EXPERTS: usize = 2;
+pub const NUM_ACTION_KIND_EXPERTS: usize = ObservationExpertContext::COUNT;
+const FORAGING_ADAPTER_FEATURES: usize = 8;
+const FORAGING_ADAPTER_HIDDEN: usize = 16;
+const CONTEXT_ADAPTER_HIDDEN: usize = 16;
 
 /// Actor-critic model with a cell-private recurrent state.
 ///
@@ -27,8 +34,129 @@ pub struct PolicyValueNet<B: Backend> {
     shared_fc1: nn::Linear<B>,
     recurrent: nn::Linear<B>,
     shared_fc2: nn::Linear<B>,
-    feeding_action_kind_head: nn::Linear<B>,
-    combat_action_kind_head: nn::Linear<B>,
+    foraging_action_kind_head: nn::Linear<B>,
+    foraging_adapter_fc: nn::Linear<B>,
+    foraging_adapter_head: nn::Linear<B>,
+    interaction_action_kind_head: nn::Linear<B>,
+    interaction_adapter_fc: nn::Linear<B>,
+    interaction_adapter_head: nn::Linear<B>,
+    interaction_slot_adapter_fc: nn::Linear<B>,
+    interaction_slot_adapter_head: nn::Linear<B>,
+    exploration_action_kind_head: nn::Linear<B>,
+    exploration_adapter_fc: nn::Linear<B>,
+    exploration_adapter_head: nn::Linear<B>,
+    exploration_slot_adapter_fc: nn::Linear<B>,
+    exploration_slot_adapter_head: nn::Linear<B>,
+    exploration_guard_readiness_head: nn::Linear<B>,
+    phase_gate_head: nn::Linear<B>,
+    target_query_head: nn::Linear<B>,
+    effort_head: nn::Linear<B>,
+    amount_head: nn::Linear<B>,
+    signal_head: nn::Linear<B>,
+    signal_strength_head: nn::Linear<B>,
+    value_head: nn::Linear<B>,
+}
+
+/// Recorder-compatible policy layout used by behavior-cloning artifacts
+/// published before the local foraging adapter was introduced. It is kept
+/// only for a one-way, behavior-preserving warm-start migration.
+#[derive(Module, Debug)]
+pub struct LegacyPolicyValueNet<B: Backend> {
+    slot_encoder: nn::Linear<B>,
+    phase_slot_encoder: nn::Linear<B>,
+    phase_gate_fc: nn::Linear<B>,
+    shared_fc1: nn::Linear<B>,
+    recurrent: nn::Linear<B>,
+    shared_fc2: nn::Linear<B>,
+    foraging_action_kind_head: nn::Linear<B>,
+    interaction_action_kind_head: nn::Linear<B>,
+    exploration_action_kind_head: nn::Linear<B>,
+    phase_gate_head: nn::Linear<B>,
+    target_query_head: nn::Linear<B>,
+    effort_head: nn::Linear<B>,
+    amount_head: nn::Linear<B>,
+    signal_head: nn::Linear<B>,
+    signal_strength_head: nn::Linear<B>,
+    value_head: nn::Linear<B>,
+}
+
+/// Recorder-compatible layout used after the foraging adapter and before the
+/// interaction/exploration context adapters.
+#[derive(Module, Debug)]
+pub struct ForagingAdapterPolicyValueNet<B: Backend> {
+    slot_encoder: nn::Linear<B>,
+    phase_slot_encoder: nn::Linear<B>,
+    phase_gate_fc: nn::Linear<B>,
+    shared_fc1: nn::Linear<B>,
+    recurrent: nn::Linear<B>,
+    shared_fc2: nn::Linear<B>,
+    foraging_action_kind_head: nn::Linear<B>,
+    foraging_adapter_fc: nn::Linear<B>,
+    foraging_adapter_head: nn::Linear<B>,
+    interaction_action_kind_head: nn::Linear<B>,
+    exploration_action_kind_head: nn::Linear<B>,
+    phase_gate_head: nn::Linear<B>,
+    target_query_head: nn::Linear<B>,
+    effort_head: nn::Linear<B>,
+    amount_head: nn::Linear<B>,
+    signal_head: nn::Linear<B>,
+    signal_strength_head: nn::Linear<B>,
+    value_head: nn::Linear<B>,
+}
+
+/// Recorder-compatible layout used after header context adapters and before
+/// raw local-slot context residuals. Migration initializes the new residual
+/// heads to zero, preserving every policy output exactly.
+#[derive(Module, Debug)]
+pub struct HeaderContextAdapterPolicyValueNet<B: Backend> {
+    slot_encoder: nn::Linear<B>,
+    phase_slot_encoder: nn::Linear<B>,
+    phase_gate_fc: nn::Linear<B>,
+    shared_fc1: nn::Linear<B>,
+    recurrent: nn::Linear<B>,
+    shared_fc2: nn::Linear<B>,
+    foraging_action_kind_head: nn::Linear<B>,
+    foraging_adapter_fc: nn::Linear<B>,
+    foraging_adapter_head: nn::Linear<B>,
+    interaction_action_kind_head: nn::Linear<B>,
+    interaction_adapter_fc: nn::Linear<B>,
+    interaction_adapter_head: nn::Linear<B>,
+    exploration_action_kind_head: nn::Linear<B>,
+    exploration_adapter_fc: nn::Linear<B>,
+    exploration_adapter_head: nn::Linear<B>,
+    phase_gate_head: nn::Linear<B>,
+    target_query_head: nn::Linear<B>,
+    effort_head: nn::Linear<B>,
+    amount_head: nn::Linear<B>,
+    signal_head: nn::Linear<B>,
+    signal_strength_head: nn::Linear<B>,
+    value_head: nn::Linear<B>,
+}
+
+/// Recorder-compatible layout used after local slot adapters and before the
+/// scalar exploration Guard readiness residual. Migration initializes the new
+/// residual to zero and therefore preserves every output exactly.
+#[derive(Module, Debug)]
+pub struct SlotContextAdapterPolicyValueNet<B: Backend> {
+    slot_encoder: nn::Linear<B>,
+    phase_slot_encoder: nn::Linear<B>,
+    phase_gate_fc: nn::Linear<B>,
+    shared_fc1: nn::Linear<B>,
+    recurrent: nn::Linear<B>,
+    shared_fc2: nn::Linear<B>,
+    foraging_action_kind_head: nn::Linear<B>,
+    foraging_adapter_fc: nn::Linear<B>,
+    foraging_adapter_head: nn::Linear<B>,
+    interaction_action_kind_head: nn::Linear<B>,
+    interaction_adapter_fc: nn::Linear<B>,
+    interaction_adapter_head: nn::Linear<B>,
+    interaction_slot_adapter_fc: nn::Linear<B>,
+    interaction_slot_adapter_head: nn::Linear<B>,
+    exploration_action_kind_head: nn::Linear<B>,
+    exploration_adapter_fc: nn::Linear<B>,
+    exploration_adapter_head: nn::Linear<B>,
+    exploration_slot_adapter_fc: nn::Linear<B>,
+    exploration_slot_adapter_head: nn::Linear<B>,
     phase_gate_head: nn::Linear<B>,
     target_query_head: nn::Linear<B>,
     effort_head: nn::Linear<B>,
@@ -59,7 +187,23 @@ impl PolicyValueNetConfig {
             + linear(HEADER_FEATURES + self.hidden2, self.hidden1)
             + linear(self.hidden1 + self.recurrent_size, self.recurrent_size)
             + linear(self.recurrent_size, self.hidden2)
-            + 2 * linear(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            + NUM_ACTION_KIND_EXPERTS * linear(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            + linear(
+                self.hidden2 + FORAGING_ADAPTER_FEATURES,
+                FORAGING_ADAPTER_HIDDEN,
+            )
+            + linear(FORAGING_ADAPTER_HIDDEN, NUM_POLICY_ACTION_KINDS)
+            + 2 * linear(
+                self.hidden2 + OBS_RANDOMNESS_FEATURE_START,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            + 2 * linear(CONTEXT_ADAPTER_HIDDEN, NUM_POLICY_ACTION_KINDS)
+            + linear(2, 1)
+            + 2 * linear(
+                OBS_RANDOMNESS_FEATURE_START + SLOT_FEATURES,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            + 2 * linear(CONTEXT_ADAPTER_HIDDEN, NUM_POLICY_ACTION_KINDS)
             + linear(self.hidden2, NUM_ACTION_KIND_EXPERTS)
             + linear(self.hidden2, NUM_POLICY_ACTION_KINDS * self.hidden2)
             + linear(self.hidden2, NUM_POLICY_EFFORT_LOGITS)
@@ -84,10 +228,156 @@ impl PolicyValueNetConfig {
             )
             .init(device),
             shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
-            feeding_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            foraging_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
                 .init(device),
-            combat_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+            foraging_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + FORAGING_ADAPTER_FEATURES,
+                FORAGING_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            // A zero residual makes model migration behavior-preserving while
+            // still allowing the output head, then its input projection, to
+            // learn from the first supervised updates.
+            foraging_adapter_head: nn::LinearConfig::new(
+                FORAGING_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .with_initializer(nn::Initializer::Zeros)
+            .init(device),
+            interaction_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            interaction_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + OBS_RANDOMNESS_FEATURE_START,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            interaction_adapter_head: nn::LinearConfig::new(
+                CONTEXT_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .with_initializer(nn::Initializer::Zeros)
+            .init(device),
+            exploration_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            exploration_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + OBS_RANDOMNESS_FEATURE_START,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            exploration_adapter_head: nn::LinearConfig::new(
+                CONTEXT_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .with_initializer(nn::Initializer::Zeros)
+            .init(device),
+            phase_gate_head: nn::LinearConfig::new(self.hidden2, NUM_ACTION_KIND_EXPERTS)
                 .init(device),
+            target_query_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS * self.hidden2,
+            )
+            .init(device),
+            effort_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_EFFORT_LOGITS).init(device),
+            amount_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_AMOUNT_LOGITS).init(device),
+            signal_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_CHOICES).init(device),
+            signal_strength_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_STRENGTH_CHOICES)
+                .init(device),
+            value_head: nn::LinearConfig::new(self.hidden2, 1).init(device),
+            interaction_slot_adapter_fc: nn::LinearConfig::new(
+                OBS_RANDOMNESS_FEATURE_START + SLOT_FEATURES,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            interaction_slot_adapter_head: nn::LinearConfig::new(
+                CONTEXT_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .with_initializer(nn::Initializer::Zeros)
+            .init(device),
+            exploration_slot_adapter_fc: nn::LinearConfig::new(
+                OBS_RANDOMNESS_FEATURE_START + SLOT_FEATURES,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            exploration_slot_adapter_head: nn::LinearConfig::new(
+                CONTEXT_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .with_initializer(nn::Initializer::Zeros)
+            .init(device),
+            exploration_guard_readiness_head: nn::LinearConfig::new(2, 1)
+                .with_initializer(nn::Initializer::Zeros)
+                .init(device),
+        }
+    }
+
+    pub fn init_slot_context_adapter_legacy<B: Backend>(
+        &self,
+        device: &B::Device,
+    ) -> SlotContextAdapterPolicyValueNet<B> {
+        let current = self.init::<B>(device);
+        SlotContextAdapterPolicyValueNet {
+            slot_encoder: current.slot_encoder,
+            phase_slot_encoder: current.phase_slot_encoder,
+            phase_gate_fc: current.phase_gate_fc,
+            shared_fc1: current.shared_fc1,
+            recurrent: current.recurrent,
+            shared_fc2: current.shared_fc2,
+            foraging_action_kind_head: current.foraging_action_kind_head,
+            foraging_adapter_fc: current.foraging_adapter_fc,
+            foraging_adapter_head: current.foraging_adapter_head,
+            interaction_action_kind_head: current.interaction_action_kind_head,
+            interaction_adapter_fc: current.interaction_adapter_fc,
+            interaction_adapter_head: current.interaction_adapter_head,
+            interaction_slot_adapter_fc: current.interaction_slot_adapter_fc,
+            interaction_slot_adapter_head: current.interaction_slot_adapter_head,
+            exploration_action_kind_head: current.exploration_action_kind_head,
+            exploration_adapter_fc: current.exploration_adapter_fc,
+            exploration_adapter_head: current.exploration_adapter_head,
+            exploration_slot_adapter_fc: current.exploration_slot_adapter_fc,
+            exploration_slot_adapter_head: current.exploration_slot_adapter_head,
+            phase_gate_head: current.phase_gate_head,
+            target_query_head: current.target_query_head,
+            effort_head: current.effort_head,
+            amount_head: current.amount_head,
+            signal_head: current.signal_head,
+            signal_strength_head: current.signal_strength_head,
+            value_head: current.value_head,
+        }
+    }
+
+    pub fn init_legacy<B: Backend>(&self, device: &B::Device) -> LegacyPolicyValueNet<B> {
+        LegacyPolicyValueNet {
+            slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_gate_fc: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden2)
+                .init(device),
+            shared_fc1: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden1)
+                .init(device),
+            recurrent: nn::LinearConfig::new(
+                self.hidden1 + self.recurrent_size,
+                self.recurrent_size,
+            )
+            .init(device),
+            shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
+            foraging_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+                .init(device),
+            interaction_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            exploration_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
             phase_gate_head: nn::LinearConfig::new(self.hidden2, NUM_ACTION_KIND_EXPERTS)
                 .init(device),
             target_query_head: nn::LinearConfig::new(
@@ -103,17 +393,268 @@ impl PolicyValueNetConfig {
             value_head: nn::LinearConfig::new(self.hidden2, 1).init(device),
         }
     }
+
+    pub fn init_foraging_adapter_legacy<B: Backend>(
+        &self,
+        device: &B::Device,
+    ) -> ForagingAdapterPolicyValueNet<B> {
+        ForagingAdapterPolicyValueNet {
+            slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_gate_fc: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden2)
+                .init(device),
+            shared_fc1: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden1)
+                .init(device),
+            recurrent: nn::LinearConfig::new(
+                self.hidden1 + self.recurrent_size,
+                self.recurrent_size,
+            )
+            .init(device),
+            shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
+            foraging_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+                .init(device),
+            foraging_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + FORAGING_ADAPTER_FEATURES,
+                FORAGING_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            foraging_adapter_head: nn::LinearConfig::new(
+                FORAGING_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            interaction_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            exploration_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            phase_gate_head: nn::LinearConfig::new(self.hidden2, NUM_ACTION_KIND_EXPERTS)
+                .init(device),
+            target_query_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS * self.hidden2,
+            )
+            .init(device),
+            effort_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_EFFORT_LOGITS).init(device),
+            amount_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_AMOUNT_LOGITS).init(device),
+            signal_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_CHOICES).init(device),
+            signal_strength_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_STRENGTH_CHOICES)
+                .init(device),
+            value_head: nn::LinearConfig::new(self.hidden2, 1).init(device),
+        }
+    }
+
+    pub fn init_header_context_adapter_legacy<B: Backend>(
+        &self,
+        device: &B::Device,
+    ) -> HeaderContextAdapterPolicyValueNet<B> {
+        HeaderContextAdapterPolicyValueNet {
+            slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_slot_encoder: nn::LinearConfig::new(SLOT_FEATURES, self.hidden2).init(device),
+            phase_gate_fc: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden2)
+                .init(device),
+            shared_fc1: nn::LinearConfig::new(HEADER_FEATURES + self.hidden2, self.hidden1)
+                .init(device),
+            recurrent: nn::LinearConfig::new(
+                self.hidden1 + self.recurrent_size,
+                self.recurrent_size,
+            )
+            .init(device),
+            shared_fc2: nn::LinearConfig::new(self.recurrent_size, self.hidden2).init(device),
+            foraging_action_kind_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_ACTION_KINDS)
+                .init(device),
+            foraging_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + FORAGING_ADAPTER_FEATURES,
+                FORAGING_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            foraging_adapter_head: nn::LinearConfig::new(
+                FORAGING_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            interaction_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            interaction_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + OBS_RANDOMNESS_FEATURE_START,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            interaction_adapter_head: nn::LinearConfig::new(
+                CONTEXT_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            exploration_action_kind_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            exploration_adapter_fc: nn::LinearConfig::new(
+                self.hidden2 + OBS_RANDOMNESS_FEATURE_START,
+                CONTEXT_ADAPTER_HIDDEN,
+            )
+            .init(device),
+            exploration_adapter_head: nn::LinearConfig::new(
+                CONTEXT_ADAPTER_HIDDEN,
+                NUM_POLICY_ACTION_KINDS,
+            )
+            .init(device),
+            phase_gate_head: nn::LinearConfig::new(self.hidden2, NUM_ACTION_KIND_EXPERTS)
+                .init(device),
+            target_query_head: nn::LinearConfig::new(
+                self.hidden2,
+                NUM_POLICY_ACTION_KINDS * self.hidden2,
+            )
+            .init(device),
+            effort_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_EFFORT_LOGITS).init(device),
+            amount_head: nn::LinearConfig::new(self.hidden2, NUM_POLICY_AMOUNT_LOGITS).init(device),
+            signal_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_CHOICES).init(device),
+            signal_strength_head: nn::LinearConfig::new(self.hidden2, NUM_SIGNAL_STRENGTH_CHOICES)
+                .init(device),
+            value_head: nn::LinearConfig::new(self.hidden2, 1).init(device),
+        }
+    }
+
+    pub fn migrate_legacy<B: Backend>(
+        &self,
+        legacy: LegacyPolicyValueNet<B>,
+        device: &B::Device,
+    ) -> PolicyValueNet<B> {
+        let mut model = self.init(device);
+        model.slot_encoder = legacy.slot_encoder;
+        model.phase_slot_encoder = legacy.phase_slot_encoder;
+        model.phase_gate_fc = legacy.phase_gate_fc;
+        model.shared_fc1 = legacy.shared_fc1;
+        model.recurrent = legacy.recurrent;
+        model.shared_fc2 = legacy.shared_fc2;
+        model.foraging_action_kind_head = legacy.foraging_action_kind_head;
+        model.interaction_action_kind_head = legacy.interaction_action_kind_head;
+        model.exploration_action_kind_head = legacy.exploration_action_kind_head;
+        model.phase_gate_head = legacy.phase_gate_head;
+        model.target_query_head = legacy.target_query_head;
+        model.effort_head = legacy.effort_head;
+        model.amount_head = legacy.amount_head;
+        model.signal_head = legacy.signal_head;
+        model.signal_strength_head = legacy.signal_strength_head;
+        model.value_head = legacy.value_head;
+        model
+    }
+
+    pub fn migrate_foraging_adapter<B: Backend>(
+        &self,
+        legacy: ForagingAdapterPolicyValueNet<B>,
+        device: &B::Device,
+    ) -> PolicyValueNet<B> {
+        let mut model = self.init(device);
+        model.slot_encoder = legacy.slot_encoder;
+        model.phase_slot_encoder = legacy.phase_slot_encoder;
+        model.phase_gate_fc = legacy.phase_gate_fc;
+        model.shared_fc1 = legacy.shared_fc1;
+        model.recurrent = legacy.recurrent;
+        model.shared_fc2 = legacy.shared_fc2;
+        model.foraging_action_kind_head = legacy.foraging_action_kind_head;
+        model.foraging_adapter_fc = legacy.foraging_adapter_fc;
+        model.foraging_adapter_head = legacy.foraging_adapter_head;
+        model.interaction_action_kind_head = legacy.interaction_action_kind_head;
+        model.exploration_action_kind_head = legacy.exploration_action_kind_head;
+        model.phase_gate_head = legacy.phase_gate_head;
+        model.target_query_head = legacy.target_query_head;
+        model.effort_head = legacy.effort_head;
+        model.amount_head = legacy.amount_head;
+        model.signal_head = legacy.signal_head;
+        model.signal_strength_head = legacy.signal_strength_head;
+        model.value_head = legacy.value_head;
+        model
+    }
+
+    pub fn migrate_header_context_adapter<B: Backend>(
+        &self,
+        legacy: HeaderContextAdapterPolicyValueNet<B>,
+        device: &B::Device,
+    ) -> PolicyValueNet<B> {
+        let mut model = self.init(device);
+        model.slot_encoder = legacy.slot_encoder;
+        model.phase_slot_encoder = legacy.phase_slot_encoder;
+        model.phase_gate_fc = legacy.phase_gate_fc;
+        model.shared_fc1 = legacy.shared_fc1;
+        model.recurrent = legacy.recurrent;
+        model.shared_fc2 = legacy.shared_fc2;
+        model.foraging_action_kind_head = legacy.foraging_action_kind_head;
+        model.foraging_adapter_fc = legacy.foraging_adapter_fc;
+        model.foraging_adapter_head = legacy.foraging_adapter_head;
+        model.interaction_action_kind_head = legacy.interaction_action_kind_head;
+        model.interaction_adapter_fc = legacy.interaction_adapter_fc;
+        model.interaction_adapter_head = legacy.interaction_adapter_head;
+        model.exploration_action_kind_head = legacy.exploration_action_kind_head;
+        model.exploration_adapter_fc = legacy.exploration_adapter_fc;
+        model.exploration_adapter_head = legacy.exploration_adapter_head;
+        model.phase_gate_head = legacy.phase_gate_head;
+        model.target_query_head = legacy.target_query_head;
+        model.effort_head = legacy.effort_head;
+        model.amount_head = legacy.amount_head;
+        model.signal_head = legacy.signal_head;
+        model.signal_strength_head = legacy.signal_strength_head;
+        model.value_head = legacy.value_head;
+        model
+    }
+
+    pub fn migrate_slot_context_adapter<B: Backend>(
+        &self,
+        legacy: SlotContextAdapterPolicyValueNet<B>,
+        device: &B::Device,
+    ) -> PolicyValueNet<B> {
+        let mut model = self.init(device);
+        model.slot_encoder = legacy.slot_encoder;
+        model.phase_slot_encoder = legacy.phase_slot_encoder;
+        model.phase_gate_fc = legacy.phase_gate_fc;
+        model.shared_fc1 = legacy.shared_fc1;
+        model.recurrent = legacy.recurrent;
+        model.shared_fc2 = legacy.shared_fc2;
+        model.foraging_action_kind_head = legacy.foraging_action_kind_head;
+        model.foraging_adapter_fc = legacy.foraging_adapter_fc;
+        model.foraging_adapter_head = legacy.foraging_adapter_head;
+        model.interaction_action_kind_head = legacy.interaction_action_kind_head;
+        model.interaction_adapter_fc = legacy.interaction_adapter_fc;
+        model.interaction_adapter_head = legacy.interaction_adapter_head;
+        model.interaction_slot_adapter_fc = legacy.interaction_slot_adapter_fc;
+        model.interaction_slot_adapter_head = legacy.interaction_slot_adapter_head;
+        model.exploration_action_kind_head = legacy.exploration_action_kind_head;
+        model.exploration_adapter_fc = legacy.exploration_adapter_fc;
+        model.exploration_adapter_head = legacy.exploration_adapter_head;
+        model.exploration_slot_adapter_fc = legacy.exploration_slot_adapter_fc;
+        model.exploration_slot_adapter_head = legacy.exploration_slot_adapter_head;
+        model.phase_gate_head = legacy.phase_gate_head;
+        model.target_query_head = legacy.target_query_head;
+        model.effort_head = legacy.effort_head;
+        model.amount_head = legacy.amount_head;
+        model.signal_head = legacy.signal_head;
+        model.signal_strength_head = legacy.signal_strength_head;
+        model.value_head = legacy.value_head;
+        model
+    }
 }
 
 /// Output of a forward pass through the model.
 pub struct ModelOutput<B: Backend> {
-    /// Locally gated inference logits consumed by PPO and deployed Minds.
+    /// Authoritatively context-routed inference logits consumed by PPO and
+    /// deployed Minds.
     pub action_kind_logits: Tensor<B, 2>,
-    /// Feeding then combat expert logits, flattened as [expert, action kind].
-    /// Supervised training routes each local action-family label to one expert;
-    /// inference receives neither that label nor host scenario metadata.
+    /// Foraging, interaction, then exploration expert logits, flattened as
+    /// [expert, action kind]. Supervised training routes each anonymous local
+    /// observation to one expert; inference receives neither the teacher
+    /// action nor host scenario metadata.
     pub action_kind_expert_logits: Tensor<B, 2>,
-    /// Observation-driven feeding/combat gate logits.
+    /// Learned foraging/interaction/exploration gate logits retained only as
+    /// diagnostic telemetry; they cannot override authoritative routing.
     pub phase_gate_logits: Tensor<B, 2>,
     /// Action-kind-conditioned target logits, flattened as [kind, target].
     pub target_logits: Tensor<B, 2>,
@@ -133,6 +674,108 @@ pub struct ModelOutput<B: Backend> {
 }
 
 impl<B: Backend> PolicyValueNet<B> {
+    /// Keep this model's complete parameter set except for one action-kind
+    /// expert copied from `trained`. This supports stage-local supervised
+    /// adaptation without allowing gradients for the shared recurrent trunk
+    /// or unrelated experts to cause competency regressions.
+    pub fn with_action_kind_expert_from(
+        mut self,
+        trained: Self,
+        expert: ObservationExpertContext,
+    ) -> Self {
+        match expert {
+            ObservationExpertContext::Foraging => {
+                self.foraging_action_kind_head = trained.foraging_action_kind_head;
+            }
+            ObservationExpertContext::Interaction => {
+                self.interaction_action_kind_head = trained.interaction_action_kind_head;
+            }
+            ObservationExpertContext::Exploration => {
+                self.exploration_action_kind_head = trained.exploration_action_kind_head;
+            }
+        }
+        self
+    }
+
+    /// Keep this model's complete parameter set except for the local
+    /// foraging adapter copied from `trained`.
+    pub fn with_foraging_adapter_from(mut self, trained: Self) -> Self {
+        self.foraging_adapter_fc = trained.foraging_adapter_fc;
+        self.foraging_adapter_head = trained.foraging_adapter_head;
+        self
+    }
+
+    /// Keep this model's complete parameter set except for one non-foraging
+    /// observation-local action-kind residual copied from `trained`.
+    pub fn with_context_adapter_from(
+        mut self,
+        context: ObservationExpertContext,
+        trained: Self,
+    ) -> Self {
+        match context {
+            ObservationExpertContext::Foraging => {
+                self.foraging_adapter_fc = trained.foraging_adapter_fc;
+                self.foraging_adapter_head = trained.foraging_adapter_head;
+            }
+            ObservationExpertContext::Interaction => {
+                self.interaction_adapter_fc = trained.interaction_adapter_fc;
+                self.interaction_adapter_head = trained.interaction_adapter_head;
+                self.interaction_slot_adapter_fc = trained.interaction_slot_adapter_fc;
+                self.interaction_slot_adapter_head = trained.interaction_slot_adapter_head;
+            }
+            ObservationExpertContext::Exploration => {
+                self.exploration_adapter_fc = trained.exploration_adapter_fc;
+                self.exploration_adapter_head = trained.exploration_adapter_head;
+                self.exploration_slot_adapter_fc = trained.exploration_slot_adapter_fc;
+                self.exploration_slot_adapter_head = trained.exploration_slot_adapter_head;
+            }
+        }
+        self
+    }
+
+    /// Keep this model's complete parameter set except for one non-random
+    /// local-header plus featurewise pooled raw-slot residual from `trained`.
+    pub fn with_context_slot_adapter_from(
+        mut self,
+        context: ObservationExpertContext,
+        trained: Self,
+    ) -> Self {
+        match context {
+            ObservationExpertContext::Foraging => {}
+            ObservationExpertContext::Interaction => {
+                self.interaction_slot_adapter_fc = trained.interaction_slot_adapter_fc;
+                self.interaction_slot_adapter_head = trained.interaction_slot_adapter_head;
+            }
+            ObservationExpertContext::Exploration => {
+                self.exploration_slot_adapter_fc = trained.exploration_slot_adapter_fc;
+                self.exploration_slot_adapter_head = trained.exploration_slot_adapter_head;
+            }
+        }
+        self
+    }
+
+    /// Keep every parameter except the scalar exploration Guard readiness
+    /// residual. This is the narrowest adaptation path for the low-energy
+    /// Guard/Move boundary.
+    pub fn with_exploration_guard_readiness_from(mut self, trained: Self) -> Self {
+        self.exploration_guard_readiness_head = trained.exploration_guard_readiness_head;
+        self
+    }
+
+    /// Keep this model's complete parameter set except for the shared
+    /// action-kind-conditioned target-query head copied from `trained`.
+    pub fn with_target_query_head_from(mut self, trained: Self) -> Self {
+        self.target_query_head = trained.target_query_head;
+        self
+    }
+
+    /// Keep this model's complete parameter set except for the shared
+    /// action-kind-conditioned effort head copied from `trained`.
+    pub fn with_effort_head_from(mut self, trained: Self) -> Self {
+        self.effort_head = trained.effort_head;
+        self
+    }
+
     pub fn recurrent_size(&self) -> usize {
         self.recurrent.weight.val().dims()[1]
     }
@@ -152,9 +795,72 @@ impl<B: Backend> PolicyValueNet<B> {
         let [batch, observation_width] = obs.dims();
         debug_assert_eq!(observation_width, OBS_DIM);
         let header = obs.clone().slice([0..batch, 0..HEADER_FEATURES]);
+        let context_adapter_header = header
+            .clone()
+            .slice([0..batch, 0..OBS_RANDOMNESS_FEATURE_START]);
+        let guard_readiness_features = header.clone().slice([0..batch, 1..3]);
+        let foraging_adapter_features = Tensor::cat(
+            vec![
+                header.clone().slice([0..batch, 1..3]),
+                header.clone().slice([0..batch, 10..13]),
+                header.clone().slice([0..batch, 15..16]),
+                header.clone().slice([0..batch, 19..21]),
+            ],
+            1,
+        );
         let raw_slots = obs
             .slice([0..batch, HEADER_FEATURES..OBS_DIM])
             .reshape([batch * NUM_POLICY_TARGETS, SLOT_FEATURES]);
+        let current_loose_energy = header
+            .clone()
+            .slice([
+                0..batch,
+                CURRENT_TILE_LOOSE_ENERGY_FEATURE..CURRENT_TILE_LOOSE_ENERGY_FEATURE + 1,
+            ])
+            .greater_elem(0.0);
+        let current_plant = header
+            .clone()
+            .slice([
+                0..batch,
+                CURRENT_TILE_PLANT_CAPACITY_FEATURE..CURRENT_TILE_PLANT_CAPACITY_FEATURE + 1,
+            ])
+            .greater_elem(0.0);
+        let current_food = current_plant.bool_or(current_loose_energy);
+        let neighbor_present = raw_slots
+            .clone()
+            .slice([
+                0..batch * NUM_POLICY_TARGETS,
+                SLOT_NEIGHBOR_PRESENT_FEATURE..SLOT_NEIGHBOR_PRESENT_FEATURE + 1,
+            ])
+            .reshape([batch, NUM_POLICY_TARGETS])
+            .max_dim(1)
+            .greater_elem(0.5);
+        let neighbor_activity = raw_slots.clone().slice([
+            0..batch * NUM_POLICY_TARGETS,
+            SLOT_NEIGHBOR_ACTIVITY_FEATURE..SLOT_NEIGHBOR_ACTIVITY_FEATURE + 1,
+        ]);
+        let visible_threat = neighbor_activity
+            .clone()
+            .equal_elem(3.0 / 8.0)
+            .bool_or(neighbor_activity.equal_elem(4.0 / 8.0))
+            .float()
+            .reshape([batch, NUM_POLICY_TARGETS])
+            .max_dim(1)
+            .greater_elem(0.5);
+        let foraging_context = visible_threat
+            .clone()
+            .bool_not()
+            .bool_and(current_food.clone());
+        let interaction_context = visible_threat.clone().bool_or(
+            current_food
+                .clone()
+                .bool_not()
+                .bool_and(neighbor_present.clone()),
+        );
+        let exploration_context = visible_threat
+            .bool_not()
+            .bool_and(current_food.bool_not())
+            .bool_and(neighbor_present.bool_not());
         let phase_slots =
             burn::tensor::activation::relu(self.phase_slot_encoder.forward(raw_slots.clone()))
                 .reshape([batch, NUM_POLICY_TARGETS, self.hidden2()]);
@@ -163,12 +869,13 @@ impl<B: Backend> PolicyValueNet<B> {
             self.phase_gate_fc
                 .forward(Tensor::cat(vec![header.clone(), phase_pooled_slots], 1)),
         );
-        let slots = burn::tensor::activation::relu(self.slot_encoder.forward(raw_slots)).reshape([
-            batch,
-            NUM_POLICY_TARGETS,
-            self.hidden2(),
-        ]);
+        let slots = burn::tensor::activation::relu(self.slot_encoder.forward(raw_slots.clone()))
+            .reshape([batch, NUM_POLICY_TARGETS, self.hidden2()]);
         let pooled_slots = slots.clone().max_dim(1).reshape([batch, self.hidden2()]);
+        let raw_slot_summary = raw_slots
+            .reshape([batch, NUM_POLICY_TARGETS, SLOT_FEATURES])
+            .max_dim(1)
+            .reshape([batch, SLOT_FEATURES]);
         let x = self
             .shared_fc1
             .forward(Tensor::cat(vec![header, pooled_slots], 1));
@@ -178,25 +885,78 @@ impl<B: Backend> PolicyValueNet<B> {
         let x = self.shared_fc2.forward(next_memory.clone());
         let x = burn::tensor::activation::relu(x);
 
-        let feeding_action_kind_logits = self.feeding_action_kind_head.forward(x.clone());
-        let combat_action_kind_logits = self.combat_action_kind_head.forward(x.clone());
+        let foraging_adapter = burn::tensor::activation::relu(self.foraging_adapter_fc.forward(
+            Tensor::cat(vec![x.clone(), foraging_adapter_features.clone()], 1),
+        ));
+        let foraging_action_kind_logits = self.foraging_action_kind_head.forward(x.clone())
+            + self.foraging_adapter_head.forward(foraging_adapter);
+        let context_adapter_features =
+            Tensor::cat(vec![x.clone(), context_adapter_header.clone()], 1);
+        let local_context_features = Tensor::cat(vec![context_adapter_header, raw_slot_summary], 1);
+        let interaction_adapter = burn::tensor::activation::relu(
+            self.interaction_adapter_fc
+                .forward(context_adapter_features.clone()),
+        );
+        let interaction_action_kind_logits = self.interaction_action_kind_head.forward(x.clone())
+            + self.interaction_adapter_head.forward(interaction_adapter)
+            + self
+                .interaction_slot_adapter_head
+                .forward(burn::tensor::activation::relu(
+                    self.interaction_slot_adapter_fc
+                        .forward(local_context_features.clone()),
+                ));
+        let exploration_adapter = burn::tensor::activation::relu(
+            self.exploration_adapter_fc
+                .forward(context_adapter_features),
+        );
+        let guard_readiness = self
+            .exploration_guard_readiness_head
+            .forward(guard_readiness_features);
+        let zero_readiness = guard_readiness.clone() * 0.0;
+        let guard_readiness_logits = Tensor::cat(
+            vec![
+                zero_readiness.clone(),
+                guard_readiness,
+                zero_readiness.repeat_dim(
+                    1,
+                    NUM_POLICY_ACTION_KINDS - PolicyActionKind::Guard.index() - 1,
+                ),
+            ],
+            1,
+        );
+        let exploration_action_kind_logits = self.exploration_action_kind_head.forward(x.clone())
+            + self.exploration_adapter_head.forward(exploration_adapter)
+            + self
+                .exploration_slot_adapter_head
+                .forward(burn::tensor::activation::relu(
+                    self.exploration_slot_adapter_fc
+                        .forward(local_context_features),
+                ))
+            + guard_readiness_logits;
         let phase_gate_logits = self.phase_gate_head.forward(phase_gate_features);
-        let phase_gate_probs = burn::tensor::activation::softmax(phase_gate_logits.clone(), 1);
-        let feeding_weight = phase_gate_probs
-            .clone()
-            .slice([0..batch, 0..1])
+        let foraging_weight = foraging_context
+            .float()
             .repeat_dim(1, NUM_POLICY_ACTION_KINDS);
-        let combat_weight = phase_gate_probs
-            .slice([0..batch, 1..2])
+        let interaction_weight = interaction_context
+            .float()
+            .repeat_dim(1, NUM_POLICY_ACTION_KINDS);
+        let exploration_weight = exploration_context
+            .float()
             .repeat_dim(1, NUM_POLICY_ACTION_KINDS);
         let action_kind_probs =
-            burn::tensor::activation::softmax(feeding_action_kind_logits.clone(), 1)
-                * feeding_weight
-                + burn::tensor::activation::softmax(combat_action_kind_logits.clone(), 1)
-                    * combat_weight;
+            burn::tensor::activation::softmax(foraging_action_kind_logits.clone(), 1)
+                * foraging_weight
+                + burn::tensor::activation::softmax(interaction_action_kind_logits.clone(), 1)
+                    * interaction_weight
+                + burn::tensor::activation::softmax(exploration_action_kind_logits.clone(), 1)
+                    * exploration_weight;
         let action_kind_logits = action_kind_probs.clamp_min(1.0e-20).log();
         let action_kind_expert_logits = Tensor::cat(
-            vec![feeding_action_kind_logits, combat_action_kind_logits],
+            vec![
+                foraging_action_kind_logits,
+                interaction_action_kind_logits,
+                exploration_action_kind_logits,
+            ],
             1,
         );
         let target_queries = self.target_query_head.forward(x.clone()).reshape([
@@ -286,6 +1046,9 @@ pub fn encode_policy_memory(memory: &[f32]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::observation::{
+        CURRENT_TILE_DIFFUSE_ENERGY_FEATURE, CURRENT_TILE_PLANT_CAPACITY_FEATURE,
+    };
     use burn::backend::NdArray as NdArrayBackend;
 
     type TestBackend = NdArrayBackend;
@@ -337,7 +1100,7 @@ mod tests {
         );
         assert_eq!(output.values.dims(), [batch_size, 1]);
         assert_eq!(output.next_memory.dims(), [batch_size, 64]);
-        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 96_444);
+        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 104_780);
     }
 
     #[test]
@@ -347,7 +1110,7 @@ mod tests {
             hidden2: 128,
             recurrent_size: 128,
         };
-        assert_eq!(large.parameter_count(), 332_028);
+        assert_eq!(large.parameter_count(), 344_140);
         assert_eq!(policy_memory_bytes(large.recurrent_size), Some(264));
     }
 
@@ -412,6 +1175,139 @@ mod tests {
         for sum in sums_data {
             assert!((sum - 1.0).abs() < 1e-5, "Sum = {}, expected ~1.0", sum);
         }
+    }
+
+    #[test]
+    fn authoritative_context_selects_the_matching_action_expert() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        TestBackend::seed(&device, 771);
+        let model: PolicyValueNet<TestBackend> = PolicyValueNetConfig::new().init(&device);
+        let mut observations = vec![vec![0.0; OBS_DIM]; 6];
+        observations[0][CURRENT_TILE_PLANT_CAPACITY_FEATURE] = 0.2;
+        observations[1][HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        observations[3][CURRENT_TILE_PLANT_CAPACITY_FEATURE] = 0.2;
+        observations[3][HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        observations[3][HEADER_FEATURES + SLOT_NEIGHBOR_ACTIVITY_FEATURE] = 3.0 / 8.0;
+        observations[4][CURRENT_TILE_DIFFUSE_ENERGY_FEATURE] = 0.2;
+        observations[5][CURRENT_TILE_PLANT_CAPACITY_FEATURE] = 0.2;
+        let expected_contexts = [
+            ObservationExpertContext::Foraging,
+            ObservationExpertContext::Interaction,
+            ObservationExpertContext::Exploration,
+            ObservationExpertContext::Interaction,
+            ObservationExpertContext::Exploration,
+            ObservationExpertContext::Foraging,
+        ];
+        assert_eq!(
+            observations
+                .iter()
+                .map(|observation| crate::observation::observation_expert_context(observation))
+                .collect::<Vec<_>>(),
+            expected_contexts
+        );
+
+        let output = model.forward(Tensor::from_data(
+            TensorData::new(observations.concat(), [6, OBS_DIM]),
+            &device,
+        ));
+        let routed = output
+            .action_kind_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let experts = output
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        for (row, context) in expected_contexts.into_iter().enumerate() {
+            let start = row * NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS
+                + context.index() * NUM_POLICY_ACTION_KINDS;
+            let selected = &experts[start..start + NUM_POLICY_ACTION_KINDS];
+            let maximum = selected.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let log_normalizer = maximum
+                + selected
+                    .iter()
+                    .map(|value| (*value - maximum).exp())
+                    .sum::<f32>()
+                    .ln();
+            for action in 0..NUM_POLICY_ACTION_KINDS {
+                let actual = routed[row * NUM_POLICY_ACTION_KINDS + action];
+                let expected = selected[action] - log_normalizer;
+                assert!((actual - expected).abs() < 1.0e-5);
+            }
+        }
+    }
+
+    #[test]
+    fn expert_replacement_preserves_every_unselected_parameter_path() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        TestBackend::seed(&device, 772);
+        let parent: PolicyValueNet<TestBackend> = PolicyValueNetConfig::new().init(&device);
+        TestBackend::seed(&device, 773);
+        let donor: PolicyValueNet<TestBackend> = PolicyValueNetConfig::new().init(&device);
+        let mut trained = parent.clone();
+        trained.exploration_action_kind_head = donor.exploration_action_kind_head;
+        let merged = parent
+            .clone()
+            .with_action_kind_expert_from(trained.clone(), ObservationExpertContext::Exploration);
+        let observations = Tensor::<TestBackend, 2>::zeros([2, OBS_DIM], &device);
+        let parent_output = parent.forward(observations.clone());
+        let trained_output = trained.forward(observations.clone());
+        let merged_output = merged.forward(observations);
+        let parent_experts = parent_output
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let trained_experts = trained_output
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let merged_experts = merged_output
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        for row in 0..2 {
+            for expert in 0..NUM_ACTION_KIND_EXPERTS {
+                let start = (row * NUM_ACTION_KIND_EXPERTS + expert) * NUM_POLICY_ACTION_KINDS;
+                let end = start + NUM_POLICY_ACTION_KINDS;
+                let expected = if expert == ObservationExpertContext::Exploration.index() {
+                    &trained_experts[start..end]
+                } else {
+                    &parent_experts[start..end]
+                };
+                assert_eq!(&merged_experts[start..end], expected);
+            }
+        }
+        assert_eq!(
+            merged_output
+                .phase_gate_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            parent_output
+                .phase_gate_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap()
+        );
+        assert_eq!(
+            merged_output
+                .next_memory
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            parent_output
+                .next_memory
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap()
+        );
     }
 
     #[test]

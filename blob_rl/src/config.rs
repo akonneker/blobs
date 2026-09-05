@@ -21,6 +21,14 @@ pub enum OpponentProfile {
     Wait,
     Random,
     Forager,
+    Evasive,
+    Pursuer,
+    /// Pursuit control that remembers contact for one decision before falling
+    /// back to private-random local search.
+    SearchingPursuer,
+    /// One-shot partial-observation control: move perpendicular to the first
+    /// visible neighbor using one private random bit, then remain still.
+    ForkingEvader,
     #[default]
     Aggressive,
     StochasticAggressive,
@@ -29,10 +37,14 @@ pub enum OpponentProfile {
 
 impl OpponentProfile {
     pub const DEFAULT_EVALUATION: [Self; 3] = [Self::Wait, Self::Random, Self::Aggressive];
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 10] = [
         Self::Wait,
         Self::Random,
         Self::Forager,
+        Self::Evasive,
+        Self::Pursuer,
+        Self::SearchingPursuer,
+        Self::ForkingEvader,
         Self::Aggressive,
         Self::StochasticAggressive,
         Self::Defensive,
@@ -43,6 +55,10 @@ impl OpponentProfile {
             Self::Wait => "wait",
             Self::Random => "random",
             Self::Forager => "forager",
+            Self::Evasive => "evasive",
+            Self::Pursuer => "pursuer",
+            Self::SearchingPursuer => "searching_pursuer",
+            Self::ForkingEvader => "forking_evader",
             Self::Aggressive => "aggressive",
             Self::StochasticAggressive => "stochastic_aggressive",
             Self::Defensive => "defensive",
@@ -52,7 +68,11 @@ impl OpponentProfile {
     pub const fn can_attack(self) -> bool {
         matches!(
             self,
-            Self::Random | Self::Aggressive | Self::StochasticAggressive
+            Self::Random
+                | Self::Aggressive
+                | Self::StochasticAggressive
+                | Self::Pursuer
+                | Self::SearchingPursuer
         )
     }
 }
@@ -2599,6 +2619,13 @@ mod tests {
         assert_eq!(config.env.opponent, OpponentProfile::Random);
         assert_eq!(OpponentProfile::Aggressive.to_string(), "aggressive");
         assert_eq!(OpponentProfile::Forager.to_string(), "forager");
+        assert_eq!(OpponentProfile::Evasive.to_string(), "evasive");
+        assert_eq!(OpponentProfile::Pursuer.to_string(), "pursuer");
+        assert_eq!(
+            OpponentProfile::SearchingPursuer.to_string(),
+            "searching_pursuer"
+        );
+        assert_eq!(OpponentProfile::ForkingEvader.to_string(), "forking_evader");
     }
 
     #[test]

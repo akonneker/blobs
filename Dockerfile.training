@@ -32,6 +32,14 @@ RUN --mount=type=cache,id=blobs-cargo-registry,target=/usr/local/cargo/registry,
         --bin rules-sweep-run \
         --bin demonstrations \
         --bin behavior-clone \
+        --bin feeding-evaluation \
+        --bin feeding-evaluation-merge \
+        --bin feeding-layout-evaluation \
+        --bin feeding-layout-evaluation-merge \
+        --bin feeding-layout-teacher-evaluation \
+        --bin feeding-transition-diagnostics \
+        --bin feeding-policy-corrections \
+        --bin feeding-correction-pair-verify \
     && install -Dm0555 target/release/train /artifacts/train \
     && install -Dm0555 target/release/viability /artifacts/viability \
     && install -Dm0555 target/release/viability-gate /artifacts/viability-gate \
@@ -41,7 +49,15 @@ RUN --mount=type=cache,id=blobs-cargo-registry,target=/usr/local/cargo/registry,
     && install -Dm0555 target/release/rules-sweep-run /artifacts/rules-sweep-run \
     && install -Dm0555 target/release/demonstrations /artifacts/demonstrations \
     && install -Dm0555 target/release/behavior-clone /artifacts/behavior-clone \
-    && strip /artifacts/train /artifacts/viability /artifacts/viability-gate /artifacts/viability-matrix /artifacts/viability-preflight /artifacts/rules-sweep /artifacts/rules-sweep-run /artifacts/demonstrations /artifacts/behavior-clone
+    && install -Dm0555 target/release/feeding-evaluation /artifacts/feeding-evaluation \
+    && install -Dm0555 target/release/feeding-evaluation-merge /artifacts/feeding-evaluation-merge \
+    && install -Dm0555 target/release/feeding-layout-evaluation /artifacts/feeding-layout-evaluation \
+    && install -Dm0555 target/release/feeding-layout-evaluation-merge /artifacts/feeding-layout-evaluation-merge \
+    && install -Dm0555 target/release/feeding-layout-teacher-evaluation /artifacts/feeding-layout-teacher-evaluation \
+    && install -Dm0555 target/release/feeding-transition-diagnostics /artifacts/feeding-transition-diagnostics \
+    && install -Dm0555 target/release/feeding-policy-corrections /artifacts/feeding-policy-corrections \
+    && install -Dm0555 target/release/feeding-correction-pair-verify /artifacts/feeding-correction-pair-verify \
+    && strip /artifacts/train /artifacts/viability /artifacts/viability-gate /artifacts/viability-matrix /artifacts/viability-preflight /artifacts/rules-sweep /artifacts/rules-sweep-run /artifacts/demonstrations /artifacts/behavior-clone /artifacts/feeding-evaluation /artifacts/feeding-evaluation-merge /artifacts/feeding-layout-evaluation /artifacts/feeding-layout-evaluation-merge /artifacts/feeding-layout-teacher-evaluation /artifacts/feeding-transition-diagnostics /artifacts/feeding-policy-corrections /artifacts/feeding-correction-pair-verify
 
 FROM source AS gpu-builder
 
@@ -64,6 +80,14 @@ RUN --mount=type=cache,id=blobs-cargo-registry,target=/usr/local/cargo/registry,
         --bin rules-sweep-run \
         --bin demonstrations \
         --bin behavior-clone \
+        --bin feeding-evaluation \
+        --bin feeding-evaluation-merge \
+        --bin feeding-layout-evaluation \
+        --bin feeding-layout-evaluation-merge \
+        --bin feeding-layout-teacher-evaluation \
+        --bin feeding-transition-diagnostics \
+        --bin feeding-policy-corrections \
+        --bin feeding-correction-pair-verify \
     && install -Dm0555 target/release/train /artifacts/train \
     && install -Dm0555 target/release/viability /artifacts/viability \
     && install -Dm0555 target/release/viability-gate /artifacts/viability-gate \
@@ -73,7 +97,15 @@ RUN --mount=type=cache,id=blobs-cargo-registry,target=/usr/local/cargo/registry,
     && install -Dm0555 target/release/rules-sweep-run /artifacts/rules-sweep-run \
     && install -Dm0555 target/release/demonstrations /artifacts/demonstrations \
     && install -Dm0555 target/release/behavior-clone /artifacts/behavior-clone \
-    && strip /artifacts/train /artifacts/viability /artifacts/viability-gate /artifacts/viability-matrix /artifacts/viability-preflight /artifacts/rules-sweep /artifacts/rules-sweep-run /artifacts/demonstrations /artifacts/behavior-clone
+    && install -Dm0555 target/release/feeding-evaluation /artifacts/feeding-evaluation \
+    && install -Dm0555 target/release/feeding-evaluation-merge /artifacts/feeding-evaluation-merge \
+    && install -Dm0555 target/release/feeding-layout-evaluation /artifacts/feeding-layout-evaluation \
+    && install -Dm0555 target/release/feeding-layout-evaluation-merge /artifacts/feeding-layout-evaluation-merge \
+    && install -Dm0555 target/release/feeding-layout-teacher-evaluation /artifacts/feeding-layout-teacher-evaluation \
+    && install -Dm0555 target/release/feeding-transition-diagnostics /artifacts/feeding-transition-diagnostics \
+    && install -Dm0555 target/release/feeding-policy-corrections /artifacts/feeding-policy-corrections \
+    && install -Dm0555 target/release/feeding-correction-pair-verify /artifacts/feeding-correction-pair-verify \
+    && strip /artifacts/train /artifacts/viability /artifacts/viability-gate /artifacts/viability-matrix /artifacts/viability-preflight /artifacts/rules-sweep /artifacts/rules-sweep-run /artifacts/demonstrations /artifacts/behavior-clone /artifacts/feeding-evaluation /artifacts/feeding-evaluation-merge /artifacts/feeding-layout-evaluation /artifacts/feeding-layout-evaluation-merge /artifacts/feeding-layout-teacher-evaluation /artifacts/feeding-transition-diagnostics /artifacts/feeding-policy-corrections /artifacts/feeding-correction-pair-verify
 
 FROM debian:bookworm-slim AS runtime-base
 
@@ -138,6 +170,14 @@ COPY --from=gpu-builder /artifacts/rules-sweep /usr/local/bin/rules-sweep
 COPY --from=gpu-builder /artifacts/rules-sweep-run /usr/local/bin/rules-sweep-run
 COPY --from=gpu-builder /artifacts/demonstrations /usr/local/bin/demonstrations
 COPY --from=gpu-builder /artifacts/behavior-clone /usr/local/bin/behavior-clone
+COPY --from=gpu-builder /artifacts/feeding-evaluation /usr/local/bin/feeding-evaluation
+COPY --from=gpu-builder /artifacts/feeding-evaluation-merge /usr/local/bin/feeding-evaluation-merge
+COPY --from=gpu-builder /artifacts/feeding-layout-evaluation /usr/local/bin/feeding-layout-evaluation
+COPY --from=gpu-builder /artifacts/feeding-layout-evaluation-merge /usr/local/bin/feeding-layout-evaluation-merge
+COPY --from=gpu-builder /artifacts/feeding-layout-teacher-evaluation /usr/local/bin/feeding-layout-teacher-evaluation
+COPY --from=gpu-builder /artifacts/feeding-transition-diagnostics /usr/local/bin/feeding-transition-diagnostics
+COPY --from=gpu-builder /artifacts/feeding-policy-corrections /usr/local/bin/feeding-policy-corrections
+COPY --from=gpu-builder /artifacts/feeding-correction-pair-verify /usr/local/bin/feeding-correction-pair-verify
 COPY --chmod=0555 docker/training/entrypoint.sh /usr/local/bin/blob-training-entrypoint
 COPY docker/training/cubecl.toml /opt/blobs/cubecl.toml
 COPY blob_rl/config /opt/blobs/config
@@ -178,5 +218,13 @@ COPY --from=cpu-builder /artifacts/rules-sweep /usr/local/bin/rules-sweep
 COPY --from=cpu-builder /artifacts/rules-sweep-run /usr/local/bin/rules-sweep-run
 COPY --from=cpu-builder /artifacts/demonstrations /usr/local/bin/demonstrations
 COPY --from=cpu-builder /artifacts/behavior-clone /usr/local/bin/behavior-clone
+COPY --from=cpu-builder /artifacts/feeding-evaluation /usr/local/bin/feeding-evaluation
+COPY --from=cpu-builder /artifacts/feeding-evaluation-merge /usr/local/bin/feeding-evaluation-merge
+COPY --from=cpu-builder /artifacts/feeding-layout-evaluation /usr/local/bin/feeding-layout-evaluation
+COPY --from=cpu-builder /artifacts/feeding-layout-evaluation-merge /usr/local/bin/feeding-layout-evaluation-merge
+COPY --from=cpu-builder /artifacts/feeding-layout-teacher-evaluation /usr/local/bin/feeding-layout-teacher-evaluation
+COPY --from=cpu-builder /artifacts/feeding-transition-diagnostics /usr/local/bin/feeding-transition-diagnostics
+COPY --from=cpu-builder /artifacts/feeding-policy-corrections /usr/local/bin/feeding-policy-corrections
+COPY --from=cpu-builder /artifacts/feeding-correction-pair-verify /usr/local/bin/feeding-correction-pair-verify
 
 LABEL org.opencontainers.image.description="Portable CPU trainer and bounded rules-sweep executor"

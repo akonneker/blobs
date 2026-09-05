@@ -7,13 +7,17 @@ use blob_rl::behavior_cloning::{
     behavior_clone_artifact_sha256, verify_behavior_clone_artifact, BehaviorCloningArtifact,
 };
 use blob_rl::config::TrainingConfig;
-use blob_rl::feeding_curriculum::evaluate_feeding_promotion;
-use blob_rl::feeding_evaluation_artifact::{publish_feeding_evaluation, FeedingEvaluationArtifact};
+use blob_rl::feeding_curriculum::evaluate_feeding_promotion_with_progress;
+use blob_rl::feeding_evaluation_artifact::{
+    load_feeding_evaluation, publish_feeding_evaluation, verify_feeding_evaluation_request,
+    FeedingEvaluationArtifact,
+};
 use blob_rl::model::PolicyValueNetConfig;
 use burn::prelude::*;
 use burn::record::CompactRecorder;
 use clap::Parser;
 use sha2::{Digest, Sha256};
+use std::io::Write;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -40,6 +44,11 @@ struct Args {
     /// Exit unsuccessfully after publishing a valid failing report.
     #[arg(long)]
     require_pass: bool,
+
+    /// Reuse an existing output only after validating its exact config, model,
+    /// and ordered seed suite. Invalid or unrelated outputs fail closed.
+    #[arg(long)]
+    resume: bool,
 }
 
 struct EvaluationInputs<'a> {
@@ -80,13 +89,29 @@ where
     .init::<B>(&device)
     .load_file(model_path, &CompactRecorder::new(), &device)
     .unwrap_or_else(|error| panic!("failed to load behavior-cloned model: {error}"));
-    let report = evaluate_feeding_promotion(
+    let report = evaluate_feeding_promotion_with_progress(
         &model,
         &config.env,
         &config.reward,
         &config.feeding_curriculum,
         &seeds,
         &device,
+        |progress| {
+            eprintln!(
+                "  progress {} {}/{} seed {}: {} (moves {}, consumes {}, energy {}, survivors {}, safety_abort {})",
+                progress.stage,
+                progress.completed_in_stage,
+                progress.total_in_stage,
+                progress.seed,
+                if progress.succeeded { "success" } else { "failure" },
+                progress.movement_successes,
+                progress.consume_successes,
+                progress.consumed_energy,
+                progress.surviving_cells,
+                progress.safety_abort,
+            );
+            let _ = std::io::stderr().flush();
+        },
     );
     let artifact = FeedingEvaluationArtifact::new(
         source_config_sha256,
@@ -148,6 +173,39 @@ fn main() {
     )
     .unwrap_or_else(|error| panic!("failed to decode {}: {error}", metadata_path.display()));
     let require_pass = args.require_pass;
+    if args.output.exists() {
+        if !args.resume {
+            panic!(
+                "feeding-evaluation output {} already exists; use --resume to validate and reuse it",
+                args.output.display()
+            );
+        }
+        let artifact = load_feeding_evaluation(&args.output)
+            .unwrap_or_else(|error| panic!("invalid existing output: {error}"));
+        verify_feeding_evaluation_request(
+            &artifact,
+            &source_config_sha256,
+            &metadata_sha256,
+            &metadata.model_sha256,
+            &config,
+            &args.seeds,
+        )
+        .unwrap_or_else(|error| panic!("existing output cannot be resumed: {error}"));
+        println!(
+            "Reused verified {}-seed feeding evaluation {} at {}",
+            artifact.report.seeds.len(),
+            if artifact.report.passed {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            args.output.display(),
+        );
+        if require_pass && !artifact.report.passed {
+            std::process::exit(2);
+        }
+        return;
+    }
 
     #[cfg(feature = "wgpu")]
     {

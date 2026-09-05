@@ -15,8 +15,8 @@ use crate::model::PolicyValueNet;
 use crate::telemetry::TelemetryConfig;
 
 pub const MICRO_COMBAT_SUITE_SCHEMA_VERSION: u32 = 1;
-pub const MICRO_COMBAT_EVALUATION_SCHEMA_VERSION: u32 = 1;
-pub const MICRO_COMBAT_EVIDENCE_SCHEMA_VERSION: u32 = 1;
+pub const MICRO_COMBAT_EVALUATION_SCHEMA_VERSION: u32 = 2;
+pub const MICRO_COMBAT_EVIDENCE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -260,6 +260,10 @@ impl MicroCombatSuiteConfig {
                     OpponentProfile::Aggressive
                         | OpponentProfile::StochasticAggressive
                         | OpponentProfile::Defensive
+                        | OpponentProfile::Evasive
+                        | OpponentProfile::Pursuer
+                        | OpponentProfile::SearchingPursuer
+                        | OpponentProfile::ForkingEvader
                         | OpponentProfile::Random
                 )
             {
@@ -357,6 +361,8 @@ pub struct MicroCombatScenarioMetrics {
     pub training_damage_dealt: u128,
     pub training_damage_received: u128,
     pub training_guard_mitigation: u128,
+    pub training_births: u64,
+    pub training_deaths: u64,
     pub training_kills: u64,
 }
 
@@ -586,6 +592,12 @@ fn evaluate_with(
                 metrics.training_guard_mitigation = metrics
                     .training_guard_mitigation
                     .saturating_add(telemetry.training.damage.mitigated_by_own_guard);
+                metrics.training_births = metrics
+                    .training_births
+                    .saturating_add(telemetry.training.births);
+                metrics.training_deaths = metrics
+                    .training_deaths
+                    .saturating_add(telemetry.training.deaths);
                 metrics.training_kills = metrics
                     .training_kills
                     .saturating_add(telemetry.training.kills);

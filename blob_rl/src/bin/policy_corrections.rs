@@ -11,7 +11,7 @@ use blob_rl::config::{FeedingCurriculumStage, OpponentProfile, TrainingConfig};
 use blob_rl::control_matrix::MaintainedMindProfile;
 use blob_rl::demonstration::{
     generate_policy_correction_demonstrations, publish_demonstrations, DemonstrationCollection,
-    PolicyCorrectionOptions,
+    PolicyCorrectionLabelMode, PolicyCorrectionOptions,
 };
 use blob_rl::model::PolicyValueNetConfig;
 use burn::prelude::*;
@@ -56,6 +56,10 @@ struct Args {
     /// New immutable correction dataset directory.
     #[arg(long)]
     output: PathBuf,
+
+    /// Minimum exact teacher/policy agreement recorded in the dataset verdict.
+    #[arg(long, default_value_t = 0.8)]
+    minimum_policy_agreement_rate: f64,
 }
 
 struct Inputs<'a> {
@@ -67,6 +71,7 @@ struct Inputs<'a> {
     teacher: MaintainedMindProfile,
     seeds: Vec<u64>,
     max_samples: usize,
+    minimum_policy_agreement_rate: f64,
     output: &'a PathBuf,
 }
 
@@ -97,6 +102,8 @@ where
             max_samples: inputs.max_samples,
             behavior_clone_metadata_sha256: inputs.behavior_clone_metadata_sha256,
             behavior_clone_model_sha256: inputs.behavior_clone_model_sha256,
+            minimum_policy_agreement_rate: inputs.minimum_policy_agreement_rate,
+            label_mode: PolicyCorrectionLabelMode::FullTeacher,
         },
         &model,
         &device,
@@ -108,19 +115,39 @@ where
         policy_disagreement_samples,
         teacher_attack_policy_non_attack_samples,
         projected_teacher_samples,
+        exact_policy_agreement_samples,
+        policy_agreement_ppm,
+        agreement_passed,
+        action_kind_disagreement_samples,
+        policy_kind_advantage_micrologit_sum,
+        policy_kind_advantage_micrologit_max,
         ..
     } = manifest.collection
     else {
         unreachable!("policy correction generator emitted a teacher-rollout identity")
     };
     println!(
-        "Published {} correction samples to {} ({} policy disagreements, {} missed teacher attacks, {} teacher attacks, {} projected labels)",
+        "Published {} correction samples to {} ({} exact agreements, {:.1}% agreement, gate {}; {} policy disagreements, {} missed teacher attacks, {} teacher attacks, {} projected labels)",
         manifest.samples,
         inputs.output.display(),
+        exact_policy_agreement_samples,
+        f64::from(policy_agreement_ppm) / 10_000.0,
+        if agreement_passed { "PASS" } else { "FAIL" },
         policy_disagreement_samples,
         teacher_attack_policy_non_attack_samples,
         manifest.action_family_samples[blob_rl::action::PolicyActionFamily::Attack.index()],
         projected_teacher_samples,
+    );
+    let mean_advantage = if action_kind_disagreement_samples == 0 {
+        0.0
+    } else {
+        policy_kind_advantage_micrologit_sum as f64
+            / action_kind_disagreement_samples as f64
+            / 1_000_000.0
+    };
+    println!(
+        "  action-kind errors: {action_kind_disagreement_samples}, mean selected-kind advantage {mean_advantage:.4}, max {:.4} logits",
+        f64::from(policy_kind_advantage_micrologit_max) / 1_000_000.0,
     );
 }
 
@@ -174,6 +201,7 @@ fn main() {
         teacher: args.teacher,
         seeds: args.seeds,
         max_samples: args.max_samples,
+        minimum_policy_agreement_rate: args.minimum_policy_agreement_rate,
         output: &args.output,
     };
 

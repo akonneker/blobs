@@ -6,7 +6,8 @@ use blob_rl::config::TrainingConfig;
 use blob_rl::control_matrix::MaintainedMindProfile;
 use blob_rl::feeding_curriculum::evaluate_feeding_teacher;
 use blob_rl::feeding_layout_evaluation::{
-    publish_feeding_layout_evaluation, FeedingLayoutEvaluationArtifact,
+    load_feeding_layout_evaluation, publish_feeding_layout_evaluation,
+    verify_feeding_layout_evaluation_request, FeedingLayoutEvaluationArtifact,
     FeedingLayoutPolicyIdentity, FeedingLayoutTrial, FeedingQualificationLayout,
 };
 use blob_rl::viability::mind_abi_hash;
@@ -36,6 +37,9 @@ struct Args {
 
     #[arg(long)]
     require_pass: bool,
+
+    #[arg(long)]
+    resume: bool,
 }
 
 fn main() {
@@ -49,6 +53,42 @@ fn main() {
     config
         .validate()
         .unwrap_or_else(|error| panic!("invalid feeding-layout teacher config: {error}"));
+    let source_config_sha256 = format!("{:x}", Sha256::digest(&config_bytes));
+    let policy = FeedingLayoutPolicyIdentity::MaintainedTeacher {
+        profile: args.teacher,
+        mind_abi_sha256: mind_abi_hash(),
+    };
+
+    if args.output.exists() {
+        if !args.resume {
+            panic!(
+                "feeding-layout teacher output {} exists; pass --resume to verify and reuse it",
+                args.output.display()
+            );
+        }
+        let artifact = load_feeding_layout_evaluation(&args.output)
+            .unwrap_or_else(|error| panic!("invalid existing teacher artifact: {error}"));
+        verify_feeding_layout_evaluation_request(
+            &artifact,
+            &source_config_sha256,
+            &policy,
+            &config,
+            &args.layouts,
+            &args.seeds,
+        )
+        .unwrap_or_else(|error| panic!("feeding-layout teacher resume rejected: {error}"));
+        println!(
+            "Reused verified {}x{} feeding-layout teacher evaluation {} at {}",
+            artifact.layouts.len(),
+            artifact.seeds.len(),
+            if artifact.passed { "PASS" } else { "FAIL" },
+            args.output.display(),
+        );
+        if args.require_pass && !artifact.passed {
+            std::process::exit(2);
+        }
+        return;
+    }
 
     let mut trials = Vec::with_capacity(args.layouts.len().saturating_mul(args.seeds.len()));
     for layout in &args.layouts {
@@ -79,11 +119,8 @@ fn main() {
         }
     }
     let artifact = FeedingLayoutEvaluationArtifact::new(
-        format!("{:x}", Sha256::digest(&config_bytes)),
-        FeedingLayoutPolicyIdentity::MaintainedTeacher {
-            profile: args.teacher,
-            mind_abi_sha256: mind_abi_hash(),
-        },
+        source_config_sha256,
+        policy,
         config,
         args.layouts,
         args.seeds,

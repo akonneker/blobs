@@ -49,11 +49,40 @@ Pass the deployed digest to `rules-sweep-run` as
 execution contract alongside its independently calculated trainer-binary hash
 and rejects retries that supply a different image or executable.
 
-The image also contains the `demonstrations` and `behavior-clone` commands.
+The image also contains the `demonstrations`, `behavior-clone`,
+`feeding-evaluation`, `feeding-evaluation-merge`,
+`feeding-layout-evaluation`, `feeding-layout-evaluation-merge`, and
+`feeding-layout-teacher-evaluation`, and `feeding-transition-diagnostics`
+commands.
 Mount immutable datasets and pretrained artifacts under `/output` (or another
 explicit volume), then bind the printed behavior-cloning metadata digest in
 the PPO training config's `[initial_policy]` table. This avoids relying on a
 mutable model path when moving the curriculum between hosts.
+
+Long ecological qualifications should publish one seed per immutable shard.
+`feeding-evaluation --resume` validates the complete artifact and requires an
+exact config, clone-metadata, model, and ordered-seed match before reuse;
+`feeding-evaluation-merge` recomputes the aggregate from validated shards. The
+host-side `scripts/qualify_counterfactual_effort_ab.sh` runner can target the
+container directly with `BLOB_EFFORT_AB_CONTAINER_IMAGE`. In container mode,
+all four positional paths must be absolute; the runner mounts the config and
+both clones read-only, mounts only the result root writable, and retains
+completed work across host or SSH interruption. The binary override variables
+remain available for native installations. Set `BLOB_EFFORT_AB_MAX_PARALLEL`
+to a positive shard count only after measuring per-process resident memory;
+the default remains one.
+
+`scripts/qualify_feeding_policy.sh` provides the same contract for one policy
+on a fresh seed suite. `scripts/qualify_feeding_layouts.sh` publishes and
+resumes one immutable layout/seed shard at a time before validating the full
+Cartesian matrix. Layout schema 2 is the first version bound to canonical
+learned-policy randomness; schema-1 evidence cannot resume as schema 2.
+`scripts/qualify_feeding_layout_teacher.sh` applies the same exact
+layout/seed-shard and merge contract to a maintained Mind. The teacher runner
+does not mount a learned model. `scripts/diagnose_feeding_layout_transitions.sh`
+runs one hash-bound learned-policy transition artifact per layout with bounded
+parallelism; it defaults to canonical cell-private randomness and accepts an
+explicit zero-randomness mode only for controlled historical A/B work.
 
 For a registry-backed remote host, tag and push the exact image, then deploy by
 digest when practical:
@@ -113,6 +142,15 @@ checksum-validated autotune choices; Docker supplies an anonymous cache volume
 unless the operator mounts a durable one. The Compose service uses the named
 `blobs-gpu-kernel-cache` volume so later jobs on the same host can reuse them.
 Do not copy this host/device-specific cache into scientific artifacts.
+
+Feeding correction collection also supports fail-closed paired labels. Use
+`--labels move-target-control` and `--labels move-target-treatment` with the
+same clone, config, layout, seeds, and sample cap, then run
+`feeding-correction-pair-verify`. The verifier requires identical observations,
+policy choices, recurrent prefixes, and non-action label fields; only eligible
+same-effort `Move` targets may differ. Train such a pair with
+`behavior-clone --target-query-head-only` so the intervention cannot change
+action kind, effort, recurrent trunk, or any other inherited parameter.
 
 The trainer batches rollout policy inference across all environments. Set
 `--num-envs` high enough to feed the device and use `--minibatch-size` in the

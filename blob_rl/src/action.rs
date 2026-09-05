@@ -288,7 +288,8 @@ pub const fn policy_action_family(action: usize) -> Option<PolicyActionFamily> {
 /// A row-separable policy choice. Signal selection is deliberately factored
 /// away from the physical catalog so future multi-channel patterns do not
 /// multiply every movement, target, and effort choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyChoice {
     pub action: usize,
     /// Conditional payload/amount tier. Non-parameterized actions use zero.

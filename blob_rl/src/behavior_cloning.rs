@@ -31,10 +31,15 @@ use crate::model::{
     decode_policy_memory, encode_policy_memory, PolicyValueNet, PolicyValueNetConfig,
     NUM_ACTION_KIND_EXPERTS,
 };
-use crate::observation::OBS_DIM;
+use crate::observation::{observation_expert_context, ObservationExpertContext, OBS_DIM};
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 18;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 34;
+const MIN_SUPPORTED_BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 22;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
+
+const fn unit_learning_rate_scale() -> f64 {
+    1.0
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -63,6 +68,7 @@ pub enum ActionBalancingStrategy {
 pub enum SupervisionPhase {
     Feeding,
     Combat,
+    Exploration,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -72,22 +78,37 @@ pub enum ExpertRoutingStrategy {
     /// uses the general/feeding expert. The assignment is per decision and
     /// contains no host scenario phase.
     LocalActionFamily,
+    /// Route every observation with a visible neighboring cell through the
+    /// combat expert. Unlike action-family routing, this labels Move, Wait,
+    /// Consume, and other decisions from an interaction sequence using only
+    /// features present in the anonymous Mind observation.
+    VisibleNeighborContext,
+    /// Route from anonymous local evidence with strict precedence: a visible
+    /// attack windup or guard selects interaction, otherwise directly
+    /// a plant tile or consumable loose energy under the cell selects foraging,
+    /// otherwise any visible neighboring cell selects interaction, and all
+    /// remaining observations select exploration. Diffuse energy is not food
+    /// for a cell and does not select foraging.
+    ForagingInteractionExploration,
 }
 
 impl SupervisionPhase {
-    pub const ALL: [Self; NUM_ACTION_KIND_EXPERTS] = [Self::Feeding, Self::Combat];
+    pub const ALL: [Self; NUM_ACTION_KIND_EXPERTS] =
+        [Self::Feeding, Self::Combat, Self::Exploration];
 
     pub const fn index(self) -> usize {
         match self {
             Self::Feeding => 0,
             Self::Combat => 1,
+            Self::Exploration => 2,
         }
     }
 
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Feeding => "feeding",
-            Self::Combat => "combat",
+            Self::Feeding => "foraging",
+            Self::Combat => "interaction",
+            Self::Exploration => "exploration",
         }
     }
 }
@@ -113,12 +134,72 @@ pub struct BehaviorCloningConfig {
     /// total presentations per epoch.
     #[serde(default)]
     pub dataset_sampling_weights: Vec<f64>,
-    /// Per-decision expert assignment. This is explicit in the artifact even
-    /// though only the strictly local action-family rule is currently valid.
+    /// Optional exact number of sample presentations in each epoch. This
+    /// makes paired experiments comparable even when one arm adds a dataset.
+    #[serde(default)]
+    pub epoch_sample_budget: Option<usize>,
+    /// Optional exact optimizer updates in each epoch. Recurrent chunks are
+    /// still kept intact and grouped by length, but each length group is split
+    /// into a deterministic number of batches. This closes the update-count
+    /// confound in paired mixtures with different trajectory-length profiles.
+    #[serde(default)]
+    pub optimizer_steps_per_epoch: Option<usize>,
+    /// Optional exact total optimizer-update prefix to retain. This requires
+    /// `optimizer_steps_per_epoch`, making mid-epoch checkpoints reproducible
+    /// prefixes of the corresponding uninterrupted run.
+    #[serde(default)]
+    pub optimizer_step_budget: Option<usize>,
+    /// Learning-rate multiplier applied only to the final retained optimizer
+    /// update. Values below one require an exact total step budget so the
+    /// partially dosed update is unambiguous and reproducible.
+    #[serde(default = "unit_learning_rate_scale")]
+    pub terminal_optimizer_step_scale: f64,
+    /// Per-decision expert assignment, bound into the artifact.
     pub expert_routing: ExpertRoutingStrategy,
     /// Relative auxiliary loss used to teach the observation-driven phase
     /// gate. Expert action loss retains unit weight.
     pub phase_gate_loss_weight: f64,
+    /// Optional stage-local adaptation mode. Only the selected action-kind
+    /// expert is retained after each optimizer update; the shared recurrent
+    /// trunk and every other head remain exactly at their parent values.
+    /// This requires a verified initial artifact.
+    #[serde(default)]
+    pub action_kind_expert_only: Option<SupervisionPhase>,
+    /// Update only the observation-local foraging residual while preserving
+    /// every parameter inherited from the verified parent.
+    #[serde(default)]
+    pub foraging_adapter_only: bool,
+    /// Update only one observation-local interaction or exploration residual
+    /// while preserving every parameter inherited from the verified parent.
+    #[serde(default)]
+    pub context_adapter_only: Option<SupervisionPhase>,
+    /// Update only one non-random local-header plus featurewise pooled
+    /// raw-slot residual while preserving the context's inherited recurrent
+    /// residual and every other parameter.
+    #[serde(default)]
+    pub context_slot_adapter_only: Option<SupervisionPhase>,
+    /// Update only the scalar exploration Guard readiness residual over local
+    /// assimilated and gut energy, preserving every inherited parameter.
+    #[serde(default)]
+    pub exploration_guard_readiness_only: bool,
+    /// Optional desired teacher-kind logit lead over the strongest other
+    /// legal kind. When enabled, this hinge objective replaces action-kind
+    /// cross-entropy while leaving every conditional head and gate supervised.
+    /// Zero targets only currently tied or misclassified samples.
+    #[serde(default)]
+    pub action_kind_margin: Option<f64>,
+    /// Relative weight of the multiclass hinge margin auxiliary. This must be
+    /// positive exactly when `action_kind_margin` is enabled.
+    #[serde(default)]
+    pub action_kind_margin_loss_weight: f64,
+    /// Update only the action-kind-conditioned target query head while
+    /// preserving every parameter inherited from the verified parent.
+    #[serde(default)]
+    pub target_query_head_only: bool,
+    /// Update only the action-kind-conditioned effort head while preserving
+    /// every parameter inherited from the verified parent.
+    #[serde(default)]
+    pub effort_head_only: bool,
     /// Maximum number of consecutive decisions from one cell kept in a single
     /// recurrent autodiff graph.
     pub recurrent_unroll_steps: usize,
@@ -141,6 +222,13 @@ impl BehaviorCloningConfig {
         let valid_initial_artifact = self.initial_artifact_sha256.as_ref().is_none_or(|hash| {
             hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
         });
+        let adaptation_modes = usize::from(self.action_kind_expert_only.is_some())
+            + usize::from(self.foraging_adapter_only)
+            + usize::from(self.context_adapter_only.is_some())
+            + usize::from(self.context_slot_adapter_only.is_some())
+            + usize::from(self.exploration_guard_readiness_only)
+            + usize::from(self.target_query_head_only)
+            + usize::from(self.effort_head_only);
         if !valid_initial_artifact
             || self.epochs == 0
             || self.minibatch_size == 0
@@ -152,8 +240,56 @@ impl BehaviorCloningConfig {
                 .dataset_sampling_weights
                 .iter()
                 .any(|weight| !weight.is_finite() || *weight <= 0.0)
+            || self.epoch_sample_budget == Some(0)
+            || self.optimizer_steps_per_epoch == Some(0)
+            || self.optimizer_step_budget == Some(0)
+            || self.optimizer_step_budget.is_some() && self.optimizer_steps_per_epoch.is_none()
+            || self.optimizer_step_budget.is_some_and(|budget| {
+                self.optimizer_steps_per_epoch
+                    .and_then(|steps| steps.checked_mul(self.epochs))
+                    .is_none_or(|maximum| budget > maximum)
+            })
+            || !self.terminal_optimizer_step_scale.is_finite()
+            || !(self.terminal_optimizer_step_scale > 0.0
+                && self.terminal_optimizer_step_scale <= 1.0)
+            || (self.terminal_optimizer_step_scale != 1.0 && self.optimizer_step_budget.is_none())
+            || self.expert_routing != ExpertRoutingStrategy::ForagingInteractionExploration
             || !self.phase_gate_loss_weight.is_finite()
             || self.phase_gate_loss_weight <= 0.0
+            || (self.action_kind_expert_only.is_some() && self.initial_artifact_sha256.is_none())
+            || (self.foraging_adapter_only && self.initial_artifact_sha256.is_none())
+            || (self.context_adapter_only.is_some() && self.initial_artifact_sha256.is_none())
+            || (self.context_slot_adapter_only.is_some() && self.initial_artifact_sha256.is_none())
+            || (self.exploration_guard_readiness_only && self.initial_artifact_sha256.is_none())
+            || adaptation_modes > 1
+            || self.context_adapter_only == Some(SupervisionPhase::Feeding)
+            || self.context_slot_adapter_only == Some(SupervisionPhase::Feeding)
+            || self
+                .action_kind_margin
+                .is_some_and(|margin| !margin.is_finite() || !(0.0..=100.0).contains(&margin))
+            || !self.action_kind_margin_loss_weight.is_finite()
+            || !(0.0..=1_000.0).contains(&self.action_kind_margin_loss_weight)
+            || (self.action_kind_margin.is_some() != (self.action_kind_margin_loss_weight > 0.0))
+            || (self.target_query_head_only && self.initial_artifact_sha256.is_none())
+            || (self.effort_head_only && self.initial_artifact_sha256.is_none())
+            || (self.foraging_adapter_only && self.action_kind_expert_only.is_some())
+            || (self.context_adapter_only.is_some()
+                && (self.foraging_adapter_only || self.action_kind_expert_only.is_some()))
+            || (self.context_slot_adapter_only.is_some()
+                && (self.foraging_adapter_only
+                    || self.context_adapter_only.is_some()
+                    || self.action_kind_expert_only.is_some()))
+            || (self.target_query_head_only
+                && (self.foraging_adapter_only
+                    || self.context_adapter_only.is_some()
+                    || self.context_slot_adapter_only.is_some()
+                    || self.action_kind_expert_only.is_some()))
+            || (self.effort_head_only
+                && (self.foraging_adapter_only
+                    || self.context_adapter_only.is_some()
+                    || self.context_slot_adapter_only.is_some()
+                    || self.target_query_head_only
+                    || self.action_kind_expert_only.is_some()))
             || self.recurrent_unroll_steps == 0
             || self.recurrent_unroll_steps > 256
             || !self.action_balance_exponent.is_finite()
@@ -163,7 +299,7 @@ impl BehaviorCloningConfig {
                 .is_some_and(|ratio| !ratio.is_finite() || ratio < 1.0)
         {
             return Err(
-                "behavior-cloning initial artifact must be a SHA-256 hash, epochs, batch size, learning rate, explicit dataset weights, and phase-gate loss weight must be positive, validation fraction and action-balance exponent must be in [0, 1], action-balance max ratio must be finite and at least 1, and recurrent unroll steps must be in 1..=256".into(),
+                "behavior-cloning initial artifact must be a SHA-256 hash; expert-head-only, foraging-adapter-only, interaction/exploration context-adapter-only and context-slot-adapter-only, exploration-Guard-readiness-only, target-query-head-only, and effort-head-only adaptation require an initial artifact and are mutually exclusive; authoritative three-context expert routing is required; epochs, batch size, learning rate, explicit dataset weights, epoch sample and optimizer-step budgets, and phase-gate loss weight must be positive; a total optimizer-step budget requires a fixed per-epoch budget and cannot exceed the configured run; a fractional terminal optimizer-step scale must be in (0, 1] and requires an exact total step budget; action-kind margin and its positive loss weight must be enabled together and bounded; validation fraction and action-balance exponent must be in [0, 1]; action-balance max ratio must be finite and at least 1; and recurrent unroll steps must be in 1..=256".into(),
             );
         }
         Ok(())
@@ -181,8 +317,21 @@ impl Default for BehaviorCloningConfig {
             validation_fraction: 0.1,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
             dataset_sampling_weights: Vec::new(),
-            expert_routing: ExpertRoutingStrategy::LocalActionFamily,
+            epoch_sample_budget: None,
+            optimizer_steps_per_epoch: None,
+            optimizer_step_budget: None,
+            terminal_optimizer_step_scale: 1.0,
+            expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
             phase_gate_loss_weight: 1.0,
+            action_kind_expert_only: None,
+            foraging_adapter_only: false,
+            context_adapter_only: None,
+            context_slot_adapter_only: None,
+            exploration_guard_readiness_only: false,
+            action_kind_margin: None,
+            action_kind_margin_loss_weight: 0.0,
+            target_query_head_only: false,
+            effort_head_only: false,
             recurrent_unroll_steps: 16,
             exact_round_trip_only: false,
             action_balancing: ActionBalancingStrategy::None,
@@ -190,6 +339,56 @@ impl Default for BehaviorCloningConfig {
             action_balance_max_ratio: None,
         }
     }
+}
+
+/// Choose an exact number of nonempty, equal-length recurrent batches while
+/// respecting the sample minibatch ceiling. Each tuple is `(chunk_len,
+/// chunk_count)`. The minimum is the ordinary ceiling-based batching count;
+/// the maximum is one chunk per optimizer update.
+fn exact_recurrent_batch_counts(
+    groups: &[(usize, usize)],
+    minibatch_size: usize,
+    target_steps: usize,
+) -> Result<Vec<usize>, String> {
+    let mut counts = groups
+        .iter()
+        .map(|(length, chunks)| {
+            let capacity = (minibatch_size / *length).max(1);
+            chunks.div_ceil(capacity)
+        })
+        .collect::<Vec<_>>();
+    let minimum = counts.iter().sum::<usize>();
+    let maximum = groups.iter().map(|(_, chunks)| chunks).sum::<usize>();
+    if !(minimum..=maximum).contains(&target_steps) {
+        return Err(format!(
+            "optimizer-step budget {target_steps} is infeasible for recurrent epoch; valid range is {minimum}..={maximum}"
+        ));
+    }
+
+    let mut assigned = minimum;
+    while assigned < target_steps {
+        let selected = groups
+            .iter()
+            .enumerate()
+            .filter(|(index, (_, chunks))| counts[*index] < *chunks)
+            .max_by(
+                |(left_index, (left_length, left_chunks)),
+                 (right_index, (right_length, right_chunks))| {
+                    let left_score =
+                        *left_chunks as u128 * *left_length as u128 * counts[*right_index] as u128;
+                    let right_score =
+                        *right_chunks as u128 * *right_length as u128 * counts[*left_index] as u128;
+                    left_score
+                        .cmp(&right_score)
+                        .then_with(|| right_index.cmp(left_index))
+                },
+            )
+            .map(|(index, _)| index)
+            .ok_or("optimizer-step allocation exhausted recurrent chunks")?;
+        counts[selected] += 1;
+        assigned += 1;
+    }
+    Ok(counts)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -214,6 +413,10 @@ pub struct BehaviorCloningMetrics {
     pub training_trajectories: usize,
     pub validation_trajectories: usize,
     pub exact_round_trip_samples: usize,
+    /// Number of completely processed epochs. A final partial epoch is
+    /// represented by `optimizer_steps` and actual presentation counters.
+    #[serde(default)]
+    pub completed_epochs: usize,
     pub epochs: usize,
     pub optimizer_steps: usize,
     pub initial_training_loss: f64,
@@ -335,6 +538,22 @@ fn cap_weight_ratio(weights: &mut [f32], represented: &[bool], max_ratio: Option
     }
 }
 
+fn normalize_presented_weight_mass(weights: &mut [f32], action_counts: &[usize]) {
+    let presentations = action_counts.iter().sum::<usize>() as f64;
+    let weighted_mass = weights
+        .iter()
+        .zip(action_counts)
+        .map(|(weight, count)| f64::from(*weight) * *count as f64)
+        .sum::<f64>();
+    if presentations == 0.0 || weighted_mass == 0.0 {
+        return;
+    }
+    let scale = (presentations / weighted_mass) as f32;
+    for weight in weights {
+        *weight *= scale;
+    }
+}
+
 fn action_weights_for_samples<'a>(
     samples: impl IntoIterator<Item = &'a DemonstrationSample>,
     strategy: ActionBalancingStrategy,
@@ -359,7 +578,8 @@ fn action_weights_for_samples<'a>(
                 .zip(&action_counts)
                 .for_each(|(represented, count)| *represented = *count > 0);
             action_counts
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|count| {
                     if count == 0 {
                         1.0
@@ -400,6 +620,7 @@ fn action_weights_for_samples<'a>(
         }
     };
     cap_weight_ratio(&mut weights, &represented_actions, max_ratio);
+    normalize_presented_weight_mass(&mut weights, &action_counts);
     weights
 }
 
@@ -417,28 +638,63 @@ fn balanced_phase_weights(
     })
 }
 
-fn supervision_phase(sample: &DemonstrationSample) -> SupervisionPhase {
-    match policy_action_family(usize::from(sample.action))
-        .expect("validated demonstration action belongs to a policy family")
-    {
-        PolicyActionFamily::Attack | PolicyActionFamily::Guard => SupervisionPhase::Combat,
-        _ => SupervisionPhase::Feeding,
+pub fn expert_routing_phase(
+    sample: &DemonstrationSample,
+    strategy: ExpertRoutingStrategy,
+) -> SupervisionPhase {
+    match strategy {
+        ExpertRoutingStrategy::LocalActionFamily => {
+            match policy_action_family(usize::from(sample.action))
+                .expect("validated demonstration action belongs to a policy family")
+            {
+                PolicyActionFamily::Attack | PolicyActionFamily::Guard => SupervisionPhase::Combat,
+                _ => SupervisionPhase::Feeding,
+            }
+        }
+        ExpertRoutingStrategy::VisibleNeighborContext => {
+            if sample
+                .observation
+                .get(crate::observation::HEADER_FEATURES..)
+                .is_some_and(|slots| {
+                    slots
+                        .chunks_exact(crate::observation::SLOT_FEATURES)
+                        .any(|slot| slot[crate::observation::SLOT_NEIGHBOR_PRESENT_FEATURE] > 0.5)
+                })
+            {
+                SupervisionPhase::Combat
+            } else {
+                SupervisionPhase::Feeding
+            }
+        }
+        ExpertRoutingStrategy::ForagingInteractionExploration => {
+            match observation_expert_context(&sample.observation) {
+                ObservationExpertContext::Foraging => SupervisionPhase::Feeding,
+                ObservationExpertContext::Interaction => SupervisionPhase::Combat,
+                ObservationExpertContext::Exploration => SupervisionPhase::Exploration,
+            }
+        }
     }
 }
 
-fn phase_histogram<'a>(samples: impl IntoIterator<Item = &'a DemonstrationSample>) -> Vec<usize> {
+fn phase_histogram<'a>(
+    samples: impl IntoIterator<Item = &'a DemonstrationSample>,
+    strategy: ExpertRoutingStrategy,
+) -> Vec<usize> {
     let mut counts = vec![0usize; NUM_ACTION_KIND_EXPERTS];
     for sample in samples {
-        counts[supervision_phase(sample).index()] += 1;
+        counts[expert_routing_phase(sample, strategy).index()] += 1;
     }
     counts
 }
 
-fn phase_weights_for_chunks(chunks: &[SequenceChunk<'_>]) -> [f32; NUM_ACTION_KIND_EXPERTS] {
+fn phase_weights_for_chunks(
+    chunks: &[SequenceChunk<'_>],
+    strategy: ExpertRoutingStrategy,
+) -> [f32; NUM_ACTION_KIND_EXPERTS] {
     let mut counts = [0usize; NUM_ACTION_KIND_EXPERTS];
     for chunk in chunks {
         for sample in &chunk.samples {
-            counts[supervision_phase(sample).index()] += 1;
+            counts[expert_routing_phase(sample, strategy).index()] += 1;
         }
     }
     balanced_phase_weights(counts)
@@ -522,7 +778,10 @@ fn partition_datasets<'a>(
 /// The gate does not receive recurrent memory or host scenario metadata. Fail
 /// closed if the immutable corpus asks it to route an identical anonymous
 /// observation to both experts.
-fn validate_gate_label_consistency(partitions: &[DatasetPartition<'_>]) -> Result<(), String> {
+fn validate_gate_label_consistency(
+    partitions: &[DatasetPartition<'_>],
+    strategy: ExpertRoutingStrategy,
+) -> Result<(), String> {
     let mut labels = HashMap::<[u8; 32], SupervisionPhase>::new();
     for sample in partitions
         .iter()
@@ -534,7 +793,7 @@ fn validate_gate_label_consistency(partitions: &[DatasetPartition<'_>]) -> Resul
             hasher.update(value.to_bits().to_le_bytes());
         }
         let key = hasher.finalize().into();
-        let phase = supervision_phase(sample);
+        let phase = expert_routing_phase(sample, strategy);
         if labels
             .insert(key, phase)
             .is_some_and(|prior| prior != phase)
@@ -551,21 +810,11 @@ fn samples_per_dataset_per_epoch(
     partitions: &[DatasetPartition<'_>],
     strategy: DatasetSamplingStrategy,
     explicit_weights: &[f64],
+    epoch_sample_budget: Option<usize>,
 ) -> Result<Vec<usize>, String> {
-    if !explicit_weights.is_empty() {
-        if explicit_weights.len() != partitions.len() {
-            return Err(format!(
-                "received {} dataset sampling weights for {} datasets",
-                explicit_weights.len(),
-                partitions.len()
-            ));
-        }
-        let total = partitions
-            .iter()
-            .map(|partition| partition.training.len())
-            .sum::<usize>();
-        let weight_total = explicit_weights.iter().sum::<f64>();
-        let raw = explicit_weights
+    fn apportion(total: usize, weights: &[f64]) -> Vec<usize> {
+        let weight_total = weights.iter().sum::<f64>();
+        let raw = weights
             .iter()
             .map(|weight| total as f64 * weight / weight_total)
             .collect::<Vec<_>>();
@@ -588,20 +837,37 @@ fn samples_per_dataset_per_epoch(
         for (index, _) in fractional_order.into_iter().take(remainder) {
             samples[index] += 1;
         }
-        return Ok(samples);
+        samples
+    }
+
+    let natural_total = partitions
+        .iter()
+        .map(|partition| partition.training.len())
+        .sum::<usize>();
+    let total = epoch_sample_budget.unwrap_or(natural_total);
+    if !explicit_weights.is_empty() {
+        if explicit_weights.len() != partitions.len() {
+            return Err(format!(
+                "received {} dataset sampling weights for {} datasets",
+                explicit_weights.len(),
+                partitions.len()
+            ));
+        }
+        return Ok(apportion(total, explicit_weights));
     }
     Ok(match strategy {
-        DatasetSamplingStrategy::Proportional => partitions
+        DatasetSamplingStrategy::Proportional if epoch_sample_budget.is_none() => partitions
             .iter()
             .map(|partition| partition.training.len())
             .collect(),
-        DatasetSamplingStrategy::Balanced => {
-            let total = partitions
+        DatasetSamplingStrategy::Proportional => apportion(
+            total,
+            &partitions
                 .iter()
-                .map(|partition| partition.training.len())
-                .sum::<usize>();
-            vec![total / partitions.len(); partitions.len()]
-        }
+                .map(|partition| partition.training.len() as f64)
+                .collect::<Vec<_>>(),
+        ),
+        DatasetSamplingStrategy::Balanced => apportion(total, &vec![1.0; partitions.len()]),
     })
 }
 
@@ -694,6 +960,7 @@ fn amount_mask_bias(sample: &DemonstrationSample) -> Vec<f32> {
 #[derive(Clone)]
 struct DemonstrationSequence<'a> {
     samples: Vec<&'a DemonstrationSample>,
+    initial_memory: Vec<f32>,
 }
 
 #[derive(Clone)]
@@ -712,7 +979,13 @@ fn build_sequences<'a>(samples: &[&'a DemonstrationSample]) -> Vec<Demonstration
     }
     sequences
         .into_values()
-        .map(|samples| DemonstrationSequence { samples })
+        .map(|samples| DemonstrationSequence {
+            initial_memory: samples
+                .first()
+                .map(|sample| sample.initial_policy_memory.clone())
+                .unwrap_or_default(),
+            samples,
+        })
         .collect()
 }
 
@@ -734,7 +1007,16 @@ where
     let mut chunks = Vec::new();
     for sequence_batch in sequences.chunks(sequence_batch_size.max(1)) {
         let mut positions = vec![0usize; sequence_batch.len()];
-        let mut memories = vec![vec![0.0; recurrent_size]; sequence_batch.len()];
+        let mut memories = sequence_batch
+            .iter()
+            .map(|sequence| {
+                if sequence.initial_memory.is_empty() {
+                    vec![0.0; recurrent_size]
+                } else {
+                    sequence.initial_memory.clone()
+                }
+            })
+            .collect::<Vec<_>>();
         while positions
             .iter()
             .zip(sequence_batch)
@@ -856,11 +1138,19 @@ fn empty_phase_metrics() -> Vec<BehaviorCloningPhaseMetrics> {
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct EvaluationLossConfig {
+    phase_gate_weight: f64,
+    action_kind_margin: Option<f64>,
+    action_kind_margin_weight: f64,
+}
+
 fn evaluate_sequences<B: AutodiffBackend>(
     model: &PolicyValueNet<B>,
     sequences: &[DemonstrationSequence<'_>],
     sequence_batch_size: usize,
-    phase_gate_loss_weight: f64,
+    expert_routing: ExpertRoutingStrategy,
+    loss_config: EvaluationLossConfig,
     device: &B::Device,
 ) -> Option<SequenceEvaluation>
 where
@@ -873,7 +1163,7 @@ where
     let mut evaluation_phase_counts = [0usize; NUM_ACTION_KIND_EXPERTS];
     for sequence in sequences {
         for sample in &sequence.samples {
-            evaluation_phase_counts[supervision_phase(sample).index()] += 1;
+            evaluation_phase_counts[expert_routing_phase(sample, expert_routing).index()] += 1;
         }
     }
     let evaluation_phase_weights = balanced_phase_weights(evaluation_phase_counts);
@@ -889,7 +1179,16 @@ where
     let mut phase_gate_correct = [0usize; NUM_ACTION_KIND_EXPERTS];
     for sequence_batch in sequences.chunks(sequence_batch_size.max(1)) {
         let mut positions = vec![0usize; sequence_batch.len()];
-        let mut memories = vec![vec![0.0; recurrent_size]; sequence_batch.len()];
+        let mut memories = sequence_batch
+            .iter()
+            .map(|sequence| {
+                if sequence.initial_memory.is_empty() {
+                    vec![0.0; recurrent_size]
+                } else {
+                    sequence.initial_memory.clone()
+                }
+            })
+            .collect::<Vec<_>>();
         while positions
             .iter()
             .zip(sequence_batch)
@@ -909,7 +1208,12 @@ where
                 .collect::<Vec<_>>();
             let phases = active
                 .iter()
-                .map(|index| supervision_phase(sequence_batch[*index].samples[positions[*index]]))
+                .map(|index| {
+                    expert_routing_phase(
+                        sequence_batch[*index].samples[positions[*index]],
+                        expert_routing,
+                    )
+                })
                 .collect::<Vec<_>>();
             let observations = samples
                 .iter()
@@ -1049,19 +1353,29 @@ where
                 let target_index = hierarchical.kind * NUM_POLICY_TARGETS + hierarchical.target;
                 let effort_index = hierarchical.kind * NUM_POLICY_EFFORTS + hierarchical.effort;
                 let amount_index = hierarchical.kind * NUM_AMOUNT_CHOICES + amount;
-                total_loss -= f64::from(
-                    data[expert_kind_start
-                        + phase.index() * NUM_POLICY_ACTION_KINDS
-                        + hierarchical.kind]
-                        + data[target_logits_start + target_index]
-                        + data[effort_logits_start + effort_index]
-                        + data[amount_logits_start + amount_index]
-                        + data[signal_start + signal]
-                        + data[signal_strength_start + signal_strength]
-                        + evaluation_phase_weights[phase.index()]
-                            * phase_gate_loss_weight as f32
-                            * data[phase_start + phase.index()],
-                );
+                let expert_start = expert_kind_start + phase.index() * NUM_POLICY_ACTION_KINDS;
+                let conditional_and_gate_log_likelihood = data[target_logits_start + target_index]
+                    + data[effort_logits_start + effort_index]
+                    + data[amount_logits_start + amount_index]
+                    + data[signal_start + signal]
+                    + data[signal_strength_start + signal_strength]
+                    + evaluation_phase_weights[phase.index()]
+                        * loss_config.phase_gate_weight as f32
+                        * data[phase_start + phase.index()];
+                total_loss -= f64::from(conditional_and_gate_log_likelihood);
+                if let Some(margin) = loss_config.action_kind_margin {
+                    let teacher_logit = data[expert_start + hierarchical.kind];
+                    let strongest_competitor = (0..NUM_POLICY_ACTION_KINDS)
+                        .filter(|kind| *kind != hierarchical.kind)
+                        .map(|kind| data[expert_start + kind])
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    total_loss += f64::from(
+                        (strongest_competitor - teacher_logit + margin as f32).max(0.0)
+                            * loss_config.action_kind_margin_weight as f32,
+                    );
+                } else {
+                    total_loss -= f64::from(data[expert_start + hierarchical.kind]);
+                }
                 let predicted_kind = (0..NUM_POLICY_ACTION_KINDS)
                     .max_by(|left, right| {
                         data[start + *left]
@@ -1211,13 +1525,28 @@ struct SupervisedLossWeights<'a> {
     phase_gate: f64,
 }
 
+struct SupervisedStep<'a, B: Backend> {
+    loss_weights: SupervisedLossWeights<'a>,
+    expert_routing: ExpertRoutingStrategy,
+    action_kind_expert_only: Option<SupervisionPhase>,
+    foraging_adapter_only: bool,
+    context_adapter_only: Option<SupervisionPhase>,
+    context_slot_adapter_only: Option<SupervisionPhase>,
+    exploration_guard_readiness_only: bool,
+    action_kind_margin: Option<f64>,
+    action_kind_margin_loss_weight: f64,
+    target_query_head_only: bool,
+    effort_head_only: bool,
+    frozen_template: Option<&'a PolicyValueNet<B>>,
+    learning_rate: f64,
+    device: &'a B::Device,
+}
+
 fn train_chunk_batch<B: AutodiffBackend>(
     mut model: PolicyValueNet<B>,
     optimizer: &mut impl Optimizer<PolicyValueNet<B>, B>,
     chunks: &[SequenceChunk<'_>],
-    loss_weights: SupervisedLossWeights<'_>,
-    learning_rate: f64,
-    device: &B::Device,
+    step: SupervisedStep<'_, B>,
 ) -> PolicyValueNet<B> {
     let steps = chunks[0].samples.len();
     debug_assert!(chunks.iter().all(|chunk| chunk.samples.len() == steps));
@@ -1230,13 +1559,13 @@ fn train_chunk_batch<B: AutodiffBackend>(
                 .collect::<Vec<_>>(),
             [chunks.len(), recurrent_size],
         ),
-        device,
+        step.device,
     );
     let mut loss = None;
-    for step in 0..steps {
+    for time in 0..steps {
         let samples = chunks
             .iter()
-            .map(|chunk| chunk.samples[step])
+            .map(|chunk| chunk.samples[time])
             .collect::<Vec<_>>();
         let observations = samples
             .iter()
@@ -1244,7 +1573,9 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .collect::<Vec<_>>();
         let expert_kind_masks = samples
             .iter()
-            .flat_map(|sample| expert_kind_mask_bias(sample, supervision_phase(sample)))
+            .flat_map(|sample| {
+                expert_kind_mask_bias(sample, expert_routing_phase(sample, step.expert_routing))
+            })
             .collect::<Vec<_>>();
         let target_masks = samples
             .iter()
@@ -1277,12 +1608,14 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .iter()
             .zip(&samples)
             .map(|(choice, sample)| {
-                (supervision_phase(sample).index() * NUM_POLICY_ACTION_KINDS + choice.kind) as i32
+                (expert_routing_phase(sample, step.expert_routing).index()
+                    * NUM_POLICY_ACTION_KINDS
+                    + choice.kind) as i32
             })
             .collect::<Vec<_>>();
         let phases = samples
             .iter()
-            .map(|sample| supervision_phase(sample).index() as i32)
+            .map(|sample| expert_routing_phase(sample, step.expert_routing).index() as i32)
             .collect::<Vec<_>>();
         let targets = hierarchical
             .iter()
@@ -1294,11 +1627,13 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .collect::<Vec<_>>();
         let sample_weights = samples
             .iter()
-            .map(|sample| loss_weights.actions[usize::from(sample.action)])
+            .map(|sample| step.loss_weights.actions[usize::from(sample.action)])
             .collect::<Vec<_>>();
         let phase_sample_weights = samples
             .iter()
-            .map(|sample| loss_weights.phases[supervision_phase(sample).index()])
+            .map(|sample| {
+                step.loss_weights.phases[expert_routing_phase(sample, step.expert_routing).index()]
+            })
             .collect::<Vec<_>>();
         let signals = samples
             .iter()
@@ -1318,35 +1653,35 @@ fn train_chunk_batch<B: AutodiffBackend>(
         let output = model.forward_with_memory(
             Tensor::<B, 2>::from_data(
                 TensorData::new(observations, [chunks.len(), OBS_DIM]),
-                device,
+                step.device,
             ),
             memory,
         );
         let expert_kind_logits = output.action_kind_expert_logits
             + Tensor::<B, 2>::from_data(
                 TensorData::new(
-                    expert_kind_masks,
+                    expert_kind_masks.clone(),
                     [
                         chunks.len(),
                         NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS,
                     ],
                 ),
-                device,
+                step.device,
             );
         let target_logits = output.target_logits
             + Tensor::<B, 2>::from_data(
                 TensorData::new(target_masks, [chunks.len(), NUM_POLICY_TARGET_LOGITS]),
-                device,
+                step.device,
             );
         let effort_logits = output.effort_logits
             + Tensor::<B, 2>::from_data(
                 TensorData::new(effort_masks, [chunks.len(), NUM_POLICY_EFFORT_LOGITS]),
-                device,
+                step.device,
             );
         let signal_logits = output.signal_logits
             + Tensor::<B, 2>::from_data(
                 TensorData::new(signal_masks, [chunks.len(), NUM_SIGNAL_CHOICES]),
-                device,
+                step.device,
             );
         let signal_strength_logits = output.signal_strength_logits
             + Tensor::<B, 2>::from_data(
@@ -1354,39 +1689,69 @@ fn train_chunk_batch<B: AutodiffBackend>(
                     signal_strength_masks,
                     [chunks.len(), NUM_SIGNAL_STRENGTH_CHOICES],
                 ),
-                device,
+                step.device,
             );
         let amount_logits = output.amount_logits
             + Tensor::<B, 2>::from_data(
                 TensorData::new(amount_masks, [chunks.len(), NUM_POLICY_AMOUNT_LOGITS]),
-                device,
+                step.device,
             );
-        let expert_kind_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(expert_kinds, [chunks.len()]), device);
+        let expert_kind_tensor = Tensor::<B, 1, Int>::from_data(
+            TensorData::new(expert_kinds.clone(), [chunks.len()]),
+            step.device,
+        );
         let phase_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(phases, [chunks.len()]), device);
+            Tensor::<B, 1, Int>::from_data(TensorData::new(phases, [chunks.len()]), step.device);
         let target_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(targets, [chunks.len()]), device);
+            Tensor::<B, 1, Int>::from_data(TensorData::new(targets, [chunks.len()]), step.device);
         let effort_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(efforts, [chunks.len()]), device);
+            Tensor::<B, 1, Int>::from_data(TensorData::new(efforts, [chunks.len()]), step.device);
         let signal_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(signals, [chunks.len()]), device);
+            Tensor::<B, 1, Int>::from_data(TensorData::new(signals, [chunks.len()]), step.device);
         let signal_strength_tensor = Tensor::<B, 1, Int>::from_data(
             TensorData::new(signal_strengths, [chunks.len()]),
-            device,
+            step.device,
         );
         let amount_tensor =
-            Tensor::<B, 1, Int>::from_data(TensorData::new(amounts, [chunks.len()]), device);
-        let sample_weight_tensor =
-            Tensor::<B, 2>::from_data(TensorData::new(sample_weights, [chunks.len(), 1]), device);
+            Tensor::<B, 1, Int>::from_data(TensorData::new(amounts, [chunks.len()]), step.device);
+        let sample_weight_tensor = Tensor::<B, 2>::from_data(
+            TensorData::new(sample_weights, [chunks.len(), 1]),
+            step.device,
+        );
         let phase_weight_tensor = Tensor::<B, 2>::from_data(
             TensorData::new(phase_sample_weights, [chunks.len(), 1]),
-            device,
+            step.device,
         );
-        let action_log_likelihood = burn::tensor::activation::log_softmax(expert_kind_logits, 1)
-            .gather(1, expert_kind_tensor.unsqueeze_dim(1))
-            + burn::tensor::activation::log_softmax(target_logits, 1)
-                .gather(1, target_tensor.unsqueeze_dim(1))
+        let action_kind_margin_loss = step.action_kind_margin.map(|margin| {
+            let mut competitor_masks = expert_kind_masks;
+            for (row, teacher) in competitor_masks
+                .chunks_mut(NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS)
+                .zip(expert_kinds.iter().copied())
+            {
+                row[teacher as usize] = -1.0e9;
+            }
+            let strongest_competitor = (expert_kind_logits.clone()
+                + Tensor::<B, 2>::from_data(
+                    TensorData::new(
+                        competitor_masks,
+                        [
+                            chunks.len(),
+                            NUM_ACTION_KIND_EXPERTS * NUM_POLICY_ACTION_KINDS,
+                        ],
+                    ),
+                    step.device,
+                ))
+            .max_dim(1);
+            let teacher_logits = expert_kind_logits
+                .clone()
+                .gather(1, expert_kind_tensor.clone().unsqueeze_dim(1));
+            (burn::tensor::activation::relu(strongest_competitor - teacher_logits + margin as f32)
+                * sample_weight_tensor.clone())
+            .mean()
+                * step.action_kind_margin_loss_weight as f32
+        });
+        let conditional_log_likelihood = burn::tensor::activation::log_softmax(target_logits, 1)
+            .gather(1, target_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(effort_logits, 1)
                 .gather(1, effort_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(amount_logits, 1)
@@ -1395,13 +1760,23 @@ fn train_chunk_batch<B: AutodiffBackend>(
                 .gather(1, signal_tensor.unsqueeze_dim(1))
             + burn::tensor::activation::log_softmax(signal_strength_logits, 1)
                 .gather(1, signal_strength_tensor.unsqueeze_dim(1));
+        let action_log_likelihood = if step.action_kind_margin.is_some() {
+            conditional_log_likelihood
+        } else {
+            conditional_log_likelihood
+                + burn::tensor::activation::log_softmax(expert_kind_logits, 1)
+                    .gather(1, expert_kind_tensor.unsqueeze_dim(1))
+        };
         let phase_log_likelihood =
             burn::tensor::activation::log_softmax(output.phase_gate_logits, 1)
                 .gather(1, phase_tensor.unsqueeze_dim(1));
-        let step_loss = (action_log_likelihood * sample_weight_tensor
-            + phase_log_likelihood * phase_weight_tensor * loss_weights.phase_gate as f32)
+        let mut step_loss = (action_log_likelihood * sample_weight_tensor
+            + phase_log_likelihood * phase_weight_tensor * step.loss_weights.phase_gate as f32)
             .mean()
             .neg();
+        if let Some(action_kind_margin_loss) = action_kind_margin_loss {
+            step_loss = step_loss + action_kind_margin_loss;
+        }
         loss = Some(match loss {
             Some(loss) => loss + step_loss,
             None => step_loss,
@@ -1410,7 +1785,69 @@ fn train_chunk_batch<B: AutodiffBackend>(
     }
     let loss = loss.expect("a sequence chunk always contains a sample") / steps as f32;
     let gradients = GradientsParams::from_grads(loss.backward(), &model);
-    model = optimizer.step(learning_rate, model, gradients);
+    model = optimizer.step(step.learning_rate, model, gradients);
+    if step.exploration_guard_readiness_only {
+        model = step
+            .frozen_template
+            .expect("exploration-Guard-readiness-only adaptation has a frozen parent template")
+            .clone()
+            .with_exploration_guard_readiness_from(model);
+    } else if let Some(context) = step.context_slot_adapter_only {
+        let context = match context {
+            SupervisionPhase::Combat => ObservationExpertContext::Interaction,
+            SupervisionPhase::Exploration => ObservationExpertContext::Exploration,
+            SupervisionPhase::Feeding => {
+                unreachable!("foraging uses its dedicated adapter-only mode")
+            }
+        };
+        model = step
+            .frozen_template
+            .expect("context-slot-adapter-only adaptation has a frozen parent template")
+            .clone()
+            .with_context_slot_adapter_from(context, model);
+    } else if let Some(context) = step.context_adapter_only {
+        let context = match context {
+            SupervisionPhase::Combat => ObservationExpertContext::Interaction,
+            SupervisionPhase::Exploration => ObservationExpertContext::Exploration,
+            SupervisionPhase::Feeding => {
+                unreachable!("foraging uses its dedicated adapter-only mode")
+            }
+        };
+        model = step
+            .frozen_template
+            .expect("context-adapter-only adaptation has a frozen parent template")
+            .clone()
+            .with_context_adapter_from(context, model);
+    } else if step.effort_head_only {
+        model = step
+            .frozen_template
+            .expect("effort-head-only adaptation has a frozen parent template")
+            .clone()
+            .with_effort_head_from(model);
+    } else if step.target_query_head_only {
+        model = step
+            .frozen_template
+            .expect("target-head-only adaptation has a frozen parent template")
+            .clone()
+            .with_target_query_head_from(model);
+    } else if step.foraging_adapter_only {
+        model = step
+            .frozen_template
+            .expect("adapter-only adaptation has a frozen parent template")
+            .clone()
+            .with_foraging_adapter_from(model);
+    } else if let Some(expert) = step.action_kind_expert_only {
+        let context = match expert {
+            SupervisionPhase::Feeding => ObservationExpertContext::Foraging,
+            SupervisionPhase::Combat => ObservationExpertContext::Interaction,
+            SupervisionPhase::Exploration => ObservationExpertContext::Exploration,
+        };
+        model = step
+            .frozen_template
+            .expect("expert-only adaptation has a frozen parent template")
+            .clone()
+            .with_action_kind_expert_from(model, context);
+    }
     model
 }
 
@@ -1449,6 +1886,16 @@ where
     if datasets.is_empty() {
         return Err("behavior cloning requires at least one dataset".into());
     }
+    if datasets
+        .iter()
+        .flat_map(|dataset| &dataset.payload.samples)
+        .any(|sample| {
+            !sample.initial_policy_memory.is_empty()
+                && sample.initial_policy_memory.len() != model_config.recurrent_size
+        })
+    {
+        return Err("demonstration initial policy memory does not match the model".into());
+    }
     let available_samples = datasets
         .iter()
         .map(|dataset| dataset.payload.samples.len())
@@ -1459,7 +1906,7 @@ where
         .filter(|sample| sample.exact_round_trip)
         .count();
     let partitions = partition_datasets(datasets, config)?;
-    validate_gate_label_consistency(&partitions)?;
+    validate_gate_label_consistency(&partitions, config.expert_routing)?;
     let training_sequences_by_dataset = partitions
         .iter()
         .map(|partition| build_sequences(&partition.training))
@@ -1489,11 +1936,9 @@ where
         &partitions,
         config.dataset_sampling,
         &config.dataset_sampling_weights,
+        config.epoch_sample_budget,
     )?;
     let samples_per_epoch = per_dataset.iter().sum::<usize>();
-    let sample_presentations = samples_per_epoch
-        .checked_mul(config.epochs)
-        .ok_or_else(|| "behavior-cloning sample presentation count overflowed".to_string())?;
     let partition_metrics = partitions
         .iter()
         .zip(&per_dataset)
@@ -1507,9 +1952,16 @@ where
                         .iter()
                         .chain(&partition.validation)
                         .copied(),
+                    config.expert_routing,
                 ),
-                training_phase_samples: phase_histogram(partition.training.iter().copied()),
-                validation_phase_samples: phase_histogram(partition.validation.iter().copied()),
+                training_phase_samples: phase_histogram(
+                    partition.training.iter().copied(),
+                    config.expert_routing,
+                ),
+                validation_phase_samples: phase_histogram(
+                    partition.validation.iter().copied(),
+                    config.expert_routing,
+                ),
                 eligible_samples: partition.training.len() + partition.validation.len(),
                 training_samples: partition.training.len(),
                 validation_samples: partition.validation.len(),
@@ -1539,6 +1991,21 @@ where
         }
         .init::<B>(&device)
     });
+    // Fork once before creating any autodiff graph. Cloning the active model
+    // inside an update would duplicate parameter IDs in that graph and can
+    // consume the selected expert's gradients. The fork is an independent,
+    // immutable source for every non-selected parameter instead.
+    let frozen_template = config
+        .action_kind_expert_only
+        .is_some()
+        .then_some(())
+        .or(config.foraging_adapter_only.then_some(()))
+        .or(config.context_adapter_only.map(|_| ()))
+        .or(config.context_slot_adapter_only.map(|_| ()))
+        .or(config.exploration_guard_readiness_only.then_some(()))
+        .or(config.target_query_head_only.then_some(()))
+        .or(config.effort_head_only.then_some(()))
+        .map(|()| model.clone().fork(&device));
     let mut optimizer = AdamWConfig::new()
         .init()
         .with_grad_clipping(GradientClipping::Norm(1.0));
@@ -1546,7 +2013,12 @@ where
         &model,
         &training_sequences,
         config.minibatch_size,
-        config.phase_gate_loss_weight,
+        config.expert_routing,
+        EvaluationLossConfig {
+            phase_gate_weight: config.phase_gate_loss_weight,
+            action_kind_margin: config.action_kind_margin,
+            action_kind_margin_weight: config.action_kind_margin_loss_weight,
+        },
         &device,
     )
     .expect("a nonempty training partition has a trajectory");
@@ -1554,16 +2026,23 @@ where
         &model,
         &validation_sequences,
         config.minibatch_size,
-        config.phase_gate_loss_weight,
+        config.expert_routing,
+        EvaluationLossConfig {
+            phase_gate_weight: config.phase_gate_loss_weight,
+            action_kind_margin: config.action_kind_margin,
+            action_kind_margin_weight: config.action_kind_margin_loss_weight,
+        },
         &device,
     );
     let mut rng = ChaCha12Rng::seed_from_u64(config.seed ^ 0x4245_4841_5649_4f52);
     let mut optimizer_steps = 0usize;
+    let mut completed_epochs = 0usize;
+    let mut sample_presentations = 0usize;
     let mut action_family_presentations = vec![0usize; PolicyActionFamily::COUNT];
     let mut action_family_weighted_loss_mass = vec![0.0_f64; PolicyActionFamily::COUNT];
     let mut supervision_phase_presentations = vec![0usize; NUM_ACTION_KIND_EXPERTS];
     let mut supervision_phase_weighted_gate_loss_mass = vec![0.0_f64; NUM_ACTION_KIND_EXPERTS];
-    for _ in 0..config.epochs {
+    'epochs: for _ in 0..config.epochs {
         let chunks_by_dataset = training_sequences_by_dataset
             .iter()
             .map(|sequences| {
@@ -1583,20 +2062,7 @@ where
             config.action_balance_exponent,
             config.action_balance_max_ratio,
         );
-        let phase_weights = phase_weights_for_chunks(&epoch);
-        for sample in epoch.iter().flat_map(|chunk| chunk.samples.iter().copied()) {
-            let family = policy_action_family(usize::from(sample.action))
-                .expect("validated demonstration action belongs to a policy family")
-                .index();
-            action_family_presentations[family] += 1;
-            action_family_weighted_loss_mass[family] +=
-                f64::from(action_weights[usize::from(sample.action)]);
-        }
-        for sample in epoch.iter().flat_map(|chunk| &chunk.samples) {
-            let phase = supervision_phase(sample).index();
-            supervision_phase_presentations[phase] += 1;
-            supervision_phase_weighted_gate_loss_mass[phase] += f64::from(phase_weights[phase]);
-        }
+        let phase_weights = phase_weights_for_chunks(&epoch, config.expert_routing);
         let mut by_length = BTreeMap::<usize, Vec<SequenceChunk<'_>>>::new();
         for chunk in epoch {
             by_length
@@ -1604,36 +2070,116 @@ where
                 .or_default()
                 .push(chunk);
         }
+        let group_shapes = by_length
+            .iter()
+            .map(|(length, chunks)| (*length, chunks.len()))
+            .collect::<Vec<_>>();
+        let exact_batch_counts = config
+            .optimizer_steps_per_epoch
+            .map(|steps| exact_recurrent_batch_counts(&group_shapes, config.minibatch_size, steps))
+            .transpose()?;
         let mut chunk_batches = Vec::new();
-        for (length, chunks) in &mut by_length {
+        for (group_index, (length, chunks)) in by_length.iter_mut().enumerate() {
             chunks.shuffle(&mut rng);
-            let chunk_batch_size = (config.minibatch_size / *length).max(1);
-            for batch in chunks.chunks(chunk_batch_size) {
-                chunk_batches.push(batch.to_vec());
+            if let Some(batch_counts) = &exact_batch_counts {
+                let batches = batch_counts[group_index];
+                let base = chunks.len() / batches;
+                let remainder = chunks.len() % batches;
+                let mut start = 0usize;
+                for batch_index in 0..batches {
+                    let size = base + usize::from(batch_index < remainder);
+                    chunk_batches.push(chunks[start..start + size].to_vec());
+                    start += size;
+                }
+                debug_assert_eq!(start, chunks.len());
+            } else {
+                let chunk_batch_size = (config.minibatch_size / *length).max(1);
+                for batch in chunks.chunks(chunk_batch_size) {
+                    chunk_batches.push(batch.to_vec());
+                }
             }
         }
+        debug_assert_eq!(
+            config
+                .optimizer_steps_per_epoch
+                .unwrap_or(chunk_batches.len()),
+            chunk_batches.len()
+        );
         chunk_batches.shuffle(&mut rng);
-        for batch in chunk_batches {
+        let batches_in_epoch = chunk_batches.len();
+        let remaining_steps = config
+            .optimizer_step_budget
+            .map_or(batches_in_epoch, |budget| budget - optimizer_steps);
+        let batches_to_run = batches_in_epoch.min(remaining_steps);
+        for batch in chunk_batches.into_iter().take(batches_to_run) {
+            for sample in batch.iter().flat_map(|chunk| chunk.samples.iter().copied()) {
+                let family = policy_action_family(usize::from(sample.action))
+                    .expect("validated demonstration action belongs to a policy family")
+                    .index();
+                sample_presentations += 1;
+                action_family_presentations[family] += 1;
+                action_family_weighted_loss_mass[family] +=
+                    f64::from(action_weights[usize::from(sample.action)]);
+                let phase = expert_routing_phase(sample, config.expert_routing).index();
+                supervision_phase_presentations[phase] += 1;
+                supervision_phase_weighted_gate_loss_mass[phase] += f64::from(phase_weights[phase]);
+            }
+            let learning_rate = if config.optimizer_step_budget == Some(optimizer_steps + 1) {
+                config.learning_rate * config.terminal_optimizer_step_scale
+            } else {
+                config.learning_rate
+            };
             model = train_chunk_batch(
                 model,
                 &mut optimizer,
                 &batch,
-                SupervisedLossWeights {
-                    actions: &action_weights,
-                    phases: &phase_weights,
-                    phase_gate: config.phase_gate_loss_weight,
+                SupervisedStep {
+                    loss_weights: SupervisedLossWeights {
+                        actions: &action_weights,
+                        phases: &phase_weights,
+                        phase_gate: config.phase_gate_loss_weight,
+                    },
+                    expert_routing: config.expert_routing,
+                    action_kind_expert_only: config.action_kind_expert_only,
+                    foraging_adapter_only: config.foraging_adapter_only,
+                    context_adapter_only: config.context_adapter_only,
+                    context_slot_adapter_only: config.context_slot_adapter_only,
+                    exploration_guard_readiness_only: config.exploration_guard_readiness_only,
+                    action_kind_margin: config.action_kind_margin,
+                    action_kind_margin_loss_weight: config.action_kind_margin_loss_weight,
+                    target_query_head_only: config.target_query_head_only,
+                    effort_head_only: config.effort_head_only,
+                    frozen_template: frozen_template.as_ref(),
+                    learning_rate,
+                    device: &device,
                 },
-                config.learning_rate,
-                &device,
             );
             optimizer_steps += 1;
         }
+        if batches_to_run == batches_in_epoch {
+            completed_epochs += 1;
+        }
+        if config
+            .optimizer_step_budget
+            .is_some_and(|budget| optimizer_steps == budget)
+        {
+            break 'epochs;
+        }
     }
+    debug_assert_eq!(
+        config.optimizer_step_budget.unwrap_or(optimizer_steps),
+        optimizer_steps
+    );
     let final_training = evaluate_sequences(
         &model,
         &training_sequences,
         config.minibatch_size,
-        config.phase_gate_loss_weight,
+        config.expert_routing,
+        EvaluationLossConfig {
+            phase_gate_weight: config.phase_gate_loss_weight,
+            action_kind_margin: config.action_kind_margin,
+            action_kind_margin_weight: config.action_kind_margin_loss_weight,
+        },
         &device,
     )
     .expect("a nonempty training partition has a trajectory");
@@ -1641,7 +2187,12 @@ where
         &model,
         &validation_sequences,
         config.minibatch_size,
-        config.phase_gate_loss_weight,
+        config.expert_routing,
+        EvaluationLossConfig {
+            phase_gate_weight: config.phase_gate_loss_weight,
+            action_kind_margin: config.action_kind_margin,
+            action_kind_margin_weight: config.action_kind_margin_loss_weight,
+        },
         &device,
     );
     Ok((
@@ -1662,6 +2213,7 @@ where
             training_trajectories: training_sequences.len(),
             validation_trajectories: validation_sequences.len(),
             exact_round_trip_samples,
+            completed_epochs,
             epochs: config.epochs,
             optimizer_steps,
             initial_training_loss: initial_training.loss,
@@ -1729,6 +2281,17 @@ pub fn verify_behavior_clone_artifact(
     expected_artifact_sha256: &str,
     expected_model: &ModelConfig,
 ) -> Result<PathBuf, String> {
+    verify_behavior_clone_artifact_with_schema(directory, expected_artifact_sha256, expected_model)
+        .map(|(path, _)| path)
+}
+
+/// Verify a configured warm start and also return its schema so the sole
+/// behavior-cloning lineage loader can perform one-way model migrations.
+pub fn verify_behavior_clone_artifact_with_schema(
+    directory: &Path,
+    expected_artifact_sha256: &str,
+    expected_model: &ModelConfig,
+) -> Result<(PathBuf, u32), String> {
     let metadata_path = directory.join("behavior-cloning.json");
     let metadata = fs::read(&metadata_path)
         .map_err(|error| format!("failed to read {}: {error}", metadata_path.display()))?;
@@ -1740,7 +2303,8 @@ pub fn verify_behavior_clone_artifact(
     }
     let artifact: BehaviorCloningArtifact = serde_json::from_slice(&metadata)
         .map_err(|error| format!("failed to decode {}: {error}", metadata_path.display()))?;
-    if artifact.schema_version != BEHAVIOR_CLONING_SCHEMA_VERSION
+    if !(MIN_SUPPORTED_BEHAVIOR_CLONING_SCHEMA_VERSION..=BEHAVIOR_CLONING_SCHEMA_VERSION)
+        .contains(&artifact.schema_version)
         || artifact.model != *expected_model
         || artifact.model_file != "model.mpk"
     {
@@ -1750,7 +2314,7 @@ pub fn verify_behavior_clone_artifact(
     if sha256_file(&model_file)? != artifact.model_sha256 {
         return Err("behavior-cloned model SHA-256 mismatch".into());
     }
-    Ok(directory.join("model"))
+    Ok((directory.join("model"), artifact.schema_version))
 }
 
 pub fn publish_behavior_clone<B: AutodiffBackend>(
@@ -1797,7 +2361,7 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
                 .map(|dataset| BehaviorCloningDatasetIdentity {
                     manifest_sha256: dataset.manifest_sha256.clone(),
                     payload_sha256: dataset.manifest.payload_sha256.clone(),
-                    teacher: dataset.manifest.teacher.to_string(),
+                    teacher: dataset.manifest.teacher.clone(),
                     samples: dataset.manifest.samples,
                     exact_round_trip_samples: dataset.manifest.exact_round_trip_samples,
                 })
@@ -1845,6 +2409,12 @@ mod tests {
     use super::*;
     use crate::control_matrix::MaintainedMindProfile;
     use crate::demonstration::{generate_demonstrations, DemonstrationOptions};
+    use crate::observation::{
+        CURRENT_TILE_DIFFUSE_ENERGY_FEATURE, CURRENT_TILE_LOOSE_ENERGY_FEATURE,
+        CURRENT_TILE_PLANT_CAPACITY_FEATURE, CURRENT_TILE_PLANT_ENERGY_FEATURE, HEADER_FEATURES,
+        SLOT_DIFFUSE_ENERGY_FEATURE, SLOT_FEATURES, SLOT_LOOSE_ENERGY_FEATURE,
+        SLOT_NEIGHBOR_ACTIVITY_FEATURE, SLOT_NEIGHBOR_PRESENT_FEATURE, SLOT_PLANT_ENERGY_FEATURE,
+    };
     use burn::backend::{Autodiff, NdArray};
 
     type TestBackend = Autodiff<NdArray<f32>>;
@@ -1920,12 +2490,36 @@ mod tests {
         assert!(chunks
             .iter()
             .flat_map(|chunk| &chunk.samples)
-            .all(|sample| { supervision_phase(sample) == SupervisionPhase::Feeding }));
+            .all(|sample| {
+                expert_routing_phase(sample, ExpertRoutingStrategy::LocalActionFamily)
+                    == SupervisionPhase::Feeding
+            }));
         assert!(chunks[1].initial_memory.iter().any(|value| *value != 0.0));
         assert_eq!(
             chunks[1].initial_memory,
             canonicalize_memory(&chunks[1].initial_memory)
         );
+    }
+
+    #[test]
+    fn isolated_correction_uses_its_exact_private_memory() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let mut sample = demonstration_samples(1).remove(0);
+        sample.initial_policy_memory = vec![0.25, -0.5, 0.75, -1.0];
+        let references = vec![&sample];
+        let sequences = build_sequences(&references);
+        let device = Default::default();
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 4,
+        }
+        .init::<TestBackend>(&device);
+
+        let chunks = prepare_sequence_chunks(&model, &sequences, 1, 1, &device);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].initial_memory, sample.initial_policy_memory);
     }
 
     #[test]
@@ -1940,6 +2534,53 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
         assert!(oversized.validate().is_err());
+        let zero_epoch_budget = BehaviorCloningConfig {
+            epoch_sample_budget: Some(0),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(zero_epoch_budget.validate().is_err());
+        let zero_optimizer_budget = BehaviorCloningConfig {
+            optimizer_steps_per_epoch: Some(0),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(zero_optimizer_budget.validate().is_err());
+        let zero_total_optimizer_budget = BehaviorCloningConfig {
+            optimizer_steps_per_epoch: Some(1),
+            optimizer_step_budget: Some(0),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(zero_total_optimizer_budget.validate().is_err());
+        let unbounded_total_optimizer_budget = BehaviorCloningConfig {
+            optimizer_step_budget: Some(1),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unbounded_total_optimizer_budget.validate().is_err());
+        let excessive_total_optimizer_budget = BehaviorCloningConfig {
+            epochs: 2,
+            optimizer_steps_per_epoch: Some(3),
+            optimizer_step_budget: Some(7),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(excessive_total_optimizer_budget.validate().is_err());
+        let zero_terminal_scale = BehaviorCloningConfig {
+            optimizer_steps_per_epoch: Some(1),
+            optimizer_step_budget: Some(1),
+            terminal_optimizer_step_scale: 0.0,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(zero_terminal_scale.validate().is_err());
+        let excessive_terminal_scale = BehaviorCloningConfig {
+            optimizer_steps_per_epoch: Some(1),
+            optimizer_step_budget: Some(1),
+            terminal_optimizer_step_scale: 1.01,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(excessive_terminal_scale.validate().is_err());
+        let unbounded_terminal_scale = BehaviorCloningConfig {
+            terminal_optimizer_step_scale: 0.5,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unbounded_terminal_scale.validate().is_err());
         let invalid_balance = BehaviorCloningConfig {
             action_balance_exponent: 1.01,
             ..BehaviorCloningConfig::default()
@@ -1960,6 +2601,542 @@ mod tests {
             ..BehaviorCloningConfig::default()
         };
         assert!(invalid_phase_gate_weight.validate().is_err());
+        let unweighted_margin = BehaviorCloningConfig {
+            action_kind_margin: Some(0.0),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unweighted_margin.validate().is_err());
+        let weight_without_margin = BehaviorCloningConfig {
+            action_kind_margin_loss_weight: 1.0,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(weight_without_margin.validate().is_err());
+        let excessive_margin = BehaviorCloningConfig {
+            action_kind_margin: Some(100.01),
+            action_kind_margin_loss_weight: 1.0,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(excessive_margin.validate().is_err());
+        let unparented_expert_only = BehaviorCloningConfig {
+            action_kind_expert_only: Some(SupervisionPhase::Exploration),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_expert_only.validate().is_err());
+        let unparented_adapter_only = BehaviorCloningConfig {
+            foraging_adapter_only: true,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_adapter_only.validate().is_err());
+        let unparented_context_adapter = BehaviorCloningConfig {
+            context_adapter_only: Some(SupervisionPhase::Combat),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_context_adapter.validate().is_err());
+        let invalid_foraging_context_adapter = BehaviorCloningConfig {
+            initial_artifact_sha256: Some("a".repeat(64)),
+            context_adapter_only: Some(SupervisionPhase::Feeding),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(invalid_foraging_context_adapter.validate().is_err());
+        let unparented_context_slot_adapter = BehaviorCloningConfig {
+            context_slot_adapter_only: Some(SupervisionPhase::Combat),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_context_slot_adapter.validate().is_err());
+        let unparented_guard_readiness = BehaviorCloningConfig {
+            exploration_guard_readiness_only: true,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_guard_readiness.validate().is_err());
+        let conflicting_guard_readiness = BehaviorCloningConfig {
+            initial_artifact_sha256: Some("a".repeat(64)),
+            context_slot_adapter_only: Some(SupervisionPhase::Exploration),
+            exploration_guard_readiness_only: true,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(conflicting_guard_readiness.validate().is_err());
+        let conflicting_context_adapters = BehaviorCloningConfig {
+            initial_artifact_sha256: Some("a".repeat(64)),
+            context_adapter_only: Some(SupervisionPhase::Combat),
+            context_slot_adapter_only: Some(SupervisionPhase::Combat),
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(conflicting_context_adapters.validate().is_err());
+        let unparented_target_only = BehaviorCloningConfig {
+            target_query_head_only: true,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_target_only.validate().is_err());
+        let unparented_effort_only = BehaviorCloningConfig {
+            effort_head_only: true,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_effort_only.validate().is_err());
+        let non_authoritative_router = BehaviorCloningConfig {
+            expert_routing: ExpertRoutingStrategy::VisibleNeighborContext,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(non_authoritative_router.validate().is_err());
+    }
+
+    #[test]
+    fn expert_only_training_updates_only_the_selected_head() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 124);
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let mut sample = demonstration_samples(1).remove(0);
+        sample.observation.fill(0.0);
+        assert_eq!(
+            expert_routing_phase(
+                &sample,
+                ExpertRoutingStrategy::ForagingInteractionExploration
+            ),
+            SupervisionPhase::Exploration
+        );
+        let chunk = SequenceChunk {
+            samples: vec![&sample],
+            initial_memory: vec![0.0; 8],
+        };
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(sample.observation.to_vec(), [1, OBS_DIM]),
+            &device,
+        );
+        let before = model
+            .forward(observation.clone())
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let frozen_template = model.clone().fork(&device);
+        let mut optimizer = AdamWConfig::new().init();
+        let action_weights = vec![1.0; NUM_ACTIONS];
+        let phase_weights = [1.0; NUM_ACTION_KIND_EXPERTS];
+        let trained = train_chunk_batch(
+            model,
+            &mut optimizer,
+            &[chunk],
+            SupervisedStep {
+                loss_weights: SupervisedLossWeights {
+                    actions: &action_weights,
+                    phases: &phase_weights,
+                    phase_gate: 1.0,
+                },
+                expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
+                action_kind_expert_only: Some(SupervisionPhase::Exploration),
+                foraging_adapter_only: false,
+                context_adapter_only: None,
+                context_slot_adapter_only: None,
+                exploration_guard_readiness_only: false,
+                action_kind_margin: None,
+                action_kind_margin_loss_weight: 0.0,
+                target_query_head_only: false,
+                effort_head_only: false,
+                frozen_template: Some(&frozen_template),
+                learning_rate: 1e-2,
+                device: &device,
+            },
+        );
+        let after = trained
+            .forward(observation)
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let split = NUM_POLICY_ACTION_KINDS * 2;
+        assert_eq!(&after[..split], &before[..split]);
+        assert_ne!(&after[split..], &before[split..]);
+    }
+
+    #[test]
+    fn adapter_only_training_preserves_trunk_and_other_experts() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 125);
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let mut sample = demonstration_samples(1).remove(0);
+        sample.observation.fill(0.0);
+        sample.observation[CURRENT_TILE_PLANT_CAPACITY_FEATURE] = 0.25;
+        sample.observation[CURRENT_TILE_PLANT_ENERGY_FEATURE] = 0.25;
+        assert_eq!(
+            expert_routing_phase(
+                &sample,
+                ExpertRoutingStrategy::ForagingInteractionExploration
+            ),
+            SupervisionPhase::Feeding
+        );
+        let chunk = SequenceChunk {
+            samples: vec![&sample],
+            initial_memory: vec![0.0; 8],
+        };
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(sample.observation.to_vec(), [1, OBS_DIM]),
+            &device,
+        );
+        let before = model.forward(observation.clone());
+        let before_experts = before
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let before_memory = before.next_memory.into_data().to_vec::<f32>().unwrap();
+        let frozen_template = model.clone().fork(&device);
+        let mut optimizer = AdamWConfig::new().init();
+        let action_weights = vec![1.0; NUM_ACTIONS];
+        let phase_weights = [1.0; NUM_ACTION_KIND_EXPERTS];
+        let trained = train_chunk_batch(
+            model,
+            &mut optimizer,
+            &[chunk],
+            SupervisedStep {
+                loss_weights: SupervisedLossWeights {
+                    actions: &action_weights,
+                    phases: &phase_weights,
+                    phase_gate: 1.0,
+                },
+                expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
+                action_kind_expert_only: None,
+                foraging_adapter_only: true,
+                context_adapter_only: None,
+                context_slot_adapter_only: None,
+                exploration_guard_readiness_only: false,
+                action_kind_margin: None,
+                action_kind_margin_loss_weight: 0.0,
+                target_query_head_only: false,
+                effort_head_only: false,
+                frozen_template: Some(&frozen_template),
+                learning_rate: 1e-2,
+                device: &device,
+            },
+        );
+        let after = trained.forward(observation);
+        let after_experts = after
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        assert_ne!(
+            &after_experts[..NUM_POLICY_ACTION_KINDS],
+            &before_experts[..NUM_POLICY_ACTION_KINDS]
+        );
+        assert_eq!(
+            &after_experts[NUM_POLICY_ACTION_KINDS..],
+            &before_experts[NUM_POLICY_ACTION_KINDS..]
+        );
+        assert_eq!(
+            after.next_memory.into_data().to_vec::<f32>().unwrap(),
+            before_memory
+        );
+    }
+
+    #[test]
+    fn effort_only_training_preserves_every_other_output() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 126);
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let mut sample = demonstration_samples(1).remove(0);
+        sample.action = u16::try_from(
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Move.index(),
+                target: 0,
+                effort: 2,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let chunk = SequenceChunk {
+            samples: vec![&sample],
+            initial_memory: vec![0.0; 8],
+        };
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(sample.observation.to_vec(), [1, OBS_DIM]),
+            &device,
+        );
+        let before = model.forward(observation.clone());
+        let before_kinds = before
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let before_targets = before.target_logits.into_data().to_vec::<f32>().unwrap();
+        let before_efforts = before.effort_logits.into_data().to_vec::<f32>().unwrap();
+        let before_memory = before.next_memory.into_data().to_vec::<f32>().unwrap();
+        let frozen_template = model.clone().fork(&device);
+        let mut optimizer = AdamWConfig::new().init();
+        let action_weights = vec![1.0; NUM_ACTIONS];
+        let phase_weights = [1.0; NUM_ACTION_KIND_EXPERTS];
+        let trained = train_chunk_batch(
+            model,
+            &mut optimizer,
+            &[chunk],
+            SupervisedStep {
+                loss_weights: SupervisedLossWeights {
+                    actions: &action_weights,
+                    phases: &phase_weights,
+                    phase_gate: 1.0,
+                },
+                expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
+                action_kind_expert_only: None,
+                foraging_adapter_only: false,
+                context_adapter_only: None,
+                context_slot_adapter_only: None,
+                exploration_guard_readiness_only: false,
+                action_kind_margin: None,
+                action_kind_margin_loss_weight: 0.0,
+                target_query_head_only: false,
+                effort_head_only: true,
+                frozen_template: Some(&frozen_template),
+                learning_rate: 1e-2,
+                device: &device,
+            },
+        );
+        let after = trained.forward(observation);
+        assert_eq!(
+            after
+                .action_kind_expert_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            before_kinds
+        );
+        assert_eq!(
+            after.target_logits.into_data().to_vec::<f32>().unwrap(),
+            before_targets
+        );
+        assert_ne!(
+            after.effort_logits.into_data().to_vec::<f32>().unwrap(),
+            before_efforts
+        );
+        assert_eq!(
+            after.next_memory.into_data().to_vec::<f32>().unwrap(),
+            before_memory
+        );
+    }
+
+    #[test]
+    fn context_slot_adapter_training_updates_only_the_selected_residual() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 127);
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let mut sample = demonstration_samples(1).remove(0);
+        sample.observation.fill(0.0);
+        sample.observation[HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        sample.action = u16::try_from(
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Guard.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            expert_routing_phase(
+                &sample,
+                ExpertRoutingStrategy::ForagingInteractionExploration
+            ),
+            SupervisionPhase::Combat
+        );
+        let chunk = SequenceChunk {
+            samples: vec![&sample],
+            initial_memory: vec![0.0; 8],
+        };
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(sample.observation.to_vec(), [1, OBS_DIM]),
+            &device,
+        );
+        let before = model.forward(observation.clone());
+        let before_experts = before
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let before_targets = before.target_logits.into_data().to_vec::<f32>().unwrap();
+        let before_memory = before.next_memory.into_data().to_vec::<f32>().unwrap();
+        let frozen_template = model.clone().fork(&device);
+        let mut optimizer = AdamWConfig::new().init();
+        let action_weights = vec![1.0; NUM_ACTIONS];
+        let phase_weights = [1.0; NUM_ACTION_KIND_EXPERTS];
+        let trained = train_chunk_batch(
+            model,
+            &mut optimizer,
+            &[chunk],
+            SupervisedStep {
+                loss_weights: SupervisedLossWeights {
+                    actions: &action_weights,
+                    phases: &phase_weights,
+                    phase_gate: 1.0,
+                },
+                expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
+                action_kind_expert_only: None,
+                foraging_adapter_only: false,
+                context_adapter_only: None,
+                context_slot_adapter_only: Some(SupervisionPhase::Combat),
+                exploration_guard_readiness_only: false,
+                action_kind_margin: Some(0.0),
+                action_kind_margin_loss_weight: 10.0,
+                target_query_head_only: false,
+                effort_head_only: false,
+                frozen_template: Some(&frozen_template),
+                learning_rate: 1e-2,
+                device: &device,
+            },
+        );
+        let after = trained.forward(observation);
+        let after_experts = after
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let interaction = NUM_POLICY_ACTION_KINDS;
+        let guard = crate::action::PolicyActionKind::Guard.index();
+        let movement = crate::action::PolicyActionKind::Move.index();
+        assert!(
+            after_experts[interaction + guard] - after_experts[interaction + movement]
+                > before_experts[interaction + guard] - before_experts[interaction + movement]
+        );
+        assert_eq!(
+            &after_experts[..NUM_POLICY_ACTION_KINDS],
+            &before_experts[..NUM_POLICY_ACTION_KINDS]
+        );
+        assert_ne!(
+            &after_experts[NUM_POLICY_ACTION_KINDS..2 * NUM_POLICY_ACTION_KINDS],
+            &before_experts[NUM_POLICY_ACTION_KINDS..2 * NUM_POLICY_ACTION_KINDS]
+        );
+        assert_eq!(
+            &after_experts[2 * NUM_POLICY_ACTION_KINDS..],
+            &before_experts[2 * NUM_POLICY_ACTION_KINDS..]
+        );
+        assert_eq!(
+            after.target_logits.into_data().to_vec::<f32>().unwrap(),
+            before_targets
+        );
+        assert_eq!(
+            after.next_memory.into_data().to_vec::<f32>().unwrap(),
+            before_memory
+        );
+    }
+
+    #[test]
+    fn exploration_guard_readiness_training_updates_only_the_guard_residual() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 128);
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let mut sample = demonstration_samples(1).remove(0);
+        sample.observation.fill(0.0);
+        sample.observation[1] = 0.1;
+        sample.action = u16::try_from(
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Guard.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            expert_routing_phase(
+                &sample,
+                ExpertRoutingStrategy::ForagingInteractionExploration
+            ),
+            SupervisionPhase::Exploration
+        );
+        let chunk = SequenceChunk {
+            samples: vec![&sample],
+            initial_memory: vec![0.0; 8],
+        };
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(sample.observation.to_vec(), [1, OBS_DIM]),
+            &device,
+        );
+        let before = model.forward(observation.clone());
+        let before_experts = before
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let before_targets = before.target_logits.into_data().to_vec::<f32>().unwrap();
+        let before_memory = before.next_memory.into_data().to_vec::<f32>().unwrap();
+        let frozen_template = model.clone().fork(&device);
+        let mut optimizer = AdamWConfig::new().init();
+        let action_weights = vec![1.0; NUM_ACTIONS];
+        let phase_weights = [1.0; NUM_ACTION_KIND_EXPERTS];
+        let trained = train_chunk_batch(
+            model,
+            &mut optimizer,
+            &[chunk],
+            SupervisedStep {
+                loss_weights: SupervisedLossWeights {
+                    actions: &action_weights,
+                    phases: &phase_weights,
+                    phase_gate: 1.0,
+                },
+                expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
+                action_kind_expert_only: None,
+                foraging_adapter_only: false,
+                context_adapter_only: None,
+                context_slot_adapter_only: None,
+                exploration_guard_readiness_only: true,
+                action_kind_margin: Some(0.0),
+                action_kind_margin_loss_weight: 10.0,
+                target_query_head_only: false,
+                effort_head_only: false,
+                frozen_template: Some(&frozen_template),
+                learning_rate: 1e-2,
+                device: &device,
+            },
+        );
+        let after = trained.forward(observation);
+        let after_experts = after
+            .action_kind_expert_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let exploration = 2 * NUM_POLICY_ACTION_KINDS;
+        let guard = crate::action::PolicyActionKind::Guard.index();
+        for index in 0..after_experts.len() {
+            if index == exploration + guard {
+                assert_ne!(after_experts[index], before_experts[index]);
+            } else {
+                assert_eq!(after_experts[index], before_experts[index]);
+            }
+        }
+        assert_eq!(
+            after.target_logits.into_data().to_vec::<f32>().unwrap(),
+            before_targets
+        );
+        assert_eq!(
+            after.next_memory.into_data().to_vec::<f32>().unwrap(),
+            before_memory
+        );
     }
 
     #[test]
@@ -2007,6 +3184,39 @@ mod tests {
     }
 
     #[test]
+    fn capped_action_weights_preserve_total_presentation_mass() {
+        let mut samples = demonstration_samples(4);
+        let consume =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Consume.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        let attack =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Attack.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        for sample in &mut samples[..3] {
+            sample.action = consume as u16;
+        }
+        samples[3].action = attack as u16;
+
+        let weights = action_weights_for_samples(
+            samples.iter(),
+            ActionBalancingStrategy::Family,
+            1.0,
+            Some(2.0),
+        );
+        let total_mass = 3.0 * weights[consume] + weights[attack];
+        assert!((total_mass - samples.len() as f32).abs() < 1.0e-6);
+        assert!((weights[attack] / weights[consume] - 2.0).abs() < 1.0e-6);
+    }
+
+    #[test]
     fn family_balancing_uses_the_effective_presented_sample_mix() {
         let mut samples = demonstration_samples(4);
         let consume =
@@ -2043,6 +3253,7 @@ mod tests {
         let sample = &samples[0];
         let feeding = expert_kind_mask_bias(sample, SupervisionPhase::Feeding);
         let combat = expert_kind_mask_bias(sample, SupervisionPhase::Combat);
+        let exploration = expert_kind_mask_bias(sample, SupervisionPhase::Exploration);
         assert!(feeding[..NUM_POLICY_ACTION_KINDS].contains(&0.0));
         assert!(feeding[NUM_POLICY_ACTION_KINDS..]
             .iter()
@@ -2050,7 +3261,14 @@ mod tests {
         assert!(combat[..NUM_POLICY_ACTION_KINDS]
             .iter()
             .all(|bias| *bias == -1.0e9));
-        assert!(combat[NUM_POLICY_ACTION_KINDS..].contains(&0.0));
+        assert!(combat[NUM_POLICY_ACTION_KINDS..2 * NUM_POLICY_ACTION_KINDS].contains(&0.0));
+        assert!(combat[2 * NUM_POLICY_ACTION_KINDS..]
+            .iter()
+            .all(|bias| *bias == -1.0e9));
+        assert!(exploration[..2 * NUM_POLICY_ACTION_KINDS]
+            .iter()
+            .all(|bias| *bias == -1.0e9));
+        assert!(exploration[2 * NUM_POLICY_ACTION_KINDS..].contains(&0.0));
     }
 
     #[test]
@@ -2080,9 +3298,109 @@ mod tests {
             held_out_seeds: Vec::new(),
         };
 
-        assert!(validate_gate_label_consistency(&[partition])
-            .unwrap_err()
-            .contains("contradictory"));
+        assert!(validate_gate_label_consistency(
+            &[partition],
+            ExpertRoutingStrategy::LocalActionFamily,
+        )
+        .unwrap_err()
+        .contains("contradictory"));
+    }
+
+    #[test]
+    fn visible_neighbor_routing_is_observation_only_across_action_families() {
+        let mut samples = demonstration_samples(2);
+        samples[1].observation = samples[0].observation.clone();
+        samples[0].observation[HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        samples[1].observation[HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        let attack =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: crate::action::PolicyActionKind::Attack.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap();
+        samples[1].action = attack as u16;
+        let partition = DatasetPartition {
+            manifest_sha256: "manifest".into(),
+            training: samples.iter().collect(),
+            validation: Vec::new(),
+            held_out_seeds: Vec::new(),
+        };
+
+        assert!(samples.iter().all(|sample| {
+            expert_routing_phase(sample, ExpertRoutingStrategy::VisibleNeighborContext)
+                == SupervisionPhase::Combat
+        }));
+        validate_gate_label_consistency(
+            &[partition],
+            ExpertRoutingStrategy::VisibleNeighborContext,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn three_way_routing_prioritizes_threat_then_current_food() {
+        let mut samples = demonstration_samples(6);
+        for sample in &mut samples {
+            for feature in [
+                CURRENT_TILE_PLANT_ENERGY_FEATURE,
+                CURRENT_TILE_PLANT_CAPACITY_FEATURE,
+                CURRENT_TILE_LOOSE_ENERGY_FEATURE,
+                CURRENT_TILE_DIFFUSE_ENERGY_FEATURE,
+            ] {
+                sample.observation[feature] = 0.0;
+            }
+            for slot in sample.observation[HEADER_FEATURES..].chunks_exact_mut(SLOT_FEATURES) {
+                for feature in [
+                    SLOT_PLANT_ENERGY_FEATURE,
+                    SLOT_LOOSE_ENERGY_FEATURE,
+                    SLOT_DIFFUSE_ENERGY_FEATURE,
+                    SLOT_NEIGHBOR_PRESENT_FEATURE,
+                    SLOT_NEIGHBOR_ACTIVITY_FEATURE,
+                ] {
+                    slot[feature] = 0.0;
+                }
+            }
+        }
+        samples[0].observation[CURRENT_TILE_PLANT_CAPACITY_FEATURE] = 0.25;
+        samples[1].observation[HEADER_FEATURES + SLOT_LOOSE_ENERGY_FEATURE] = 0.5;
+        samples[1].observation[HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        samples[2].observation[HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        samples[3].observation[HEADER_FEATURES + SLOT_LOOSE_ENERGY_FEATURE] = 0.5;
+        samples[4].observation[CURRENT_TILE_PLANT_CAPACITY_FEATURE] = 0.25;
+        samples[4].observation[HEADER_FEATURES + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
+        samples[4].observation[HEADER_FEATURES + SLOT_NEIGHBOR_ACTIVITY_FEATURE] = 3.0 / 8.0;
+        samples[5].observation[CURRENT_TILE_DIFFUSE_ENERGY_FEATURE] = 0.25;
+
+        let strategy = ExpertRoutingStrategy::ForagingInteractionExploration;
+        assert_eq!(
+            expert_routing_phase(&samples[0], strategy),
+            SupervisionPhase::Feeding
+        );
+        assert_eq!(
+            expert_routing_phase(&samples[1], strategy),
+            SupervisionPhase::Combat,
+            "a visible neighbor must take precedence over merely nearby food"
+        );
+        assert_eq!(
+            expert_routing_phase(&samples[2], strategy),
+            SupervisionPhase::Combat
+        );
+        assert_eq!(
+            expert_routing_phase(&samples[3], strategy),
+            SupervisionPhase::Exploration,
+            "nearby food is a destination for the exploration expert"
+        );
+        assert_eq!(
+            expert_routing_phase(&samples[4], strategy),
+            SupervisionPhase::Combat,
+            "visible attack windup must take precedence over current food"
+        );
+        assert_eq!(
+            expert_routing_phase(&samples[5], strategy),
+            SupervisionPhase::Exploration,
+            "diffuse energy feeds plants but is not directly consumable"
+        );
     }
 
     #[test]
@@ -2108,7 +3426,10 @@ mod tests {
         };
         let mut rng = ChaCha12Rng::seed_from_u64(3);
 
-        let phase_weights = phase_weights_for_chunks(&[first.clone(), second.clone()]);
+        let phase_weights = phase_weights_for_chunks(
+            &[first.clone(), second.clone()],
+            ExpertRoutingStrategy::LocalActionFamily,
+        );
         assert!(
             (3.0 * phase_weights[SupervisionPhase::Feeding.index()]
                 - 2.0 * phase_weights[SupervisionPhase::Combat.index()])
@@ -2129,7 +3450,7 @@ mod tests {
     fn masked_supervision_learns_a_small_maintained_mind_dataset() {
         let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
         let training = small_training_config();
-        let (manifest, payload) = generate_demonstrations(
+        let (manifest, mut payload) = generate_demonstrations(
             &training,
             "config".into(),
             &DemonstrationOptions {
@@ -2139,6 +3460,13 @@ mod tests {
             },
         )
         .unwrap();
+        for sample in &mut payload.samples {
+            sample.observation[CURRENT_TILE_PLANT_ENERGY_FEATURE] = 0.25;
+            for slot in sample.observation[HEADER_FEATURES..].chunks_exact_mut(SLOT_FEATURES) {
+                slot[SLOT_NEIGHBOR_PRESENT_FEATURE] = 0.0;
+                slot[SLOT_NEIGHBOR_ACTIVITY_FEATURE] = 0.0;
+            }
+        }
         let dataset = LoadedDemonstrations {
             directory: PathBuf::from("in-memory"),
             manifest_sha256: "manifest".into(),
@@ -2159,8 +3487,21 @@ mod tests {
             validation_fraction: 0.5,
             dataset_sampling: DatasetSamplingStrategy::Balanced,
             dataset_sampling_weights: Vec::new(),
-            expert_routing: ExpertRoutingStrategy::LocalActionFamily,
+            epoch_sample_budget: None,
+            optimizer_steps_per_epoch: None,
+            optimizer_step_budget: None,
+            terminal_optimizer_step_scale: 1.0,
+            expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
             phase_gate_loss_weight: 1.0,
+            action_kind_expert_only: None,
+            foraging_adapter_only: false,
+            context_adapter_only: None,
+            context_slot_adapter_only: None,
+            exploration_guard_readiness_only: false,
+            action_kind_margin: None,
+            action_kind_margin_loss_weight: 0.0,
+            target_query_head_only: false,
+            effort_head_only: false,
             recurrent_unroll_steps: 4,
             exact_round_trip_only: false,
             action_balancing: ActionBalancingStrategy::None,
@@ -2184,12 +3525,17 @@ mod tests {
             metrics.final_validation_phase_metrics,
             vec![
                 BehaviorCloningPhaseMetrics {
-                    phase: "feeding".into(),
+                    phase: "foraging".into(),
                     samples: metrics.validation_samples,
                     gate_accuracy: metrics.final_validation_phase_metrics[0].gate_accuracy,
                 },
                 BehaviorCloningPhaseMetrics {
-                    phase: "combat".into(),
+                    phase: "interaction".into(),
+                    samples: 0,
+                    gate_accuracy: None,
+                },
+                BehaviorCloningPhaseMetrics {
+                    phase: "exploration".into(),
                     samples: 0,
                     gate_accuracy: None,
                 },
@@ -2223,6 +3569,7 @@ mod tests {
         );
         assert!(metrics.training_trajectories > 0);
         assert!(metrics.validation_trajectories > 0);
+        assert_eq!(metrics.completed_epochs, config.epochs);
 
         let (retrained, retrained_metrics) = behavior_clone::<TestBackend>(
             std::slice::from_ref(&dataset),
@@ -2293,6 +3640,104 @@ mod tests {
     }
 
     #[test]
+    fn total_optimizer_step_budget_stops_mid_epoch_and_counts_actual_presentations() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let training = small_training_config();
+        let (manifest, payload) = generate_demonstrations(
+            &training,
+            "config".into(),
+            &DemonstrationOptions {
+                teacher: MaintainedMindProfile::Simple,
+                seeds: vec![90, 91],
+                max_samples: 32,
+            },
+        )
+        .unwrap();
+        let dataset = LoadedDemonstrations {
+            directory: PathBuf::from("step-budget"),
+            manifest_sha256: "step-budget-manifest".into(),
+            manifest,
+            payload,
+        };
+        let model = ModelConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        };
+        let config = BehaviorCloningConfig {
+            epochs: 2,
+            minibatch_size: 16,
+            validation_fraction: 0.5,
+            epoch_sample_budget: Some(16),
+            optimizer_steps_per_epoch: Some(2),
+            optimizer_step_budget: Some(3),
+            recurrent_unroll_steps: 1,
+            ..BehaviorCloningConfig::default()
+        };
+
+        let (full_terminal_step, metrics) = behavior_clone::<TestBackend>(
+            std::slice::from_ref(&dataset),
+            &model,
+            &config,
+            Default::default(),
+        )
+        .unwrap();
+
+        assert_eq!(metrics.optimizer_steps, 3);
+        assert_eq!(metrics.completed_epochs, 1);
+        assert_eq!(metrics.samples_per_epoch, 16);
+        assert_eq!(metrics.sample_presentations, 24);
+        assert_eq!(
+            metrics.action_family_presentations.iter().sum::<usize>(),
+            metrics.sample_presentations
+        );
+        assert_eq!(
+            metrics
+                .supervision_phase_presentations
+                .iter()
+                .sum::<usize>(),
+            metrics.sample_presentations
+        );
+
+        let fractional_config = BehaviorCloningConfig {
+            terminal_optimizer_step_scale: 0.5,
+            ..config.clone()
+        };
+        let (fractional_terminal_step, fractional_metrics) = behavior_clone::<TestBackend>(
+            std::slice::from_ref(&dataset),
+            &model,
+            &fractional_config,
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(fractional_metrics.optimizer_steps, metrics.optimizer_steps);
+        assert_eq!(
+            fractional_metrics.sample_presentations,
+            metrics.sample_presentations
+        );
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(
+                dataset.payload.samples[0].observation.to_vec(),
+                [1, OBS_DIM],
+            ),
+            &Default::default(),
+        );
+        let full_logits = full_terminal_step
+            .forward(observation.clone())
+            .action_kind_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let fractional_logits = fractional_terminal_step
+            .forward(observation)
+            .action_kind_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        assert_ne!(fractional_logits, full_logits);
+    }
+
+    #[test]
     fn partitions_hold_out_whole_seeds_and_balance_uneven_datasets() {
         let training = small_training_config();
         let (manifest, payload) = generate_demonstrations(
@@ -2342,9 +3787,13 @@ mod tests {
                 .iter()
                 .all(|sample| held_out.contains(&sample.source_seed)));
         }
-        let presentations =
-            samples_per_dataset_per_epoch(&partitions, DatasetSamplingStrategy::Balanced, &[])
-                .unwrap();
+        let presentations = samples_per_dataset_per_epoch(
+            &partitions,
+            DatasetSamplingStrategy::Balanced,
+            &[],
+            None,
+        )
+        .unwrap();
         assert_eq!(presentations[0], presentations[1]);
         assert!(partitions[0].training.len() < partitions[1].training.len());
 
@@ -2389,15 +3838,44 @@ mod tests {
             &partitions,
             DatasetSamplingStrategy::Proportional,
             &[3.0, 1.0],
+            None,
         )
         .unwrap();
         assert_eq!(presentations.iter().sum::<usize>(), 48);
         assert_eq!(presentations, vec![36, 12]);
+        let fixed_presentations = samples_per_dataset_per_epoch(
+            &partitions,
+            DatasetSamplingStrategy::Proportional,
+            &[3.0, 1.0],
+            Some(47),
+        )
+        .unwrap();
+        assert_eq!(fixed_presentations, vec![35, 12]);
+        assert_eq!(fixed_presentations.iter().sum::<usize>(), 47);
         assert!(samples_per_dataset_per_epoch(
             &partitions,
             DatasetSamplingStrategy::Proportional,
             &[1.0],
+            None,
         )
         .is_err());
+    }
+
+    #[test]
+    fn exact_optimizer_step_budget_respects_recurrent_batch_capacity() {
+        let groups = vec![(1, 20), (4, 18), (16, 9)];
+        // Minimum: ceil(20/32) + ceil(18/8) + ceil(9/2) = 9.
+        let counts = exact_recurrent_batch_counts(&groups, 32, 12).unwrap();
+        assert_eq!(counts.iter().sum::<usize>(), 12);
+        for ((length, chunks), batches) in groups.iter().zip(&counts) {
+            assert!(*batches <= *chunks);
+            assert!(chunks.div_ceil(*batches) * length <= 32 || *length > 32);
+        }
+        assert!(exact_recurrent_batch_counts(&groups, 32, 8).is_err());
+        assert!(exact_recurrent_batch_counts(&groups, 32, 48).is_err());
+        assert_eq!(
+            counts,
+            exact_recurrent_batch_counts(&groups, 32, 12).unwrap()
+        );
     }
 }

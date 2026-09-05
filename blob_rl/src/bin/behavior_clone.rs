@@ -5,13 +5,14 @@ use std::path::PathBuf;
 
 use blob_rl::behavior_cloning::{
     behavior_clone_artifact_sha256, behavior_clone_from_model, load_dataset_directories,
-    publish_behavior_clone, verify_behavior_clone_artifact, ActionBalancingStrategy,
+    publish_behavior_clone, verify_behavior_clone_artifact_with_schema, ActionBalancingStrategy,
     BehaviorCloningConfig, BehaviorCloningFamilyMetrics, BehaviorCloningPhaseMetrics,
-    DatasetSamplingStrategy, ExpertRoutingStrategy,
+    DatasetSamplingStrategy, ExpertRoutingStrategy, SupervisionPhase,
 };
-use blob_rl::config::TrainingConfig;
-use blob_rl::model::PolicyValueNetConfig;
+use blob_rl::config::{ModelConfig, TrainingConfig};
+use blob_rl::model::{PolicyValueNet, PolicyValueNetConfig};
 use burn::module::Module;
+use burn::prelude::Backend;
 use burn::record::CompactRecorder;
 use clap::{Parser, ValueEnum};
 
@@ -26,6 +27,36 @@ enum ActionBalancing {
     None,
     Family,
     Label,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ExpertRouting {
+    ForagingInteractionExploration,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ActionKindExpert {
+    Foraging,
+    Interaction,
+    Exploration,
+}
+
+impl From<ActionKindExpert> for SupervisionPhase {
+    fn from(value: ActionKindExpert) -> Self {
+        match value {
+            ActionKindExpert::Foraging => Self::Feeding,
+            ActionKindExpert::Interaction => Self::Combat,
+            ActionKindExpert::Exploration => Self::Exploration,
+        }
+    }
+}
+
+impl From<ExpertRouting> for ExpertRoutingStrategy {
+    fn from(value: ExpertRouting) -> Self {
+        match value {
+            ExpertRouting::ForagingInteractionExploration => Self::ForagingInteractionExploration,
+        }
+    }
 }
 
 impl From<ActionBalancing> for ActionBalancingStrategy {
@@ -88,6 +119,53 @@ fn format_phase_metrics(metrics: &[BehaviorCloningPhaseMetrics]) -> String {
         .join(", ")
 }
 
+fn load_initial_model<B: Backend>(
+    directory: &std::path::Path,
+    artifact_sha256: &str,
+    model: &ModelConfig,
+    device: &B::Device,
+) -> Result<PolicyValueNet<B>, String> {
+    let (model_path, schema_version) =
+        verify_behavior_clone_artifact_with_schema(directory, artifact_sha256, model)?;
+    let config = PolicyValueNetConfig {
+        hidden1: model.hidden1,
+        hidden2: model.hidden2,
+        recurrent_size: model.recurrent_size,
+    };
+    if schema_version < 25 {
+        let legacy = config
+            .init_legacy::<B>(device)
+            .load_file(model_path, &CompactRecorder::new(), device)
+            .map_err(|error| format!("failed to load legacy behavior clone: {error}"))?;
+        Ok(config.migrate_legacy(legacy, device))
+    } else if schema_version < 28 {
+        let legacy = config
+            .init_foraging_adapter_legacy::<B>(device)
+            .load_file(model_path, &CompactRecorder::new(), device)
+            .map_err(|error| format!("failed to load foraging-adapter behavior clone: {error}"))?;
+        Ok(config.migrate_foraging_adapter(legacy, device))
+    } else if schema_version < 30 {
+        let legacy = config
+            .init_header_context_adapter_legacy::<B>(device)
+            .load_file(model_path, &CompactRecorder::new(), device)
+            .map_err(|error| format!("failed to load header-context-adapter clone: {error}"))?;
+        Ok(config.migrate_header_context_adapter(legacy, device))
+    } else if schema_version < 31 {
+        Err("experimental schema-30 slot-only clones are not migratable; retrain the unpromoted treatment from its verified schema-28/29 parent".into())
+    } else if schema_version < 34 {
+        let legacy = config
+            .init_slot_context_adapter_legacy::<B>(device)
+            .load_file(model_path, &CompactRecorder::new(), device)
+            .map_err(|error| format!("failed to load slot-context-adapter clone: {error}"))?;
+        Ok(config.migrate_slot_context_adapter(legacy, device))
+    } else {
+        config
+            .init::<B>(device)
+            .load_file(model_path, &CompactRecorder::new(), device)
+            .map_err(|error| format!("failed to load behavior clone: {error}"))
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "blob_behavior_clone",
@@ -134,9 +212,69 @@ struct Args {
     #[arg(long, value_delimiter = ',')]
     dataset_weight: Vec<f64>,
 
+    /// Exact sample presentations per epoch, independent of corpus size.
+    #[arg(long)]
+    epoch_samples: Option<usize>,
+
+    /// Exact optimizer updates per epoch, independent of recurrent chunk mix.
+    #[arg(long)]
+    optimizer_steps_per_epoch: Option<usize>,
+
+    /// Stop after this exact total number of optimizer updates.
+    #[arg(long)]
+    optimizer_step_budget: Option<usize>,
+
+    /// Learning-rate multiplier for only the final retained optimizer update.
+    #[arg(long, default_value_t = 1.0)]
+    terminal_optimizer_step_scale: f64,
+
+    /// Strictly local rule used to supervise the three-expert gate.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ExpertRouting::ForagingInteractionExploration
+    )]
+    expert_routing: ExpertRouting,
+
     /// Relative auxiliary loss for the local per-decision expert gate.
     #[arg(long, default_value_t = 1.0)]
     phase_gate_loss_weight: f64,
+
+    /// Update only this action-kind expert, freezing every other parent parameter.
+    #[arg(long, value_enum)]
+    action_kind_expert_only: Option<ActionKindExpert>,
+
+    /// Update only the observation-local foraging residual.
+    #[arg(long)]
+    foraging_adapter_only: bool,
+
+    /// Update only this interaction/exploration action-kind residual.
+    #[arg(long, value_enum)]
+    context_adapter_only: Option<ActionKindExpert>,
+
+    /// Update only this context's non-random local-header/raw-slot residual.
+    #[arg(long, value_enum)]
+    context_slot_adapter_only: Option<ActionKindExpert>,
+
+    /// Update only the exploration Guard readiness residual over local energy.
+    #[arg(long)]
+    exploration_guard_readiness_only: bool,
+
+    /// Desired teacher-kind lead over the strongest other legal kind.
+    #[arg(long)]
+    action_kind_margin: Option<f64>,
+
+    /// Relative weight of the action-kind margin auxiliary.
+    #[arg(long, default_value_t = 0.0)]
+    action_kind_margin_loss_weight: f64,
+
+    /// Update only the action-kind-conditioned target query head.
+    #[arg(long)]
+    target_query_head_only: bool,
+
+    /// Update only the action-kind-conditioned effort head.
+    #[arg(long)]
+    effort_head_only: bool,
 
     /// Maximum consecutive decisions per cell in one recurrent graph.
     #[arg(long, default_value_t = 16)]
@@ -186,8 +324,21 @@ fn main() {
         validation_fraction: args.validation_fraction,
         dataset_sampling: args.dataset_sampling.into(),
         dataset_sampling_weights: args.dataset_weight,
-        expert_routing: ExpertRoutingStrategy::LocalActionFamily,
+        epoch_sample_budget: args.epoch_samples,
+        optimizer_steps_per_epoch: args.optimizer_steps_per_epoch,
+        optimizer_step_budget: args.optimizer_step_budget,
+        terminal_optimizer_step_scale: args.terminal_optimizer_step_scale,
+        expert_routing: args.expert_routing.into(),
         phase_gate_loss_weight: args.phase_gate_loss_weight,
+        action_kind_expert_only: args.action_kind_expert_only.map(Into::into),
+        foraging_adapter_only: args.foraging_adapter_only,
+        context_adapter_only: args.context_adapter_only.map(Into::into),
+        context_slot_adapter_only: args.context_slot_adapter_only.map(Into::into),
+        exploration_guard_readiness_only: args.exploration_guard_readiness_only,
+        action_kind_margin: args.action_kind_margin,
+        action_kind_margin_loss_weight: args.action_kind_margin_loss_weight,
+        target_query_head_only: args.target_query_head_only,
+        effort_head_only: args.effort_head_only,
         recurrent_unroll_steps: args.recurrent_unroll_steps,
         exact_round_trip_only: args.exact_round_trip_only,
         action_balancing: args.action_balancing.into(),
@@ -201,21 +352,14 @@ fn main() {
         type Backend = Autodiff<Wgpu>;
         let device = burn::backend::wgpu::WgpuDevice::default();
         let initial_model = args.initial_behavior_clone.as_ref().map(|directory| {
-            let model_path = verify_behavior_clone_artifact(
+            load_initial_model::<Backend>(
                 directory,
                 initial_artifact_sha256
                     .as_deref()
                     .expect("initial artifact hash was computed"),
                 &training.model,
+                &device,
             )
-            .unwrap_or_else(|error| panic!("invalid initial behavior clone: {error}"));
-            PolicyValueNetConfig {
-                hidden1: training.model.hidden1,
-                hidden2: training.model.hidden2,
-                recurrent_size: training.model.recurrent_size,
-            }
-            .init::<Backend>(&device)
-            .load_file(model_path, &CompactRecorder::new(), &device)
             .unwrap_or_else(|error| panic!("failed to load initial behavior clone: {error}"))
         });
         let (model, metrics) = behavior_clone_from_model::<Backend>(
@@ -264,21 +408,14 @@ fn main() {
         type Backend = Autodiff<NdArray<f32>>;
         let device = Default::default();
         let initial_model = args.initial_behavior_clone.as_ref().map(|directory| {
-            let model_path = verify_behavior_clone_artifact(
+            load_initial_model::<Backend>(
                 directory,
                 initial_artifact_sha256
                     .as_deref()
                     .expect("initial artifact hash was computed"),
                 &training.model,
+                &device,
             )
-            .unwrap_or_else(|error| panic!("invalid initial behavior clone: {error}"));
-            PolicyValueNetConfig {
-                hidden1: training.model.hidden1,
-                hidden2: training.model.hidden2,
-                recurrent_size: training.model.recurrent_size,
-            }
-            .init::<Backend>(&device)
-            .load_file(model_path, &CompactRecorder::new(), &device)
             .unwrap_or_else(|error| panic!("failed to load initial behavior clone: {error}"))
         });
         let (model, metrics) = behavior_clone_from_model::<Backend>(

@@ -123,28 +123,67 @@ pub fn evaluate_feeding_promotion<B: Backend>(
 where
     f32: From<B::FloatElem>,
 {
+    evaluate_feeding_promotion_with_progress(
+        model,
+        base_env,
+        reward,
+        curriculum,
+        seeds,
+        device,
+        |_| {},
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeedingEvaluationProgress {
+    pub stage: FeedingCurriculumStage,
+    pub seed: u64,
+    pub completed_in_stage: usize,
+    pub total_in_stage: usize,
+    pub movement_successes: u64,
+    pub consume_successes: u64,
+    pub consumed_energy: u128,
+    pub surviving_cells: usize,
+    pub safety_abort: bool,
+    pub succeeded: bool,
+}
+
+pub fn evaluate_feeding_promotion_with_progress<B: Backend>(
+    model: &PolicyValueNet<B>,
+    base_env: &EnvConfig,
+    reward: &RewardConfig,
+    curriculum: &FeedingCurriculumConfig,
+    seeds: &[u64],
+    device: &B::Device,
+    mut progress: impl FnMut(FeedingEvaluationProgress),
+) -> FeedingPromotionReport
+where
+    f32: From<B::FloatElem>,
+{
     assert!(
         !seeds.is_empty(),
         "feeding evaluation requires at least one seed"
     );
+    let context = FeedingEvaluationContext {
+        base_env,
+        reward,
+        curriculum,
+        seeds,
+    };
     let stages = [
         evaluate_stage(
             model,
-            base_env,
-            reward,
-            curriculum,
+            &context,
             FeedingCurriculumStage::OnFood,
-            seeds,
             device,
+            Some(&mut progress),
         ),
         evaluate_stage(
             model,
-            base_env,
-            reward,
-            curriculum,
+            &context,
             FeedingCurriculumStage::AdjacentFood,
-            seeds,
             device,
+            Some(&mut progress),
         ),
     ];
     let ruleset_hash = {
@@ -170,23 +209,15 @@ pub fn evaluate_feeding_teacher(
         !seeds.is_empty(),
         "feeding teacher evaluation requires at least one seed"
     );
+    let context = FeedingEvaluationContext {
+        base_env,
+        reward,
+        curriculum,
+        seeds,
+    };
     let stages = [
-        evaluate_teacher_stage(
-            teacher,
-            base_env,
-            reward,
-            curriculum,
-            FeedingCurriculumStage::OnFood,
-            seeds,
-        ),
-        evaluate_teacher_stage(
-            teacher,
-            base_env,
-            reward,
-            curriculum,
-            FeedingCurriculumStage::AdjacentFood,
-            seeds,
-        ),
+        evaluate_teacher_stage(teacher, &context, FeedingCurriculumStage::OnFood),
+        evaluate_teacher_stage(teacher, &context, FeedingCurriculumStage::AdjacentFood),
     ];
     let ruleset_hash = {
         let env = curriculum.environment_for_stage(base_env, FeedingCurriculumStage::OnFood);
@@ -195,51 +226,61 @@ pub fn evaluate_feeding_teacher(
     report_from_metrics(ruleset_hash, seeds.to_vec(), stages, &curriculum.promotion)
 }
 
+struct FeedingEvaluationContext<'a> {
+    base_env: &'a EnvConfig,
+    reward: &'a RewardConfig,
+    curriculum: &'a FeedingCurriculumConfig,
+    seeds: &'a [u64],
+}
+
 fn evaluate_stage<B: Backend>(
     model: &PolicyValueNet<B>,
-    base_env: &EnvConfig,
-    reward: &RewardConfig,
-    curriculum: &FeedingCurriculumConfig,
+    context: &FeedingEvaluationContext<'_>,
     stage: FeedingCurriculumStage,
-    seeds: &[u64],
     device: &B::Device,
+    progress: Option<&mut dyn FnMut(FeedingEvaluationProgress)>,
 ) -> FeedingStageMetrics
 where
     f32: From<B::FloatElem>,
 {
-    evaluate_stage_with(base_env, reward, curriculum, stage, seeds, |env| {
-        let observations = env.get_policy_observations();
-        let actions = greedy_policy_choices(model, &observations, device);
-        env.step_with_policy_memory(&actions)
-    })
+    evaluate_stage_with(
+        context,
+        stage,
+        |env| {
+            let observations = env.get_policy_observations();
+            let actions = greedy_policy_choices(model, &observations, device);
+            env.step_with_policy_memory(&actions)
+        },
+        progress,
+    )
 }
 
 fn evaluate_teacher_stage(
     teacher: MaintainedMindProfile,
-    base_env: &EnvConfig,
-    reward: &RewardConfig,
-    curriculum: &FeedingCurriculumConfig,
+    context: &FeedingEvaluationContext<'_>,
     stage: FeedingCurriculumStage,
-    seeds: &[u64],
 ) -> FeedingStageMetrics {
-    evaluate_stage_with(base_env, reward, curriculum, stage, seeds, |env| {
-        let decisions = env
-            .prepare_training_reference_inputs()
-            .expect("failed to prepare feeding-teacher Mind inputs")
-            .into_iter()
-            .map(|(cell_id, input)| (cell_id, teacher.decide(&input)))
-            .collect();
-        env.step_with_training_decisions(decisions)
-    })
+    evaluate_stage_with(
+        context,
+        stage,
+        |env| {
+            let decisions = env
+                .prepare_training_reference_inputs()
+                .expect("failed to prepare feeding-teacher Mind inputs")
+                .into_iter()
+                .map(|(cell_id, input)| (cell_id, teacher.decide(&input)))
+                .collect();
+            env.step_with_training_decisions(decisions)
+        },
+        None,
+    )
 }
 
 fn evaluate_stage_with(
-    base_env: &EnvConfig,
-    reward: &RewardConfig,
-    curriculum: &FeedingCurriculumConfig,
+    context: &FeedingEvaluationContext<'_>,
     stage: FeedingCurriculumStage,
-    seeds: &[u64],
     mut step: impl FnMut(&mut BlobEnv) -> crate::env::StepOutput,
+    mut progress: Option<&mut dyn FnMut(FeedingEvaluationProgress)>,
 ) -> FeedingStageMetrics {
     let mut successful_episodes = 0usize;
     let mut initial_cells = 0usize;
@@ -249,13 +290,17 @@ fn evaluate_stage_with(
     let mut consumed_energy = 0u128;
     let mut safety_aborts = 0usize;
 
-    for &seed in seeds {
-        let mut env_config = curriculum.environment_for_stage(base_env, stage);
+    for (seed_index, &seed) in context.seeds.iter().enumerate() {
+        let mut env_config = context
+            .curriculum
+            .environment_for_stage(context.base_env, stage);
         env_config.opponent = OpponentProfile::Wait;
-        env_config.max_episode_len = curriculum.promotion.evaluation_max_episode_len;
-        env_config.victory.sim_time_limit_quanta =
-            curriculum.promotion.evaluation_sim_time_limit_quanta;
-        let mut env = BlobEnv::new(env_config, reward.clone(), seed);
+        env_config.max_episode_len = context.curriculum.promotion.evaluation_max_episode_len;
+        env_config.victory.sim_time_limit_quanta = context
+            .curriculum
+            .promotion
+            .evaluation_sim_time_limit_quanta;
+        let mut env = BlobEnv::new(env_config, context.reward.clone(), seed);
         env.enable_telemetry(TelemetryConfig {
             enabled: true,
             state_sample_interval_steps: u64::MAX,
@@ -308,11 +353,29 @@ fn evaluate_stage_with(
         movement_successes = movement_successes.saturating_add(episode_movement);
         consume_successes = consume_successes.saturating_add(episode_consumes);
         consumed_energy = consumed_energy.saturating_add(episode_energy);
+        if let Some(progress) = progress.as_mut() {
+            progress(FeedingEvaluationProgress {
+                stage,
+                seed,
+                completed_in_stage: seed_index + 1,
+                total_in_stage: context.seeds.len(),
+                movement_successes: episode_movement,
+                consume_successes: episode_consumes,
+                consumed_energy: episode_energy,
+                surviving_cells: if episode_safety_abort {
+                    0
+                } else {
+                    env.training_cells_alive()
+                },
+                safety_abort: episode_safety_abort,
+                succeeded,
+            });
+        }
     }
 
     FeedingStageMetrics {
         stage,
-        episodes: seeds.len(),
+        episodes: context.seeds.len(),
         successful_episodes,
         initial_cells,
         surviving_cells,
@@ -320,7 +383,7 @@ fn evaluate_stage_with(
         consume_successes,
         consumed_energy,
         safety_aborts,
-        episode_success_rate: ratio(successful_episodes, seeds.len()),
+        episode_success_rate: ratio(successful_episodes, context.seeds.len()),
         survival_rate: ratio(surviving_cells, initial_cells),
         consumed_energy_per_initial_cell: ratio_u128(consumed_energy, initial_cells),
     }
@@ -412,6 +475,10 @@ fn ratio_u128(numerator: u128, denominator: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use burn::backend::NdArray;
+
+    use crate::config::TrainingConfig;
+    use crate::model::PolicyValueNetConfig;
 
     fn metrics(
         stage: FeedingCurriculumStage,
@@ -523,5 +590,50 @@ mod tests {
             .checks
             .iter()
             .any(|check| check.name == "on_food_no_safety_aborts" && !check.passed));
+    }
+
+    #[test]
+    fn progress_reports_each_completed_stage_seed_in_order() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let mut config = TrainingConfig::default();
+        config.env.world_size = 4;
+        config.env.cells_per_team = 1;
+        config.env.num_plants = 1;
+        config.env.num_scattered_energy = 0;
+        config
+            .feeding_curriculum
+            .promotion
+            .evaluation_max_episode_len = 32;
+        config
+            .feeding_curriculum
+            .promotion
+            .evaluation_sim_time_limit_quanta = 512;
+        let device = Default::default();
+        let model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<NdArray>(&device);
+        let mut progress = Vec::new();
+
+        evaluate_feeding_promotion_with_progress(
+            &model,
+            &config.env,
+            &config.reward,
+            &config.feeding_curriculum,
+            &[11, 12],
+            &device,
+            |event| progress.push(event),
+        );
+
+        assert_eq!(progress.len(), 4);
+        assert_eq!(progress[0].stage, FeedingCurriculumStage::OnFood);
+        assert_eq!(progress[0].seed, 11);
+        assert_eq!(progress[0].completed_in_stage, 1);
+        assert_eq!(progress[1].seed, 12);
+        assert_eq!(progress[2].stage, FeedingCurriculumStage::AdjacentFood);
+        assert_eq!(progress[2].seed, 11);
+        assert_eq!(progress[3].completed_in_stage, 2);
     }
 }

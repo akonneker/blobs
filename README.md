@@ -195,10 +195,12 @@ signing-key operations, leaderboard indexing/APIs, and site integration.
 
 ## Design and performance references
 
+- [Current project handoff and next slice](docs/project-handoff.md)
 - [Simulation and resolution design](docs/simulation-resolution-design.md)
 - [Large-game optimization roadmap](docs/large-game-optimization-roadmap.md)
 - [Measured performance baseline](docs/performance-baseline.md)
 - [Testing and fuzzing roadmap](docs/testing-and-fuzzing-roadmap.md)
+- [Physics, interface, and training diagnosis](docs/physics-vs-training-diagnostics.md)
 - [Format and schema registry](schemas/README.md)
 - [Maintained fuzz harnesses](fuzz/README.md)
 

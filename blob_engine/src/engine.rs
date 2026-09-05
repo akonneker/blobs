@@ -20,10 +20,11 @@ use blob_interface::world::{EnergySource, World};
 use crate::resolution::{
     verify_replay_from_cursor, ActionRequest, BatchReport, CellColdState, CellKey,
     CellState as ReferenceCellState, DecisionCommitment, IntegrityMode, ReferenceCheckpoint,
-    ReferenceObservationBatch, ReferenceRuleset, ReferenceSimulation, ReplayArchive,
-    ReplayBatchEvent, ReplayBundle, ReplayBundleLimits, ReplayChainCursor, ReplayCommitment,
-    ReplayLimits, ReplayManifest, ReplayManifestLimits, ReplayRecorder, ReplaySegment,
-    ReplaySegmentDescriptor, ReplaySegmentLimits, SimTime, SimulationState, TileIndex, TileState,
+    ReferenceCompiledTopology, ReferenceObservationBatch, ReferenceRuleset, ReferenceSimulation,
+    ReferenceStateCheckpoint, ReferenceStateRestoreProfile, ReplayArchive, ReplayBatchEvent,
+    ReplayBundle, ReplayBundleLimits, ReplayChainCursor, ReplayCommitment, ReplayLimits,
+    ReplayManifest, ReplayManifestLimits, ReplayRecorder, ReplaySegment, ReplaySegmentDescriptor,
+    ReplaySegmentLimits, SimTime, SimulationState, TileIndex, TileState,
 };
 
 /// Configuration for cell behavior
@@ -121,6 +122,28 @@ pub struct ReferenceRuntimeCheckpoint {
     pub iteration: u64,
     pub replay: Option<(u64, ReplayBundle)>,
     pub replay_stream: Option<ReferenceReplayStreamCheckpoint>,
+}
+
+/// Trusted in-memory runtime checkpoint with immutable rules supplied by the
+/// restoring engine rather than repeated in every retained state.
+#[derive(Debug, Clone)]
+pub struct ReferenceStateRuntimeCheckpoint {
+    pub canonical: ReferenceStateCheckpoint,
+    pub iteration: u64,
+}
+
+/// Trusted-host continuation for future per-cell random blocks. This must not
+/// be exposed to a Mind or published while a match is accepting decisions.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReferencePrivateRandomCheckpoint {
+    match_secret: [u8; 32],
+}
+
+impl std::fmt::Debug for ReferencePrivateRandomCheckpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ReferencePrivateRandomCheckpoint(REDACTED)")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -403,7 +426,16 @@ impl Engine {
 
     /// Materializes the initial canonical state without committing an action.
     pub fn initialize_reference_state(&mut self) -> Result<(), String> {
-        self.ensure_reference_simulation()
+        self.ensure_reference_simulation(None)
+    }
+
+    /// Materialize initial canonical state while reusing immutable resolver
+    /// geometry compiled for the same world and ruleset.
+    pub fn initialize_reference_state_with_compiled_topology(
+        &mut self,
+        topology: ReferenceCompiledTopology,
+    ) -> Result<(), String> {
+        self.ensure_reference_simulation(Some(topology))
     }
 
     pub fn export_reference_checkpoint(&self) -> Result<ReferenceRuntimeCheckpoint, String> {
@@ -442,6 +474,39 @@ impl Engine {
             replay,
             replay_stream,
         })
+    }
+
+    /// Export compact trusted-host state without serializing a public replay
+    /// checkpoint. Publication boundaries use `export_reference_checkpoint`.
+    pub fn export_reference_state_checkpoint(
+        &self,
+        parent: Option<&ReferenceStateCheckpoint>,
+    ) -> Result<ReferenceStateRuntimeCheckpoint, String> {
+        let simulation = self
+            .reference_simulation
+            .as_ref()
+            .ok_or("reference state has not been initialized")?;
+        Ok(ReferenceStateRuntimeCheckpoint {
+            canonical: ReferenceStateCheckpoint::from_simulation(simulation, parent),
+            iteration: self.iteration,
+        })
+    }
+
+    /// Export host-private randomness needed for an exact future continuation.
+    /// Canonical replay verification does not require or contain this secret.
+    pub fn export_reference_private_random_checkpoint(&self) -> ReferencePrivateRandomCheckpoint {
+        ReferencePrivateRandomCheckpoint {
+            match_secret: self.match_secret,
+        }
+    }
+
+    /// Restore host-private randomness alongside the matching canonical and
+    /// host-cell continuation. Callers are responsible for keeping it secret.
+    pub fn restore_reference_private_random_checkpoint(
+        &mut self,
+        checkpoint: ReferencePrivateRandomCheckpoint,
+    ) {
+        self.match_secret = checkpoint.match_secret;
     }
 
     /// Installs a validated canonical checkpoint over a previously supplied
@@ -500,6 +565,63 @@ impl Engine {
         Ok(())
     }
 
+    /// Restore a compact trusted-host state against this engine's already
+    /// compiled rules. Ruleset and state hashes are validated before install.
+    pub fn restore_reference_state_checkpoint(
+        &mut self,
+        checkpoint: ReferenceStateRuntimeCheckpoint,
+    ) -> Result<(), String> {
+        self.restore_reference_state_checkpoint_profiled(checkpoint)
+            .map(|_| ())
+    }
+
+    /// Restore trusted planner state and return host-only canonical restore
+    /// phase timings. Host projection work is deliberately outside the profile.
+    pub fn restore_reference_state_checkpoint_profiled(
+        &mut self,
+        checkpoint: ReferenceStateRuntimeCheckpoint,
+    ) -> Result<ReferenceStateRestoreProfile, String> {
+        let ReferenceStateRuntimeCheckpoint {
+            canonical,
+            iteration,
+        } = checkpoint;
+        let current = self
+            .reference_simulation
+            .as_ref()
+            .ok_or("reference state has not been initialized")?;
+        let rules = current.rules().clone();
+        let semantic_ruleset_hash = current.semantic_ruleset_hash();
+        let compiled_ruleset_hash = current.compiled_ruleset_hash();
+        let topology = current.compiled_topology();
+        let next_cell_id = usize::try_from(canonical.next_cell_key())
+            .map_err(|_| "checkpoint next cell key does not fit CellId")?;
+        let (simulation, profile) = canonical
+            .into_simulation_profiled_with_topology(
+                rules.clone(),
+                semantic_ruleset_hash,
+                compiled_ruleset_hash,
+                topology,
+            )
+            .map_err(|error| format!("invalid reference state checkpoint: {error}"))?;
+        if simulation.neighborhood().width() != self.world.dimensions.0
+            || simulation.neighborhood().height() != self.world.dimensions.1
+        {
+            return Err("checkpoint dimensions do not match the host projection".into());
+        }
+        self.rules = rules;
+        self.reference_simulation = Some(simulation);
+        self.iteration = iteration;
+        self.next_cell_id = next_cell_id;
+        self.replay_recording = None;
+        self.replay_stream = None;
+        if self.reference_host_mode == ReferenceHostMode::Projected {
+            self.refresh_reference_projection()?;
+        } else {
+            self.retain_reference_metadata_only()?;
+        }
+        Ok(profile)
+    }
+
     /// Starts optional live recording from the current canonical state. The
     /// interval counts completed replay events and must be positive.
     pub fn start_reference_replay_recording(
@@ -518,7 +640,7 @@ impl Engine {
         if self.replay_stream.is_some() {
             return Err("reference replay streaming is already active".into());
         }
-        self.ensure_reference_simulation()?;
+        self.ensure_reference_simulation(None)?;
         let simulation = self
             .reference_simulation
             .as_ref()
@@ -703,7 +825,7 @@ impl Engine {
         if self.replay_stream.is_some() {
             return Err("reference replay streaming is already active".into());
         }
-        self.ensure_reference_simulation()?;
+        self.ensure_reference_simulation(None)?;
         let simulation = self
             .reference_simulation
             .as_ref()
@@ -1111,6 +1233,25 @@ impl Engine {
             return Err(error);
         }
         projected
+    }
+
+    /// Reconstruct the private block consumed by the most recently prepared
+    /// invocation for one host-routed cell. Trusted checkpoint restorers use
+    /// this to validate a pending frontier; the match secret and derivation
+    /// inputs remain host-private.
+    pub fn last_prepared_reference_randomness(
+        &self,
+        cell_id: CellId,
+    ) -> Result<PrivateRandom, String> {
+        let cell = self
+            .cells
+            .get(&cell_id)
+            .ok_or("prepared reference Mind cell is not host-visible")?;
+        let sequence = cell
+            .decision_sequence
+            .checked_sub(1)
+            .ok_or("reference Mind cell has no prepared invocation")?;
+        Ok(PrivateRandomDeriver::new(&self.match_secret).derive(cell.random_lineage, sequence))
     }
 
     /// Replaces the pre-match host projection before the canonical resolver
@@ -1722,7 +1863,7 @@ impl Engine {
         {
             return Err("sealed replay segment must be drained before continuing".into());
         }
-        self.ensure_reference_simulation()?;
+        self.ensure_reference_simulation(None)?;
 
         let ready_started = HostPhaseTimer::start();
         let ready_cells: Vec<CellId> = {
@@ -1921,7 +2062,10 @@ impl Engine {
         Ok(events)
     }
 
-    fn ensure_reference_simulation(&mut self) -> Result<(), String> {
+    fn ensure_reference_simulation(
+        &mut self,
+        topology: Option<ReferenceCompiledTopology>,
+    ) -> Result<(), String> {
         if self.reference_simulation.is_some() {
             return Ok(());
         }
@@ -2013,8 +2157,13 @@ impl Engine {
             next_cell_key,
         };
         self.reference_simulation = Some(
-            ReferenceSimulation::from_canonical_state(width, height, rules, state)
-                .map_err(|error| format!("reference import failed: {error}"))?,
+            match topology {
+                Some(topology) => ReferenceSimulation::from_canonical_state_with_compiled_topology(
+                    rules, state, topology,
+                ),
+                None => ReferenceSimulation::from_canonical_state(width, height, rules, state),
+            }
+            .map_err(|error| format!("reference import failed: {error}"))?,
         );
         if self.reference_host_mode == ReferenceHostMode::MetadataOnly {
             self.retain_reference_metadata_only()?;
@@ -2878,6 +3027,14 @@ mod tests {
         assert_eq!(tile.plant_growth_rate, 3);
 
         let checkpoint = engine.export_reference_checkpoint().unwrap();
+        let reference_bytes = checkpoint.canonical.to_bytes();
+        let state_checkpoint = engine.export_reference_state_checkpoint(None).unwrap();
+        assert!(
+            state_checkpoint
+                .canonical
+                .estimated_retained_bytes_lower_bound()
+                < reference_bytes.len()
+        );
         let mut restored = Engine::new(
             1,
             1,
@@ -2900,6 +3057,831 @@ mod tests {
                 })
         );
         assert_projection_matches_canonical(&restored);
+
+        let mut compact_restored = Engine::new(
+            1,
+            1,
+            10,
+            CellConfig::default(),
+            Some(99),
+            ReferenceRuleset::default(),
+        );
+        compact_restored.initialize_reference_state().unwrap();
+        compact_restored
+            .restore_reference_state_checkpoint(state_checkpoint)
+            .unwrap();
+        assert_eq!(
+            compact_restored
+                .reference_simulation()
+                .unwrap()
+                .canonical_state(),
+            engine.reference_simulation().unwrap().canonical_state()
+        );
+        assert_eq!(
+            compact_restored
+                .export_reference_checkpoint()
+                .unwrap()
+                .canonical
+                .to_bytes(),
+            reference_bytes
+        );
+    }
+
+    #[test]
+    fn planner_state_checkpoint_shares_unchanged_tile_chunks() {
+        let mut engine = Engine::new(
+            5,
+            5,
+            10,
+            CellConfig::default(),
+            Some(420),
+            ReferenceRuleset::default(),
+        );
+        engine.initialize_reference_state().unwrap();
+        let parent = engine.export_reference_state_checkpoint(None).unwrap();
+        engine
+            .reference_simulation
+            .as_mut()
+            .unwrap()
+            .tile_state_mut(TileIndex(0))
+            .unwrap()
+            .loose_energy = 1;
+        let expected = engine
+            .export_reference_checkpoint()
+            .unwrap()
+            .canonical
+            .to_bytes();
+        let child = engine
+            .export_reference_state_checkpoint(Some(&parent.canonical))
+            .unwrap();
+        assert!(child.canonical.used_incremental_construction());
+        assert_eq!(child.canonical.visited_tile_chunks(), 1);
+        assert_eq!(child.canonical.visited_cell_chunks(), 0);
+        assert_eq!(child.canonical.tile_page_count(), 1);
+        assert_eq!(child.canonical.shared_tile_page_count(&parent.canonical), 0);
+        assert_eq!(child.canonical.tile_chunk_count(), 4);
+        assert_eq!(
+            child.canonical.shared_tile_chunk_count(&parent.canonical),
+            3
+        );
+        assert_eq!(child.canonical.cell_chunk_count(), 0);
+        assert_eq!(
+            child.canonical.shared_cell_chunk_count(&parent.canonical),
+            0
+        );
+
+        let mut restored = Engine::new(
+            5,
+            5,
+            10,
+            CellConfig::default(),
+            Some(421),
+            ReferenceRuleset::default(),
+        );
+        restored.initialize_reference_state().unwrap();
+        restored.restore_reference_state_checkpoint(child).unwrap();
+        assert_eq!(
+            restored.reference_simulation().unwrap().canonical_state(),
+            engine.reference_simulation().unwrap().canonical_state()
+        );
+        assert_eq!(
+            restored
+                .export_reference_checkpoint()
+                .unwrap()
+                .canonical
+                .to_bytes(),
+            expected
+        );
+    }
+
+    #[test]
+    fn planner_state_checkpoint_shares_unchanged_tile_pages() {
+        let mut engine = Engine::new(
+            64,
+            64,
+            10,
+            CellConfig::default(),
+            Some(421),
+            ReferenceRuleset::default(),
+        );
+        engine.initialize_reference_state().unwrap();
+        let parent = engine.export_reference_state_checkpoint(None).unwrap();
+        engine
+            .reference_simulation
+            .as_mut()
+            .unwrap()
+            .tile_state_mut(TileIndex(0))
+            .unwrap()
+            .loose_energy = 1;
+        let expected = engine
+            .export_reference_checkpoint()
+            .unwrap()
+            .canonical
+            .to_bytes();
+        let child = engine
+            .export_reference_state_checkpoint(Some(&parent.canonical))
+            .unwrap();
+        assert!(child.canonical.used_incremental_construction());
+        assert_eq!(child.canonical.visited_tile_chunks(), 1);
+        assert_eq!(child.canonical.visited_cell_chunks(), 0);
+        assert_eq!(child.canonical.tile_page_count(), 2);
+        assert_eq!(child.canonical.shared_tile_page_count(&parent.canonical), 1);
+        assert_eq!(child.canonical.tile_chunk_count(), 512);
+        assert_eq!(
+            child.canonical.shared_tile_chunk_count(&parent.canonical),
+            511
+        );
+
+        let mut restored = Engine::new(
+            64,
+            64,
+            10,
+            CellConfig::default(),
+            Some(422),
+            ReferenceRuleset::default(),
+        );
+        restored.initialize_reference_state().unwrap();
+        restored.restore_reference_state_checkpoint(child).unwrap();
+        assert_eq!(
+            restored.reference_simulation().unwrap().canonical_state(),
+            engine.reference_simulation().unwrap().canonical_state()
+        );
+        assert_eq!(
+            restored
+                .export_reference_checkpoint()
+                .unwrap()
+                .canonical
+                .to_bytes(),
+            expected
+        );
+    }
+
+    #[test]
+    fn planner_state_checkpoint_shares_unchanged_cell_chunks() {
+        let cell_config = CellConfig {
+            starting_cells_per_team: 18,
+            ..CellConfig::default()
+        };
+        let mut engine = Engine::new(
+            20,
+            1,
+            10,
+            cell_config.clone(),
+            Some(422),
+            ReferenceRuleset::default(),
+        );
+        engine
+            .set_starting_cell_layout(StartingCellLayout::Line)
+            .unwrap();
+        engine
+            .add_team_with_minds(TeamId(0), vec![RandomMind::new()])
+            .unwrap();
+        engine.initialize_reference_state().unwrap();
+        let parent = engine.export_reference_state_checkpoint(None).unwrap();
+        engine
+            .reference_simulation
+            .as_mut()
+            .unwrap()
+            .commit_action(CellKey(17), ActionRequest::Wait)
+            .unwrap();
+        let expected = engine
+            .export_reference_checkpoint()
+            .unwrap()
+            .canonical
+            .to_bytes();
+        let child = engine
+            .export_reference_state_checkpoint(Some(&parent.canonical))
+            .unwrap();
+        assert!(child.canonical.used_incremental_construction());
+        assert_eq!(child.canonical.visited_tile_chunks(), 0);
+        assert_eq!(child.canonical.visited_cell_chunks(), 1);
+        assert_eq!(child.canonical.cell_chunk_count(), 3);
+        assert_eq!(
+            child.canonical.shared_cell_chunk_count(&parent.canonical),
+            2
+        );
+        assert_eq!(child.canonical.tile_page_count(), 1);
+        assert_eq!(child.canonical.shared_tile_page_count(&parent.canonical), 1);
+
+        let mut restored = Engine::new(
+            20,
+            1,
+            10,
+            cell_config,
+            Some(423),
+            ReferenceRuleset::default(),
+        );
+        restored
+            .set_starting_cell_layout(StartingCellLayout::Line)
+            .unwrap();
+        restored
+            .add_team_with_minds(TeamId(0), vec![RandomMind::new()])
+            .unwrap();
+        restored.initialize_reference_state().unwrap();
+        restored.restore_reference_state_checkpoint(child).unwrap();
+        assert_eq!(
+            restored.reference_simulation().unwrap().canonical_state(),
+            engine.reference_simulation().unwrap().canonical_state()
+        );
+        assert_eq!(
+            restored
+                .export_reference_checkpoint()
+                .unwrap()
+                .canonical
+                .to_bytes(),
+            expected
+        );
+    }
+
+    #[test]
+    fn planner_state_checkpoint_rebuilds_only_structurally_changed_cell_suffix() {
+        let mut engine = Engine::new(
+            20,
+            1,
+            10,
+            CellConfig::default(),
+            Some(424),
+            ReferenceRuleset::default(),
+        );
+        engine.initialize_reference_state().unwrap();
+        let simulation = engine.reference_simulation.as_mut().unwrap();
+        for index in 0..18 {
+            simulation.add_cell(TileIndex(index), 1, 10, 0).unwrap();
+        }
+        let parent = engine.export_reference_state_checkpoint(None).unwrap();
+        engine
+            .reference_simulation
+            .as_mut()
+            .unwrap()
+            .add_cell(TileIndex(18), 1, 10, 0)
+            .unwrap();
+        let expected = engine
+            .export_reference_checkpoint()
+            .unwrap()
+            .canonical
+            .to_bytes();
+        let child = engine
+            .export_reference_state_checkpoint(Some(&parent.canonical))
+            .unwrap();
+        assert!(child.canonical.used_incremental_construction());
+        assert_eq!(child.canonical.visited_tile_chunks(), 1);
+        assert_eq!(child.canonical.visited_cell_chunks(), 1);
+        assert_eq!(
+            child.canonical.shared_cell_chunk_count(&parent.canonical),
+            2
+        );
+
+        let rules = engine.reference_simulation().unwrap().rules().clone();
+        let semantic = child.canonical.semantic_ruleset_hash();
+        let compiled = child.canonical.compiled_ruleset_hash();
+        let restored_parent = child.canonical.clone();
+        let restored = child
+            .canonical
+            .into_simulation_profiled(rules, semantic, compiled)
+            .unwrap()
+            .0;
+        assert_eq!(
+            ReferenceCheckpoint::from_simulation(&restored).to_bytes(),
+            expected
+        );
+        let mut restored = restored;
+        restored.tile_state_mut(TileIndex(19)).unwrap().loose_energy = 3;
+        let restored_child =
+            ReferenceStateCheckpoint::from_simulation(&restored, Some(&restored_parent));
+        assert!(restored_child.used_incremental_construction());
+        assert_eq!(restored_child.visited_tile_chunks(), 1);
+        assert_eq!(restored_child.visited_cell_chunks(), 0);
+    }
+
+    #[test]
+    fn planner_state_checkpoint_rejects_stale_mutation_parent_for_incremental_build() {
+        let mut engine = Engine::new(
+            16,
+            1,
+            10,
+            CellConfig::default(),
+            Some(426),
+            ReferenceRuleset::default(),
+        );
+        engine.initialize_reference_state().unwrap();
+        let root = engine.export_reference_state_checkpoint(None).unwrap();
+        engine
+            .reference_simulation
+            .as_mut()
+            .unwrap()
+            .tile_state_mut(TileIndex(0))
+            .unwrap()
+            .loose_energy = 1;
+        let first = engine
+            .export_reference_state_checkpoint(Some(&root.canonical))
+            .unwrap();
+        assert!(first.canonical.used_incremental_construction());
+        engine
+            .reference_simulation
+            .as_mut()
+            .unwrap()
+            .tile_state_mut(TileIndex(8))
+            .unwrap()
+            .loose_energy = 2;
+        let stale = engine
+            .export_reference_state_checkpoint(Some(&root.canonical))
+            .unwrap();
+        assert!(!stale.canonical.used_incremental_construction());
+        assert_eq!(stale.canonical.visited_tile_chunks(), 2);
+        assert_eq!(
+            stale.canonical.state_hash(),
+            engine.reference_simulation().unwrap().state_hash()
+        );
+    }
+
+    #[test]
+    fn planner_state_checkpoint_does_not_cross_incrementally_between_clone_branches() {
+        let mut simulation = ReferenceSimulation::new(16, 1, ReferenceRuleset::default()).unwrap();
+        let root = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+        let mut sibling = simulation.clone();
+        simulation
+            .tile_state_mut(TileIndex(0))
+            .unwrap()
+            .loose_energy = 1;
+        let first_branch = ReferenceStateCheckpoint::from_simulation(&simulation, Some(&root));
+        sibling.tile_state_mut(TileIndex(8)).unwrap().loose_energy = 2;
+        let cross_branch = ReferenceStateCheckpoint::from_simulation(&sibling, Some(&first_branch));
+        assert!(!cross_branch.used_incremental_construction());
+        assert_eq!(cross_branch.visited_tile_chunks(), 2);
+        assert_eq!(cross_branch.state_hash(), sibling.state_hash());
+    }
+
+    #[test]
+    fn planner_hash_seed_shares_chunks_and_matches_full_recomputation_after_branching() {
+        let rules = ReferenceRuleset::default();
+        let mut simulation = ReferenceSimulation::new(256, 256, rules.clone()).unwrap();
+        simulation.add_cell(TileIndex(0), 1, 20, 0).unwrap();
+        let root = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+        let mut sibling = simulation.clone();
+
+        simulation
+            .tile_state_mut(TileIndex(32_768))
+            .unwrap()
+            .loose_energy = 7;
+        let child = ReferenceStateCheckpoint::from_simulation(&simulation, Some(&root));
+        let shared_hash_chunks = child.shared_hash_seed_chunk_count(&root);
+        assert!(shared_hash_chunks > 0);
+        assert!(shared_hash_chunks < child.hash_seed_chunk_count());
+
+        let semantic = child.semantic_ruleset_hash();
+        let compiled = child.compiled_ruleset_hash();
+        let topology = simulation.compiled_topology();
+        let (mut restored, _) = child
+            .into_simulation_profiled_with_topology(rules.clone(), semantic, compiled, topology)
+            .unwrap();
+        let oracle = ReferenceSimulation::from_canonical_state(
+            256,
+            256,
+            rules.clone(),
+            restored.canonical_state(),
+        )
+        .unwrap();
+        assert_eq!(restored.state_hash(), oracle.state_hash());
+
+        restored
+            .tile_state_mut(TileIndex(65_535))
+            .unwrap()
+            .loose_energy = 11;
+        let branched_hash = restored.state_hash();
+        let branch_oracle =
+            ReferenceSimulation::from_canonical_state(256, 256, rules, restored.canonical_state())
+                .unwrap();
+        assert_eq!(branched_hash, branch_oracle.state_hash());
+
+        sibling
+            .tile_state_mut(TileIndex(16_384))
+            .unwrap()
+            .loose_energy = 13;
+        let sibling_checkpoint = ReferenceStateCheckpoint::from_simulation(&sibling, Some(&root));
+        let (sibling_restored, _) = sibling_checkpoint
+            .into_simulation_profiled_with_topology(
+                sibling.rules().clone(),
+                sibling.semantic_ruleset_hash(),
+                sibling.compiled_ruleset_hash(),
+                sibling.compiled_topology(),
+            )
+            .unwrap();
+        let sibling_oracle = ReferenceSimulation::from_canonical_state(
+            256,
+            256,
+            sibling.rules().clone(),
+            sibling_restored.canonical_state(),
+        )
+        .unwrap();
+        assert_eq!(sibling_restored.state_hash(), sibling_oracle.state_hash());
+        assert_ne!(sibling_restored.state_hash(), branched_hash);
+    }
+
+    #[test]
+    fn planner_restore_adopts_checkpoint_tile_allocations() {
+        let rules = ReferenceRuleset::default();
+        let mut simulation = ReferenceSimulation::new(65, 65, rules.clone()).unwrap();
+        simulation
+            .tile_state_mut(TileIndex(2_111))
+            .unwrap()
+            .loose_energy = 17;
+        let checkpoint = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+        let (restored, _) = checkpoint
+            .clone()
+            .into_simulation_profiled_with_topology(
+                rules,
+                simulation.semantic_ruleset_hash(),
+                simulation.compiled_ruleset_hash(),
+                simulation.compiled_topology(),
+            )
+            .unwrap();
+
+        let roundtrip = ReferenceStateCheckpoint::from_simulation(&restored, Some(&checkpoint));
+        assert!(roundtrip.used_incremental_construction());
+        assert_eq!(roundtrip.visited_tile_chunks(), 0);
+        assert_eq!(
+            roundtrip.shared_tile_page_count(&checkpoint),
+            checkpoint.tile_page_count()
+        );
+        assert_eq!(
+            roundtrip.shared_tile_chunk_count(&checkpoint),
+            checkpoint.tile_chunk_count()
+        );
+        assert_eq!(roundtrip.state_hash(), checkpoint.state_hash());
+    }
+
+    #[test]
+    #[ignore = "manual large-population planner-checkpoint characterization"]
+    fn characterize_planner_checkpoint_chunk_sharing() {
+        for (board, cells, transitions) in [(256usize, 8_192usize, 256usize), (1_024, 32_768, 4)] {
+            let mut engine = Engine::new(
+                board,
+                board,
+                u64::try_from(transitions + 1).unwrap(),
+                CellConfig::default(),
+                Some(424),
+                ReferenceRuleset::default(),
+            );
+            engine.initialize_reference_state().unwrap();
+            let simulation = engine.reference_simulation.as_mut().unwrap();
+            for index in 0..cells {
+                simulation.add_cell(TileIndex(index), 1, 10, 0).unwrap();
+            }
+
+            let started = std::time::Instant::now();
+            let root = engine.export_reference_state_checkpoint(None).unwrap();
+            let mut checkpoints = Vec::with_capacity(transitions + 1);
+            checkpoints.push(root);
+            let mut parent_tile_page_reuses = 0usize;
+            let mut parent_tile_reuses = 0usize;
+            let mut parent_cell_reuses = 0usize;
+            let mut visited_tile_chunks = 0usize;
+            let mut visited_cell_chunks = 0usize;
+            for index in 0..transitions {
+                engine
+                    .reference_simulation
+                    .as_mut()
+                    .unwrap()
+                    .commit_action(CellKey(u64::try_from(index).unwrap()), ActionRequest::Wait)
+                    .unwrap();
+                let parent = &checkpoints.last().unwrap().canonical;
+                let child = engine
+                    .export_reference_state_checkpoint(Some(parent))
+                    .unwrap();
+                parent_tile_page_reuses = parent_tile_page_reuses
+                    .saturating_add(child.canonical.shared_tile_page_count(parent));
+                parent_tile_reuses = parent_tile_reuses
+                    .saturating_add(child.canonical.shared_tile_chunk_count(parent));
+                parent_cell_reuses = parent_cell_reuses
+                    .saturating_add(child.canonical.shared_cell_chunk_count(parent));
+                visited_tile_chunks =
+                    visited_tile_chunks.saturating_add(child.canonical.visited_tile_chunks());
+                visited_cell_chunks =
+                    visited_cell_chunks.saturating_add(child.canonical.visited_cell_chunks());
+                checkpoints.push(child);
+            }
+
+            let naive_bytes = checkpoints.iter().fold(0usize, |total, checkpoint| {
+                total.saturating_add(checkpoint.canonical.estimated_retained_bytes_lower_bound())
+            });
+            let mut tile_page_allocations = HashSet::new();
+            let mut tile_allocations = HashSet::new();
+            let mut cell_allocations = HashSet::new();
+            let mut hash_seed_allocations = HashSet::new();
+            let mut tile_page_references = 0usize;
+            let mut tile_references = 0usize;
+            let mut cell_references = 0usize;
+            let mut hash_seed_references = 0usize;
+            let mut shared_bytes = 0usize;
+            for checkpoint in &checkpoints {
+                shared_bytes = shared_bytes
+                    .saturating_add(std::mem::size_of_val(&checkpoint.canonical))
+                    .saturating_add(
+                        checkpoint
+                            .canonical
+                            .estimated_inline_heap_bytes_lower_bound(),
+                    );
+                for (page_index, (page_allocation, page_len)) in
+                    checkpoint.canonical.tile_page_allocations().enumerate()
+                {
+                    tile_page_references = tile_page_references.saturating_add(1);
+                    if tile_page_allocations.insert(page_allocation as usize) {
+                        tile_references = tile_references.saturating_add(page_len);
+                        shared_bytes = shared_bytes.saturating_add(
+                            page_len.saturating_mul(std::mem::size_of::<Arc<[TileState]>>()),
+                        );
+                        for (allocation, len) in checkpoint
+                            .canonical
+                            .tile_chunk_allocations_in_page(page_index)
+                        {
+                            if tile_allocations.insert(allocation as usize) {
+                                shared_bytes = shared_bytes.saturating_add(
+                                    len.saturating_mul(std::mem::size_of::<TileState>()),
+                                );
+                            }
+                        }
+                    }
+                }
+                for (allocation, len) in checkpoint.canonical.cell_chunk_allocations() {
+                    cell_references = cell_references.saturating_add(1);
+                    if cell_allocations.insert(allocation as usize) {
+                        shared_bytes = shared_bytes
+                            .saturating_add(len.saturating_mul(std::mem::size_of::<(
+                            CellKey,
+                            ReferenceCellState,
+                        )>(
+                        )));
+                    }
+                }
+                for (allocation, bytes_len) in checkpoint.canonical.hash_seed_chunk_allocations() {
+                    hash_seed_references = hash_seed_references.saturating_add(1);
+                    if hash_seed_allocations.insert(allocation as usize) {
+                        shared_bytes = shared_bytes.saturating_add(bytes_len);
+                    }
+                }
+            }
+            let elapsed = started.elapsed();
+            println!(
+                "planner chunks {board}x{board} cells={cells} states={} elapsed_ms={} shared_bytes={shared_bytes} naive_bytes={naive_bytes} tile_state_bytes={} cell_state_bytes={} arc_bytes={} tile_pages={}/{} parent_tile_page_reuses={parent_tile_page_reuses} tile_chunks={}/{} parent_tile_reuses={parent_tile_reuses} visited_tile_chunks={visited_tile_chunks} cell_chunks={}/{} parent_cell_reuses={parent_cell_reuses} visited_cell_chunks={visited_cell_chunks} hash_seed_chunks={}/{}",
+                checkpoints.len(),
+                elapsed.as_millis(),
+                std::mem::size_of::<TileState>(),
+                std::mem::size_of::<(CellKey, ReferenceCellState)>(),
+                std::mem::size_of::<Arc<[TileState]>>(),
+                tile_page_allocations.len(),
+                tile_page_references,
+                tile_allocations.len(),
+                tile_references,
+                cell_allocations.len(),
+                cell_references,
+                hash_seed_allocations.len(),
+                hash_seed_references,
+            );
+            assert!(shared_bytes < naive_bytes);
+            assert!(cell_allocations.len() < cell_references);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual large-world planner-restore phase characterization"]
+    fn characterize_planner_checkpoint_restore_phases() {
+        for (board, cells, restores) in [
+            (256usize, 0usize, 16usize),
+            (256, 8_192, 16),
+            (1_024, 0, 2),
+            (1_024, 32_768, 2),
+        ] {
+            let mut simulation =
+                ReferenceSimulation::new(board, board, ReferenceRuleset::default()).unwrap();
+            for index in 0..cells {
+                simulation.add_cell(TileIndex(index), 1, 10, 0).unwrap();
+            }
+            let checkpoint = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+            let rules = simulation.rules().clone();
+            let semantic = simulation.semantic_ruleset_hash();
+            let compiled = simulation.compiled_ruleset_hash();
+            let topology = simulation.compiled_topology();
+            let expected = simulation.state_hash();
+            let mut totals = ReferenceStateRestoreProfile::default();
+            let mut shared_totals = ReferenceStateRestoreProfile::default();
+            for _ in 0..restores {
+                let (restored, profile) = checkpoint
+                    .clone()
+                    .into_simulation_profiled(rules.clone(), semantic, compiled)
+                    .unwrap();
+                assert_eq!(restored.state_hash(), expected);
+                totals.tile_materialization_ns = totals
+                    .tile_materialization_ns
+                    .saturating_add(profile.tile_materialization_ns);
+                totals.cell_materialization_ns = totals
+                    .cell_materialization_ns
+                    .saturating_add(profile.cell_materialization_ns);
+                totals.resolver_reconstruction_ns = totals
+                    .resolver_reconstruction_ns
+                    .saturating_add(profile.resolver_reconstruction_ns);
+                totals.integrity_validation_ns = totals
+                    .integrity_validation_ns
+                    .saturating_add(profile.integrity_validation_ns);
+                totals.total_ns = totals.total_ns.saturating_add(profile.total_ns);
+
+                let (restored, profile) = checkpoint
+                    .clone()
+                    .into_simulation_profiled_with_topology(
+                        rules.clone(),
+                        semantic,
+                        compiled,
+                        topology.clone(),
+                    )
+                    .unwrap();
+                assert_eq!(restored.state_hash(), expected);
+                shared_totals.tile_materialization_ns = shared_totals
+                    .tile_materialization_ns
+                    .saturating_add(profile.tile_materialization_ns);
+                shared_totals.cell_materialization_ns = shared_totals
+                    .cell_materialization_ns
+                    .saturating_add(profile.cell_materialization_ns);
+                shared_totals.hash_seed_materialization_ns = shared_totals
+                    .hash_seed_materialization_ns
+                    .saturating_add(profile.hash_seed_materialization_ns);
+                shared_totals.resolver_reconstruction_ns = shared_totals
+                    .resolver_reconstruction_ns
+                    .saturating_add(profile.resolver_reconstruction_ns);
+                shared_totals.topology_validation_ns = shared_totals
+                    .topology_validation_ns
+                    .saturating_add(profile.topology_validation_ns);
+                shared_totals.cell_validation_store_and_passive_index_ns = shared_totals
+                    .cell_validation_store_and_passive_index_ns
+                    .saturating_add(profile.cell_validation_store_and_passive_index_ns);
+                shared_totals.tile_validation_and_passive_index_ns = shared_totals
+                    .tile_validation_and_passive_index_ns
+                    .saturating_add(profile.tile_validation_and_passive_index_ns);
+                shared_totals.hash_initialization_ns = shared_totals
+                    .hash_initialization_ns
+                    .saturating_add(profile.hash_initialization_ns);
+                shared_totals.scratch_initialization_ns = shared_totals
+                    .scratch_initialization_ns
+                    .saturating_add(profile.scratch_initialization_ns);
+                shared_totals.metabolic_index_ns = shared_totals
+                    .metabolic_index_ns
+                    .saturating_add(profile.metabolic_index_ns);
+                shared_totals.integrity_validation_ns = shared_totals
+                    .integrity_validation_ns
+                    .saturating_add(profile.integrity_validation_ns);
+                shared_totals.total_ns = shared_totals.total_ns.saturating_add(profile.total_ns);
+            }
+            let divisor = u64::try_from(restores).unwrap();
+            println!(
+                "planner restore {board}x{board} cells={cells} restores={restores} avg_total_ns={} avg_tile_materialization_ns={} avg_cell_materialization_ns={} avg_resolver_reconstruction_ns={} avg_integrity_validation_ns={}",
+                totals.total_ns / divisor,
+                totals.tile_materialization_ns / divisor,
+                totals.cell_materialization_ns / divisor,
+                totals.resolver_reconstruction_ns / divisor,
+                totals.integrity_validation_ns / divisor,
+            );
+            println!(
+                "planner shared-topology restore {board}x{board} cells={cells} restores={restores} avg_total_ns={} avg_tile_materialization_ns={} avg_cell_materialization_ns={} avg_hash_seed_materialization_ns={} avg_resolver_reconstruction_ns={} avg_topology_validation_ns={} avg_cell_validation_store_and_passive_index_ns={} avg_tile_validation_and_passive_index_ns={} avg_hash_initialization_ns={} avg_scratch_initialization_ns={} avg_metabolic_index_ns={} avg_integrity_validation_ns={}",
+                shared_totals.total_ns / divisor,
+                shared_totals.tile_materialization_ns / divisor,
+                shared_totals.cell_materialization_ns / divisor,
+                shared_totals.hash_seed_materialization_ns / divisor,
+                shared_totals.resolver_reconstruction_ns / divisor,
+                shared_totals.topology_validation_ns / divisor,
+                shared_totals.cell_validation_store_and_passive_index_ns / divisor,
+                shared_totals.tile_validation_and_passive_index_ns / divisor,
+                shared_totals.hash_initialization_ns / divisor,
+                shared_totals.scratch_initialization_ns / divisor,
+                shared_totals.metabolic_index_ns / divisor,
+                shared_totals.integrity_validation_ns / divisor,
+            );
+        }
+    }
+
+    #[test]
+    fn parallel_tile_materialization_preserves_canonical_order() {
+        for (width, height) in [(1usize, 1usize), (17, 19), (256, 256), (513, 517)] {
+            let mut simulation =
+                ReferenceSimulation::new(width, height, ReferenceRuleset::default()).unwrap();
+            for index in (0..width.saturating_mul(height)).step_by(997) {
+                let tile = simulation.tile_state_mut(TileIndex(index)).unwrap();
+                tile.loose_energy = u64::try_from(index).unwrap();
+                tile.elevation = i16::try_from(index % 127).unwrap() - 63;
+                tile.signal_energy = [
+                    u64::try_from(index).unwrap(),
+                    u64::try_from(index.saturating_mul(3)).unwrap(),
+                    u64::try_from(index.saturating_mul(5)).unwrap(),
+                    u64::try_from(index.saturating_mul(7)).unwrap(),
+                ];
+            }
+            let checkpoint = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+            assert_eq!(
+                checkpoint.materialize_tiles_for_test(false),
+                checkpoint.materialize_tiles_for_test(true),
+                "serial and parallel materialization diverged for {width}x{height}",
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "manual serial/parallel tile-materialization crossover characterization"]
+    fn characterize_parallel_tile_materialization_crossover() {
+        for (board, iterations) in [
+            (128usize, 256usize),
+            (256, 128),
+            (384, 64),
+            (512, 32),
+            (768, 16),
+            (1_024, 8),
+        ] {
+            let simulation =
+                ReferenceSimulation::new(board, board, ReferenceRuleset::default()).unwrap();
+            let checkpoint = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+            assert_eq!(
+                checkpoint.materialize_tiles_for_test(false),
+                checkpoint.materialize_tiles_for_test(true),
+            );
+
+            let serial_started = std::time::Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(checkpoint.materialize_tiles_for_test(false));
+            }
+            let serial_ns = serial_started.elapsed().as_nanos() / iterations as u128;
+
+            let parallel_started = std::time::Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(checkpoint.materialize_tiles_for_test(true));
+            }
+            let parallel_ns = parallel_started.elapsed().as_nanos() / iterations as u128;
+            println!(
+                "tile materialization {board}x{board} iterations={iterations} threads={} serial_ns={serial_ns} parallel_ns={parallel_ns}",
+                rayon::current_num_threads(),
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "manual flat tile-chunk locality sweep"]
+    fn characterize_flat_tile_chunk_sizes() {
+        fn local_cost(board: usize, chunk_len: usize, radius: usize) -> u128 {
+            let samples = 4_096usize;
+            let mut changed_chunks = 0usize;
+            for sample in 0..samples {
+                let x = (sample.saturating_mul(73).saturating_add(17)) % board;
+                let y = (sample.saturating_mul(151).saturating_add(29)) % board;
+                let mut chunks = HashSet::new();
+                for target_y in y.saturating_sub(radius)..=(y + radius).min(board - 1) {
+                    for target_x in x.saturating_sub(radius)..=(x + radius).min(board - 1) {
+                        chunks.insert((target_y * board + target_x) / chunk_len);
+                    }
+                }
+                changed_chunks = changed_chunks.saturating_add(chunks.len());
+            }
+            let reference_bytes = board
+                .saturating_mul(board)
+                .div_ceil(chunk_len)
+                .saturating_mul(std::mem::size_of::<Arc<[TileState]>>())
+                .saturating_mul(samples);
+            let copied_bytes = changed_chunks
+                .saturating_mul(chunk_len)
+                .saturating_mul(std::mem::size_of::<TileState>());
+            u128::try_from(reference_bytes.saturating_add(copied_bytes)).unwrap()
+                / u128::try_from(samples).unwrap()
+        }
+
+        fn dispersed_cost(board: usize, chunk_len: usize) -> u128 {
+            let chunks = (0..board.saturating_mul(board))
+                .step_by(100)
+                .map(|tile| tile / chunk_len)
+                .collect::<HashSet<_>>();
+            let reference_bytes = board
+                .saturating_mul(board)
+                .div_ceil(chunk_len)
+                .saturating_mul(std::mem::size_of::<Arc<[TileState]>>());
+            let copied_bytes = chunks
+                .len()
+                .saturating_mul(chunk_len)
+                .saturating_mul(std::mem::size_of::<TileState>());
+            u128::try_from(reference_bytes.saturating_add(copied_bytes)).unwrap()
+        }
+
+        let candidates = [8usize, 16, 32, 64, 128, 256, 512, 1_024];
+        for board in [256usize, 1_024] {
+            let best = |cost: &dyn Fn(usize) -> u128| {
+                candidates
+                    .into_iter()
+                    .map(|chunk_len| (cost(chunk_len), chunk_len))
+                    .min()
+                    .unwrap()
+            };
+            let single = best(&|chunk_len| local_cost(board, chunk_len, 0));
+            let neighborhood = best(&|chunk_len| local_cost(board, chunk_len, 1));
+            let wider = best(&|chunk_len| local_cost(board, chunk_len, 2));
+            let dispersed = best(&|chunk_len| dispersed_cost(board, chunk_len));
+            println!(
+                "flat tile chunks {board}x{board}: single={single:?} 3x3={neighborhood:?} 5x5={wider:?} dispersed_1_percent={dispersed:?}"
+            );
+            assert_ne!(single.1, dispersed.1);
+            assert_ne!(neighborhood.1, dispersed.1);
+        }
     }
 
     #[test]

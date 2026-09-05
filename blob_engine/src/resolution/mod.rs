@@ -23,6 +23,8 @@ pub use attestation::{
 pub use checkpoint::{
     CheckpointError, CheckpointLimits, ReferenceCheckpoint, CHECKPOINT_FORMAT_VERSION,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use checkpoint::{ReferenceStateCheckpoint, ReferenceStateRestoreProfile};
 pub use delta::{CellDelta, DeltaError, SimulationDelta, TileDelta};
 pub use hashing::{
     CanonicalHash, CANONICAL_HASH_ALGORITHM, CANONICAL_HASH_FORMAT_VERSION,
@@ -41,10 +43,10 @@ pub use reference::{
     AccessMode, ActionKind, ActionOutcome, ActionRequest, ActivityCue, AttackDamage,
     BatchIntegrity, BatchReport, CellColdState, CellKey, CellState, CellStore, CommitError,
     CommitReceipt, DecisionCommitment, DurationRule, EffortProfile, EffortTier, IntegrityMode,
-    NeighborCue, OutcomeStatus, PendingAction, ProgressBucket, ReferenceObservationBatch,
-    ReferenceRuleset, ReferenceSimulation, RejectReason, ResolutionError, ResolutionMetrics,
-    ResolutionPhaseTimings, ResourceClaim, ResourceKey, SimTime, SimulationState, TerrainChange,
-    TileState, TimeConfig, SIGNAL_CHANNELS,
+    NeighborCue, OutcomeStatus, PendingAction, ProgressBucket, ReferenceCompiledTopology,
+    ReferenceObservationBatch, ReferenceRuleset, ReferenceSimulation, ReferenceTileStore,
+    RejectReason, ResolutionError, ResolutionMetrics, ResolutionPhaseTimings, ResourceClaim,
+    ResourceKey, SimTime, SimulationState, TerrainChange, TileState, TimeConfig, SIGNAL_CHANNELS,
 };
 pub use replay::{
     genesis_hash, verify_replay, verify_replay_from_cursor, ReplayArchive, ReplayArchiveLimits,

@@ -15,7 +15,7 @@ use crate::env::BlobEnv;
 use crate::feeding_curriculum::FeedingPromotionReport;
 use crate::sweep::sha256;
 
-pub const FEEDING_LAYOUT_EVALUATION_SCHEMA_VERSION: u32 = 1;
+pub const FEEDING_LAYOUT_EVALUATION_SCHEMA_VERSION: u32 = 2;
 const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -295,6 +295,29 @@ pub fn load_feeding_layout_evaluation(
     Ok(artifact)
 }
 
+/// Verify that an immutable artifact is exactly the requested evaluation.
+/// Schema 2 binds the canonical private-randomness policy path; schema-1
+/// layout evidence deliberately fails during `artifact.validate()`.
+pub fn verify_feeding_layout_evaluation_request(
+    artifact: &FeedingLayoutEvaluationArtifact,
+    source_config_sha256: &str,
+    policy: &FeedingLayoutPolicyIdentity,
+    config: &TrainingConfig,
+    layouts: &[FeedingQualificationLayout],
+    seeds: &[u64],
+) -> Result<(), String> {
+    artifact.validate()?;
+    if artifact.source_config_sha256 != source_config_sha256
+        || &artifact.policy != policy
+        || &artifact.config != config
+        || artifact.layouts != layouts
+        || artifact.seeds != seeds
+    {
+        return Err("feeding-layout resume request does not match immutable artifact".into());
+    }
+    Ok(())
+}
+
 /// Merge independently published layout/seed shards into one complete matrix.
 /// Layouts and seeds retain first-seen order; every Cartesian pair must appear
 /// exactly once and all policy/config identities must match.
@@ -434,6 +457,48 @@ mod tests {
             trials,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn resume_request_requires_exact_config_policy_layout_and_seed_order() {
+        let artifact = artifact();
+        verify_feeding_layout_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &artifact.policy,
+            &artifact.config,
+            &artifact.layouts,
+            &artifact.seeds,
+        )
+        .unwrap();
+
+        let mut reversed = artifact.seeds.clone();
+        reversed.reverse();
+        assert!(verify_feeding_layout_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &artifact.policy,
+            &artifact.config,
+            &artifact.layouts,
+            &reversed,
+        )
+        .is_err());
+
+        let mut wrong_policy = artifact.policy.clone();
+        let FeedingLayoutPolicyIdentity::BehaviorClone { model_sha256, .. } = &mut wrong_policy
+        else {
+            unreachable!()
+        };
+        *model_sha256 = "f".repeat(64);
+        assert!(verify_feeding_layout_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &wrong_policy,
+            &artifact.config,
+            &artifact.layouts,
+            &artifact.seeds,
+        )
+        .is_err());
     }
 
     #[test]

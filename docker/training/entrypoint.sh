@@ -50,6 +50,38 @@ case "$command_name" in
         shift
         exec /usr/local/bin/behavior-clone "$@"
         ;;
+    feeding-evaluation)
+        shift
+        exec /usr/local/bin/feeding-evaluation "$@"
+        ;;
+    feeding-evaluation-merge)
+        shift
+        exec /usr/local/bin/feeding-evaluation-merge "$@"
+        ;;
+    feeding-layout-evaluation)
+        shift
+        exec /usr/local/bin/feeding-layout-evaluation "$@"
+        ;;
+    feeding-layout-evaluation-merge)
+        shift
+        exec /usr/local/bin/feeding-layout-evaluation-merge "$@"
+        ;;
+    feeding-layout-teacher-evaluation)
+        shift
+        exec /usr/local/bin/feeding-layout-teacher-evaluation "$@"
+        ;;
+    feeding-transition-diagnostics)
+        shift
+        exec /usr/local/bin/feeding-transition-diagnostics "$@"
+        ;;
+    feeding-policy-corrections)
+        shift
+        exec /usr/local/bin/feeding-policy-corrections "$@"
+        ;;
+    feeding-correction-pair-verify)
+        shift
+        exec /usr/local/bin/feeding-correction-pair-verify "$@"
+        ;;
     viability)
         shift
         exec /usr/local/bin/viability "$@"
@@ -84,6 +116,14 @@ Usage:
   blob-training viability-matrix MANIFEST --candidates PROFILES --opponents PROFILES --output REPORT [MATRIX_OPTIONS...]
   blob-training viability-gate MATRIX --gates POLICY --output DECISION
   blob-training viability-preflight SWEEP_SPEC --candidates PROFILES --opponents PROFILES --gates POLICY [PREFLIGHT_OPTIONS...]
+  blob-training feeding-evaluation --config CONFIG --behavior-clone CLONE --seeds SEEDS --output REPORT [--resume]
+  blob-training feeding-evaluation-merge --input SHARD... --output REPORT
+  blob-training feeding-layout-evaluation --config CONFIG --behavior-clone CLONE --layouts LAYOUTS --seeds SEEDS --output REPORT [--resume]
+  blob-training feeding-layout-evaluation-merge --input SHARD... --output REPORT
+  blob-training feeding-layout-teacher-evaluation --config CONFIG --teacher PROFILE --layouts LAYOUTS --seeds SEEDS --output REPORT [--resume]
+  blob-training feeding-transition-diagnostics --config CONFIG --behavior-clone CLONE --seeds SEEDS --output REPORT [--resume]
+  blob-training feeding-policy-corrections --config CONFIG --behavior-clone CLONE --stage STAGE --seeds SEEDS --max-samples N --output DATASET
+  blob-training feeding-correction-pair-verify --control DATASET --treatment DATASET
   blob-training gpu-info
 
 Durable configs/checkpoints should be mounted under /config and /output.
@@ -94,7 +134,7 @@ EOF
         ;;
     *)
         echo "training runner: unknown command '$command_name'" >&2
-        echo "expected train, viability, viability-matrix, viability-gate, viability-preflight, sweep-plan, sweep-run, or gpu-info" >&2
+        echo "expected train, viability, viability-matrix, viability-gate, viability-preflight, sweep-plan, sweep-run, feeding-evaluation, feeding-evaluation-merge, feeding-layout-evaluation, feeding-layout-evaluation-merge, feeding-layout-teacher-evaluation, feeding-transition-diagnostics, feeding-policy-corrections, feeding-correction-pair-verify, or gpu-info" >&2
         exit 64
         ;;
 esac

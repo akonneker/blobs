@@ -15,9 +15,72 @@ pub const OBS_RANDOMNESS_FEATURE_START: usize = STATE_HEADER_FEATURES;
 pub const OBS_RANDOMNESS_FEATURE_END: usize = STATE_HEADER_FEATURES + PRIVATE_RANDOM_BYTES;
 pub const HEADER_FEATURES: usize = STATE_HEADER_FEATURES + PRIVATE_RANDOM_BYTES;
 pub const SLOT_FEATURES: usize = 33;
+pub const CURRENT_TILE_PLANT_ENERGY_FEATURE: usize = 10;
+pub const CURRENT_TILE_PLANT_CAPACITY_FEATURE: usize = 24;
+pub const CURRENT_TILE_LOOSE_ENERGY_FEATURE: usize = 11;
+pub const CURRENT_TILE_DIFFUSE_ENERGY_FEATURE: usize = 12;
+pub const SLOT_PLANT_ENERGY_FEATURE: usize = 8;
+pub const SLOT_PLANT_CAPACITY_FEATURE: usize = 25;
+pub const SLOT_LOOSE_ENERGY_FEATURE: usize = 10;
+pub const SLOT_DIFFUSE_ENERGY_FEATURE: usize = 12;
+pub const SLOT_NEIGHBOR_PRESENT_FEATURE: usize = 13;
+pub const SLOT_NEIGHBOR_ACTIVITY_FEATURE: usize = 18;
 pub const OBS_DIM: usize = HEADER_FEATURES + REFERENCE_MAX_LOCAL_SLOTS * SLOT_FEATURES;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservationExpertContext {
+    Foraging,
+    Interaction,
+    Exploration,
+}
+
+impl ObservationExpertContext {
+    pub const COUNT: usize = 3;
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Foraging => 0,
+            Self::Interaction => 1,
+            Self::Exploration => 2,
+        }
+    }
+}
+
+/// Authoritative action-kind expert selection using only the anonymous tensor
+/// observation. Threat activity takes priority over food under the cell, then
+/// any other visible neighbor, with all remaining states routed to exploration.
+pub fn observation_expert_context(observation: &[f32]) -> ObservationExpertContext {
+    let slots = observation.get(HEADER_FEATURES..).unwrap_or_default();
+    let has_visible_threat = slots.chunks_exact(SLOT_FEATURES).any(|slot| {
+        let activity = slot[SLOT_NEIGHBOR_ACTIVITY_FEATURE];
+        activity == 3.0 / 8.0 || activity == 4.0 / 8.0
+    });
+    if has_visible_threat {
+        return ObservationExpertContext::Interaction;
+    }
+    // Plant capacity identifies a plant even between growth/consumption
+    // pulses. Diffuse energy alone feeds plants but is not directly consumable
+    // and must not route a cell standing on an ordinary tile to foraging.
+    let has_current_tile_food = [
+        CURRENT_TILE_PLANT_CAPACITY_FEATURE,
+        CURRENT_TILE_LOOSE_ENERGY_FEATURE,
+    ]
+    .into_iter()
+    .any(|feature| observation.get(feature).is_some_and(|value| *value > 0.0));
+    if has_current_tile_food {
+        return ObservationExpertContext::Foraging;
+    }
+    if slots
+        .chunks_exact(SLOT_FEATURES)
+        .any(|slot| slot[SLOT_NEIGHBOR_PRESENT_FEATURE] > 0.5)
+    {
+        ObservationExpertContext::Interaction
+    } else {
+        ObservationExpertContext::Exploration
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Observation {
     pub data: [f32; OBS_DIM],
     pub action_mask: [bool; NUM_ACTIONS],
@@ -144,7 +207,7 @@ impl Observation {
                 data[base + 12] = amount(value);
             }
             if let Some(neighbor) = slot.neighbor {
-                data[base + 13] = 1.0;
+                data[base + SLOT_NEIGHBOR_PRESENT_FEATURE] = 1.0;
                 if let Some(value) = neighbor.marker {
                     data[base + 14] = 1.0;
                     data[base + 15] = marker(value);
