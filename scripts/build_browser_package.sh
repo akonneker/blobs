@@ -4,7 +4,7 @@ set -euo pipefail
 workspace_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$workspace_dir"
 
-cargo build --release --target wasm32-unknown-unknown -p blob_web
+cargo build --release --target wasm32-unknown-unknown --locked -p blob_web
 
 expected_bindgen_version="0.2.100"
 if ! command -v wasm-bindgen >/dev/null 2>&1; then

@@ -69,6 +69,7 @@ fn checkpoint_limits() -> CheckpointLimits {
         max_checkpoint_bytes: MAX_BYTES,
         max_tiles: MAX_ITEMS,
         max_cells: MAX_ITEMS,
+        max_cell_slots: MAX_ITEMS * 4,
         max_private_memory_bytes: 512,
     }
 }

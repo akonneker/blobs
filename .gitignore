@@ -1,10 +1,17 @@
 /target
+**/target/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
 .DS_Store
 *.png
 /training-output
 /browser-tests/node_modules/
 /browser-tests/playwright-report/
 /browser-tests/test-results/
+/browser-tests/fixtures/generated/
+/blob_web/pkg/
 /fuzz/target/
 /fuzz/corpus/
 /fuzz/artifacts/

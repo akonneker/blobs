@@ -1649,18 +1649,9 @@ pub fn publish_counterfactual_branch_artifact(
 pub fn load_counterfactual_branch_artifact(
     path: &Path,
 ) -> Result<CounterfactualBranchArtifact, String> {
-    let size = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if size > MAX_ARTIFACT_BYTES {
-        return Err(format!(
-            "counterfactual artifact exceeds {MAX_ARTIFACT_BYTES} bytes"
-        ));
-    }
-    let artifact: CounterfactualBranchArtifact = serde_json::from_slice(
-        &fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?,
-    )
-    .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_ARTIFACT_BYTES)?;
+    let artifact: CounterfactualBranchArtifact = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;
     Ok(artifact)
 }

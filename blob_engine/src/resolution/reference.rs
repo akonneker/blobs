@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::ops::{Deref, DerefMut, Index, Range};
+use std::ops::{Deref, DerefMut, Range};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -25,13 +25,28 @@ fn passive_frontier_is_dense(active: usize, total: usize) -> bool {
     total > 0 && active.saturating_mul(4) >= total.saturating_mul(3)
 }
 
+#[cfg(test)]
 use blob_interface::randomness::PrivateRandom;
 use blob_interface::reference_mind::{
-    CurrentTileObservation, LocalObservation as MindLocalObservation, ReferenceActionSpace,
-    ReferenceActivity, ReferenceEffort, ReferenceMemoryUpdate, ReferenceMindAction,
-    ReferenceMindInput, ReferenceNeighbor, ReferenceOutcome, ReferenceOutcomeStatus,
-    ReferenceProgress, ReferenceRejectReason, ReferenceSelfState, ReferenceSignalEmission,
-    EFFORT_BURST_BIT, EFFORT_GENTLE_BIT, EFFORT_STANDARD_BIT, REFERENCE_SIGNAL_CHANNELS,
+    ReferenceEffort, ReferenceMemoryUpdate, ReferenceMindAction, ReferenceSignalEmission,
+    REFERENCE_SIGNAL_CHANNELS,
+};
+
+mod observation;
+mod passive;
+pub use observation::ReferenceObservationBatch;
+use passive::{
+    advance_cell_digestion, advance_cell_metabolism_with_divisor,
+    advance_plant_growth_with_divisor, advance_signal_decay, compile_diffusion_neighbors,
+    metabolic_exhaustion_time, PassiveRateDivisor,
+};
+#[cfg(test)]
+use passive::{advance_cell_metabolism, advance_plant_growth};
+#[cfg(not(target_arch = "wasm32"))]
+use passive::{
+    compile_diffusion_sources, dense_diffusion_final_energy, dense_digestion_preflight,
+    dense_frontier_from_page_bitmaps, plan_dense_diffusion, planned_signal_frontier_changes,
+    DenseSignalDecayPage,
 };
 
 use super::delta::{CellDelta, SimulationDelta, TileDelta};
@@ -54,281 +69,8 @@ pub struct SimTime(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CellKey(pub u64);
 
-/// Authoritative cell storage with direct key-indexed lookup and a separate
-/// canonical active-key traversal. Slots contain boxes so a dead historical
-/// key costs one pointer-sized hole rather than one full `CellState`.
-///
-/// Physical layout is derived: canonical encodings, hashes, and replay always
-/// traverse `active_keys`, so they do not depend on slot capacity or history.
-#[derive(Debug, Clone, Default)]
-pub struct CellStore {
-    slots: Vec<Option<Box<CellState>>>,
-    active_keys: BTreeSet<CellKey>,
-}
-
-impl PartialEq for CellStore {
-    fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-impl Eq for CellStore {}
-
-impl CellStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn len(&self) -> usize {
-        self.active_keys.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.active_keys.is_empty()
-    }
-
-    fn has_dense_key_space(&self) -> bool {
-        self.slots.len() <= self.len().saturating_mul(4).saturating_add(1_024)
-    }
-
-    pub fn get(&self, key: &CellKey) -> Option<&CellState> {
-        let index = usize::try_from(key.0).ok()?;
-        self.slots.get(index)?.as_deref()
-    }
-
-    pub fn get_mut(&mut self, key: &CellKey) -> Option<&mut CellState> {
-        let index = usize::try_from(key.0).ok()?;
-        self.slots.get_mut(index)?.as_deref_mut()
-    }
-
-    pub fn insert(&mut self, key: CellKey, cell: CellState) -> Option<CellState> {
-        let index = usize::try_from(key.0).expect("cell key does not fit the host address space");
-        if index >= self.slots.len() {
-            self.slots.resize_with(index.saturating_add(1), || None);
-        }
-        let previous = self.slots[index].replace(Box::new(cell)).map(|cell| *cell);
-        if previous.is_none() {
-            self.active_keys.insert(key);
-        }
-        previous
-    }
-
-    pub fn remove(&mut self, key: &CellKey) -> Option<CellState> {
-        let index = usize::try_from(key.0).ok()?;
-        let removed = self.slots.get_mut(index)?.take().map(|cell| *cell);
-        if removed.is_some() {
-            self.active_keys.remove(key);
-        }
-        removed
-    }
-
-    pub fn keys(&self) -> std::collections::btree_set::Iter<'_, CellKey> {
-        self.active_keys.iter()
-    }
-
-    pub fn iter(&self) -> CellIter<'_> {
-        CellIter {
-            keys: self.active_keys.iter(),
-            slots: &self.slots,
-        }
-    }
-
-    pub fn iter_mut(&mut self) -> CellIterMut<'_> {
-        CellIterMut {
-            slots: self.slots.iter_mut().enumerate(),
-        }
-    }
-
-    pub fn values(&self) -> impl DoubleEndedIterator<Item = &CellState> + '_ {
-        self.iter().map(|(_, cell)| cell)
-    }
-
-    pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut CellState> + '_ {
-        self.slots.iter_mut().filter_map(Option::as_deref_mut)
-    }
-
-    pub fn range(&self, range: Range<CellKey>) -> CellRange<'_> {
-        CellRange {
-            keys: self.active_keys.range(range),
-            slots: &self.slots,
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn par_iter(
-        &self,
-    ) -> impl rayon::iter::ParallelIterator<Item = (CellKey, &CellState)> {
-        self.active_keys.par_iter().map(|key| {
-            (
-                *key,
-                self.get(key)
-                    .expect("active cell key is missing its indexed slot"),
-            )
-        })
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn par_iter_mut(
-        &mut self,
-    ) -> impl rayon::iter::ParallelIterator<Item = (CellKey, &mut CellState)> {
-        self.slots
-            .par_iter_mut()
-            .enumerate()
-            .filter_map(|(index, slot)| {
-                slot.as_deref_mut().map(|cell| {
-                    (
-                        CellKey(u64::try_from(index).expect("cell slot does not fit CellKey")),
-                        cell,
-                    )
-                })
-            })
-    }
-}
-
-impl FromIterator<(CellKey, CellState)> for CellStore {
-    fn from_iter<T: IntoIterator<Item = (CellKey, CellState)>>(iter: T) -> Self {
-        let mut cells = Self::new();
-        for (key, cell) in iter {
-            cells.insert(key, cell);
-        }
-        cells
-    }
-}
-
-impl Index<&CellKey> for CellStore {
-    type Output = CellState;
-
-    fn index(&self, key: &CellKey) -> &Self::Output {
-        self.get(key)
-            .expect("cell key is absent from indexed storage")
-    }
-}
-
-pub struct CellIter<'a> {
-    keys: std::collections::btree_set::Iter<'a, CellKey>,
-    slots: &'a [Option<Box<CellState>>],
-}
-
-impl<'a> Iterator for CellIter<'a> {
-    type Item = (&'a CellKey, &'a CellState);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let key = self.keys.next()?;
-        let index = usize::try_from(key.0).ok()?;
-        Some((
-            key,
-            self.slots
-                .get(index)
-                .and_then(Option::as_deref)
-                .expect("active cell key is missing its indexed slot"),
-        ))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.keys.size_hint()
-    }
-}
-
-impl DoubleEndedIterator for CellIter<'_> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let key = self.keys.next_back()?;
-        let index = usize::try_from(key.0).ok()?;
-        Some((
-            key,
-            self.slots
-                .get(index)
-                .and_then(Option::as_deref)
-                .expect("active cell key is missing its indexed slot"),
-        ))
-    }
-}
-
-impl ExactSizeIterator for CellIter<'_> {}
-
-pub struct CellRange<'a> {
-    keys: std::collections::btree_set::Range<'a, CellKey>,
-    slots: &'a [Option<Box<CellState>>],
-}
-
-impl<'a> Iterator for CellRange<'a> {
-    type Item = (&'a CellKey, &'a CellState);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let key = self.keys.next()?;
-        let index = usize::try_from(key.0).ok()?;
-        Some((
-            key,
-            self.slots
-                .get(index)
-                .and_then(Option::as_deref)
-                .expect("active cell key is missing its indexed slot"),
-        ))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.keys.size_hint()
-    }
-}
-
-impl Clone for CellRange<'_> {
-    fn clone(&self) -> Self {
-        Self {
-            keys: self.keys.clone(),
-            slots: self.slots,
-        }
-    }
-}
-
-impl DoubleEndedIterator for CellRange<'_> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let key = self.keys.next_back()?;
-        let index = usize::try_from(key.0).ok()?;
-        Some((
-            key,
-            self.slots
-                .get(index)
-                .and_then(Option::as_deref)
-                .expect("active cell key is missing its indexed slot"),
-        ))
-    }
-}
-
-impl<'a> IntoIterator for &'a CellStore {
-    type Item = (&'a CellKey, &'a CellState);
-    type IntoIter = CellIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-pub struct CellIterMut<'a> {
-    slots: std::iter::Enumerate<std::slice::IterMut<'a, Option<Box<CellState>>>>,
-}
-
-impl<'a> Iterator for CellIterMut<'a> {
-    type Item = (CellKey, &'a mut CellState);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.slots.find_map(|(index, slot)| {
-            slot.as_deref_mut()
-                .map(|cell| (CellKey(index as u64), cell))
-        })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, self.slots.size_hint().1)
-    }
-}
-
-impl<'a> IntoIterator for &'a mut CellStore {
-    type Item = (CellKey, &'a mut CellState);
-    type IntoIter = CellIterMut<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
+pub use super::cell_storage::CellStore;
+use super::paged_slots::PagedSlots;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ActionKind {
@@ -701,7 +443,6 @@ impl CellState {
     }
 }
 
-const NO_METABOLIC_SCHEDULE: usize = usize::MAX;
 const OVERFLOWED_METABOLIC_SCHEDULE: usize = usize::MAX - 1;
 
 const CHECKPOINT_TILE_CHUNK_LEN: usize = 8;
@@ -902,23 +643,18 @@ impl Clone for CheckpointMutationTracker {
 /// materialized and hashes/checkpoints/replays do not include this structure.
 /// Ordinary metabolic accrual preserves an absolute deadline, so entries only
 /// need replacement when another process changes assimilated energy or the
-/// fractional remainder. Stable cell-key slots make replacement O(log n)
-/// without retaining a second key map.
+/// fractional remainder. Sparse key pages track positions and release dead keys.
 #[derive(Debug, Clone, Default)]
 struct MetabolicExhaustionIndex {
     /// Indexed binary min-heap ordered by `(deadline, cell)`. The parallel
-    /// position array permits exact O(log n) replacement without tree-node
-    /// allocation; dense rebuilds use O(n) heapification.
+    /// paged position index permits exact replacement without lifetime holes;
+    /// dense rebuilds use O(n) heapification.
     heap: Vec<(SimTime, CellKey)>,
-    positions: Vec<usize>,
+    positions: PagedSlots<usize>,
     overflows: BTreeMap<CellKey, ResolutionError>,
 }
 
 impl MetabolicExhaustionIndex {
-    fn cell_index(key: CellKey) -> usize {
-        usize::try_from(key.0).expect("cell key does not fit the host address space")
-    }
-
     fn clear(&mut self) {
         self.heap.clear();
         self.positions.clear();
@@ -926,24 +662,32 @@ impl MetabolicExhaustionIndex {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn prepare_dense_exact(&mut self, len: usize) {
-        self.heap.clear();
-        self.heap.resize(len, (SimTime(0), CellKey(0)));
-        self.positions.clear();
-        self.positions.extend(0..len);
-        self.overflows.clear();
+    fn replace_events(&mut self, events: Vec<(SimTime, CellKey)>) {
+        self.clear();
+        self.heap = events;
+        for (position, (_, key)) in self.heap.iter().enumerate() {
+            self.positions.insert(key.0, position);
+        }
+        self.heapify();
     }
 
     fn heapify(&mut self) {
+        self.compact_heap();
         for index in (0..self.heap.len() / 2).rev() {
             self.sift_down(index);
         }
     }
 
+    fn compact_heap(&mut self) {
+        if self.heap.capacity() > self.heap.len().saturating_mul(4).max(1024) {
+            self.heap.shrink_to_fit();
+        }
+    }
+
     fn swap_heap(&mut self, left: usize, right: usize) {
         self.heap.swap(left, right);
-        self.positions[Self::cell_index(self.heap[left].1)] = left;
-        self.positions[Self::cell_index(self.heap[right].1)] = right;
+        self.positions.insert(self.heap[left].1 .0, left);
+        self.positions.insert(self.heap[right].1 .0, right);
     }
 
     fn sift_up(&mut self, mut index: usize) {
@@ -978,17 +722,16 @@ impl MetabolicExhaustionIndex {
     }
 
     fn remove_current(&mut self, key: CellKey) {
-        let index = Self::cell_index(key);
-        let Some(position) = self.positions.get(index).copied() else {
+        let Some(position) = self.positions.remove(key.0) else {
             return;
         };
         if position == OVERFLOWED_METABOLIC_SCHEDULE {
             self.overflows.remove(&key);
-        } else if position != NO_METABOLIC_SCHEDULE {
+        } else {
             let removed = self.heap.swap_remove(position);
             debug_assert_eq!(removed.1, key);
             if position < self.heap.len() {
-                self.positions[Self::cell_index(self.heap[position].1)] = position;
+                self.positions.insert(self.heap[position].1 .0, position);
                 if position > 0 && self.heap[position] < self.heap[(position - 1) / 2] {
                     self.sift_up(position);
                 } else {
@@ -996,14 +739,13 @@ impl MetabolicExhaustionIndex {
                 }
             }
         }
-        self.positions[index] = NO_METABOLIC_SCHEDULE;
+        self.compact_heap();
     }
 
     fn insert_event(&mut self, key: CellKey, time: SimTime) {
-        let key_index = Self::cell_index(key);
         let position = self.heap.len();
         self.heap.push((time, key));
-        self.positions[key_index] = position;
+        self.positions.insert(key.0, position);
         self.sift_up(position);
     }
 
@@ -1015,11 +757,6 @@ impl MetabolicExhaustionIndex {
         numerator: u64,
         denominator: u64,
     ) {
-        let index = Self::cell_index(key);
-        if index >= self.positions.len() {
-            self.positions
-                .resize(index.saturating_add(1), NO_METABOLIC_SCHEDULE);
-        }
         self.remove_current(key);
 
         match cell {
@@ -1030,7 +767,7 @@ impl MetabolicExhaustionIndex {
                     }
                     Err(error) => {
                         self.overflows.insert(key, error);
-                        self.positions[index] = OVERFLOWED_METABOLIC_SCHEDULE;
+                        self.positions.insert(key.0, OVERFLOWED_METABOLIC_SCHEDULE);
                     }
                 }
             }
@@ -1040,20 +777,17 @@ impl MetabolicExhaustionIndex {
 
     fn rebuild(&mut self, cells: &CellStore, now: SimTime, numerator: u64, denominator: u64) {
         self.clear();
-        self.positions
-            .resize(cells.slots.len(), NO_METABOLIC_SCHEDULE);
         for (key, cell) in cells {
             if numerator == 0 || cell.assimilated_energy == 0 {
                 continue;
             }
-            let key_index = Self::cell_index(*key);
             match metabolic_exhaustion_time(now, cell, numerator, denominator) {
                 Ok(time) => {
-                    self.positions[key_index] = self.heap.len();
+                    self.positions.insert(key.0, self.heap.len());
                     self.heap.push((time, *key));
                 }
                 Err(error) => {
-                    self.positions[key_index] = OVERFLOWED_METABOLIC_SCHEDULE;
+                    self.positions.insert(key.0, OVERFLOWED_METABOLIC_SCHEDULE);
                     self.overflows.insert(*key, error);
                 }
             }
@@ -2290,51 +2024,6 @@ impl ReferenceCompiledTopology {
     }
 }
 
-/// Read-only acceleration for projecting a decision frontier. It borrows the
-/// canonical simulation, exposes no peer state, and is discarded after the
-/// host has built each cell's isolated input.
-pub struct ReferenceObservationBatch<'a> {
-    simulation: &'a ReferenceSimulation,
-}
-
-trait ObservationCellLookup {
-    fn observation_cell(&self, key: CellKey) -> Option<&CellState>;
-}
-
-impl ObservationCellLookup for ReferenceSimulation {
-    fn observation_cell(&self, key: CellKey) -> Option<&CellState> {
-        self.cells.get(&key)
-    }
-}
-
-impl ObservationCellLookup for ReferenceObservationBatch<'_> {
-    fn observation_cell(&self, key: CellKey) -> Option<&CellState> {
-        self.simulation.cells.get(&key)
-    }
-}
-
-impl ReferenceObservationBatch<'_> {
-    pub fn reference_mind_input(
-        &self,
-        observer: CellKey,
-        randomness: PrivateRandom,
-    ) -> Result<ReferenceMindInput, CommitError> {
-        let mut input = self.simulation.empty_reference_mind_input(randomness);
-        self.reference_mind_input_into(observer, randomness, &mut input)?;
-        Ok(input)
-    }
-
-    pub fn reference_mind_input_into(
-        &self,
-        observer: CellKey,
-        randomness: PrivateRandom,
-        input: &mut ReferenceMindInput,
-    ) -> Result<(), CommitError> {
-        self.simulation
-            .reference_mind_input_into_with_lookup(self, observer, randomness, input)
-    }
-}
-
 /// First-write journal for the action-resolution portion of one event batch.
 /// The immutable completion snapshot remains the semantic read source; this
 /// journal retains only resources that are actually written and therefore
@@ -2847,11 +2536,6 @@ impl ReferenceSimulation {
                     "cell position and tile occupant disagree",
                 ));
             }
-            if cell.ready_at < state.now {
-                return Err(ResolutionError::InvalidState(
-                    "cell ready time precedes checkpoint time",
-                ));
-            }
             if let Some(pending) = &cell.pending_action {
                 if pending.started_at > state.now
                     || pending.completes_at <= pending.started_at
@@ -2869,9 +2553,9 @@ impl ReferenceSimulation {
                         ));
                     }
                 }
-            } else if cell.ready_at != state.now {
+            } else if cell.ready_at > state.now {
                 return Err(ResolutionError::InvalidState(
-                    "a cell without a pending action must be ready at checkpoint time",
+                    "a cell without a pending action cannot become ready after checkpoint time",
                 ));
             }
             if cell.gut_energy > 0 {
@@ -3419,359 +3103,6 @@ impl ReferenceSimulation {
                         .map_or(0, |action| action.payload_escrow),
                 )
         })
-    }
-
-    pub fn neighbor_cues(
-        &self,
-        observer: CellKey,
-    ) -> Result<Vec<Option<NeighborCue>>, CommitError> {
-        let observer_cell = self
-            .cells
-            .get(&observer)
-            .ok_or(CommitError::UnknownCell(observer))?;
-        let mut cues = Vec::with_capacity(self.neighborhood.slot_count());
-        for slot_index in 0..self.neighborhood.slot_count() {
-            let slot = LocalSlot(u8::try_from(slot_index).map_err(|_| {
-                CommitError::InvariantViolation("compiled neighborhood exceeds u8 slot range")
-            })?);
-            let target = self.neighborhood.target(observer_cell.position, slot);
-            cues.push(self.neighbor_cue_at_target(observer, slot, target)?);
-        }
-        Ok(cues)
-    }
-
-    fn neighbor_cue_at_target(
-        &self,
-        observer: CellKey,
-        slot: LocalSlot,
-        target: Option<TileIndex>,
-    ) -> Result<Option<NeighborCue>, CommitError> {
-        self.neighbor_cue_at_target_with_lookup(self, observer, slot, target)
-    }
-
-    fn neighbor_cue_at_target_with_lookup<L: ObservationCellLookup + ?Sized>(
-        &self,
-        lookup: &L,
-        observer: CellKey,
-        slot: LocalSlot,
-        target: Option<TileIndex>,
-    ) -> Result<Option<NeighborCue>, CommitError> {
-        let observations = self.neighborhood.spec().observations;
-        let observes_cell = observations.occupancy.contains(slot)
-            || observations.marker.contains(slot)
-            || observations.apparent_mass.contains(slot)
-            || observations.activity.contains(slot);
-        if !observes_cell {
-            return Ok(None);
-        }
-        let Some(tile) = target else {
-            return Ok(None);
-        };
-        let Some(neighbor_key) = self.tiles[tile.0].occupant else {
-            return Ok(None);
-        };
-        if neighbor_key == observer {
-            return Ok(None);
-        }
-        let neighbor =
-            lookup
-                .observation_cell(neighbor_key)
-                .ok_or(CommitError::InvariantViolation(
-                    "occupied tile references a missing cell",
-                ))?;
-        let mass_bucket = u8::try_from(
-            (neighbor.total_mass() / u128::from(self.rules.apparent_mass_bucket_width))
-                .min(u128::from(u8::MAX)),
-        )
-        .map_err(|_| CommitError::InvariantViolation("apparent mass bucket overflow"))?;
-        let (activity, progress) = self.activity_cue(neighbor);
-        Ok(Some(NeighborCue {
-            marker: observations
-                .marker
-                .contains(slot)
-                .then_some(neighbor.marker),
-            apparent_mass_bucket: observations
-                .apparent_mass
-                .contains(slot)
-                .then_some(mass_bucket),
-            activity: observations.activity.contains(slot).then_some(activity),
-            progress: observations
-                .activity
-                .contains(slot)
-                .then_some(progress)
-                .flatten(),
-        }))
-    }
-
-    /// Builds the complete canonical Mind observation for one ready cell.
-    /// All spatial values are relative slots filtered by ruleset observation
-    /// masks; engine identity and absolute state never cross this boundary.
-    pub fn reference_mind_input(
-        &self,
-        observer: CellKey,
-        randomness: PrivateRandom,
-    ) -> Result<ReferenceMindInput, CommitError> {
-        let mut input = self.empty_reference_mind_input(randomness);
-        self.reference_mind_input_into(observer, randomness, &mut input)?;
-        Ok(input)
-    }
-
-    fn empty_reference_mind_input(&self, randomness: PrivateRandom) -> ReferenceMindInput {
-        ReferenceMindInput {
-            self_state: ReferenceSelfState {
-                core_mass: 0,
-                assimilated_energy: 0,
-                gut_energy: 0,
-                metabolism_remainder: 0,
-                carried_material_mass: 0,
-                marker: 0,
-                guarded: false,
-                last_outcome: None,
-            },
-            current_tile: CurrentTileObservation {
-                elevation: 0,
-                plant_energy: 0,
-                plant_capacity: 0,
-                plant_growth_rate: 0,
-                loose_energy: 0,
-                diffuse_energy: 0,
-                signal_energy: [0; REFERENCE_SIGNAL_CHANNELS],
-            },
-            slots: Vec::with_capacity(self.neighborhood.slot_count()),
-            action_space: ReferenceActionSpace {
-                wait_enabled: false,
-                guard_enabled: false,
-                consume_enabled: false,
-                excavate_enabled: false,
-                deposit_terrain_enabled: false,
-                signal_enabled: false,
-                move_targets: 0,
-                attack_targets: 0,
-                split_targets: 0,
-                regurgitate_targets: 0,
-                effort_mask: 0,
-                max_consume_amount: 0,
-                gut_capacity: 0,
-                max_private_memory_bytes: 0,
-                minimum_survival_energy: 0,
-                child_core_mass: 0,
-                metabolism_rate_numerator: 0,
-                metabolism_rate_denominator: 0,
-                terrain_mass_per_elevation: 0,
-                signal_emission_cost: 0,
-                effort_cost_numerators: [0; 3],
-                effort_cost_denominators: [1; 3],
-                move_effort_base: 0,
-                move_mass_units_per_effort: 1,
-                attack_effort_base: 0,
-                guard_effort_base: 0,
-                consume_effort_base: 0,
-                split_effort_base: 0,
-                regurgitate_effort_base: 0,
-                excavate_effort_base: 0,
-                deposit_terrain_effort_base: 0,
-            },
-            private_memory: Vec::new(),
-            randomness,
-        }
-    }
-
-    /// Borrows the simulation's direct indexed lookup for a complete
-    /// observation frontier. No per-frontier cell index is allocated.
-    pub fn observation_batch(&self) -> ReferenceObservationBatch<'_> {
-        ReferenceObservationBatch { simulation: self }
-    }
-
-    /// Rebuilds one isolated observation while retaining its owned buffers.
-    /// Hosts can keep one scratch input per pristine Mind instance instead of
-    /// allocating per cell; no state from a prior observer remains visible.
-    pub fn reference_mind_input_into(
-        &self,
-        observer: CellKey,
-        randomness: PrivateRandom,
-        input: &mut ReferenceMindInput,
-    ) -> Result<(), CommitError> {
-        self.reference_mind_input_into_with_lookup(self, observer, randomness, input)
-    }
-
-    fn reference_mind_input_into_with_lookup<L: ObservationCellLookup + ?Sized>(
-        &self,
-        lookup: &L,
-        observer: CellKey,
-        randomness: PrivateRandom,
-        input: &mut ReferenceMindInput,
-    ) -> Result<(), CommitError> {
-        let observer_cell = lookup
-            .observation_cell(observer)
-            .ok_or(CommitError::UnknownCell(observer))?;
-        if !observer_cell.is_ready_at(self.now) {
-            return Err(CommitError::CellNotReady {
-                actor: observer,
-                ready_at: observer_cell.ready_at,
-            });
-        }
-        let spec = self.neighborhood.spec();
-        let targets = self.neighborhood.targets(observer_cell.position).ok_or(
-            CommitError::InvariantViolation(
-                "observer position is outside the compiled neighborhood",
-            ),
-        )?;
-        input.slots.clear();
-        input.slots.reserve(self.neighborhood.slot_count());
-        for (slot_index, (offset, target)) in
-            spec.slots.iter().zip(targets.iter().copied()).enumerate()
-        {
-            let slot_u8 = u8::try_from(slot_index).map_err(|_| {
-                CommitError::InvariantViolation("compiled neighborhood exceeds u8 slot range")
-            })?;
-            let slot = LocalSlot(slot_u8);
-            let tile = target.map(|target| &self.tiles[target.0]);
-            let cue = self.neighbor_cue_at_target_with_lookup(lookup, observer, slot, target)?;
-            let observes_terrain = spec.observations.terrain.contains(slot);
-            let observes_energy = spec.observations.energy.contains(slot);
-            let observes_signal = spec.observations.signal.contains(slot);
-            input.slots.push(MindLocalObservation {
-                slot: slot_u8,
-                dx: offset.dx,
-                dy: offset.dy,
-                distance_cost_q10: offset.distance_cost_q10,
-                reachable: target.is_some(),
-                elevation: observes_terrain
-                    .then(|| tile.map(|tile| tile.elevation))
-                    .flatten(),
-                plant_energy: observed_energy(observes_energy, tile, |tile| tile.plant_energy),
-                plant_capacity: observed_energy(observes_energy, tile, |tile| tile.plant_capacity),
-                plant_growth_rate: observed_energy(observes_energy, tile, |tile| {
-                    tile.plant_growth_rate
-                }),
-                loose_energy: observed_energy(observes_energy, tile, |tile| tile.loose_energy),
-                diffuse_energy: observed_energy(observes_energy, tile, |tile| tile.diffuse_energy),
-                signal_energy: observes_signal
-                    .then(|| tile.map(|tile| tile.signal_energy))
-                    .flatten(),
-                neighbor: cue.map(reference_neighbor),
-            });
-        }
-        let max_private_memory_bytes = u32::try_from(self.rules.max_private_memory_bytes)
-            .map_err(|_| CommitError::InvariantViolation("private memory limit exceeds u32"))?;
-        input.self_state = ReferenceSelfState {
-            core_mass: observer_cell.core_mass,
-            assimilated_energy: observer_cell.assimilated_energy,
-            gut_energy: observer_cell.gut_energy,
-            metabolism_remainder: observer_cell.metabolism_remainder,
-            carried_material_mass: observer_cell.carried_material_mass,
-            marker: observer_cell.marker,
-            guarded: observer_cell.guarded,
-            last_outcome: observer_cell.last_outcome.map(reference_outcome),
-        };
-        input.current_tile = {
-            let tile = &self.tiles[observer_cell.position.0];
-            CurrentTileObservation {
-                elevation: tile.elevation,
-                plant_energy: tile.plant_energy,
-                plant_capacity: tile.plant_capacity,
-                plant_growth_rate: tile.plant_growth_rate,
-                loose_energy: tile.loose_energy,
-                diffuse_energy: tile.diffuse_energy,
-                signal_energy: tile.signal_energy,
-            }
-        };
-        input.action_space = ReferenceActionSpace {
-            wait_enabled: true,
-            guard_enabled: true,
-            consume_enabled: true,
-            excavate_enabled: self.tiles[observer_cell.position.0].elevation > i16::MIN,
-            deposit_terrain_enabled: self.tiles[observer_cell.position.0].elevation < i16::MAX
-                && observer_cell.carried_material_mass >= self.rules.terrain_mass_per_elevation,
-            signal_enabled: self.rules.signal_emission_cost > 0,
-            move_targets: spec.target_mask(TargetingAction::Move).bits(),
-            attack_targets: spec.target_mask(TargetingAction::Attack).bits(),
-            split_targets: spec.target_mask(TargetingAction::Split).bits(),
-            regurgitate_targets: spec.target_mask(TargetingAction::Regurgitate).bits(),
-            effort_mask: EFFORT_GENTLE_BIT | EFFORT_STANDARD_BIT | EFFORT_BURST_BIT,
-            max_consume_amount: self.rules.bite_capacity.min(
-                self.rules
-                    .gut_capacity
-                    .saturating_sub(observer_cell.gut_energy),
-            ),
-            gut_capacity: self.rules.gut_capacity,
-            max_private_memory_bytes,
-            minimum_survival_energy: self.rules.minimum_survival_energy,
-            child_core_mass: self.rules.child_core_mass,
-            metabolism_rate_numerator: self.rules.metabolism_rate_numerator,
-            metabolism_rate_denominator: self.rules.metabolism_rate_denominator,
-            terrain_mass_per_elevation: self.rules.terrain_mass_per_elevation,
-            signal_emission_cost: self.rules.signal_emission_cost,
-            effort_cost_numerators: self
-                .rules
-                .effort_profiles
-                .map(|profile| profile.cost_numerator),
-            effort_cost_denominators: self
-                .rules
-                .effort_profiles
-                .map(|profile| profile.cost_denominator),
-            move_effort_base: self.rules.move_effort_base,
-            move_mass_units_per_effort: self.rules.move_mass_units_per_effort,
-            attack_effort_base: self.rules.attack_effort_base,
-            guard_effort_base: self.rules.guard_effort_base,
-            consume_effort_base: self.rules.consume_effort_base,
-            split_effort_base: self.rules.split_effort_base,
-            regurgitate_effort_base: self.rules.regurgitate_effort_base,
-            excavate_effort_base: self.rules.excavate_effort_base,
-            deposit_terrain_effort_base: self.rules.deposit_terrain_effort_base,
-        };
-        input.private_memory.clear();
-        input
-            .private_memory
-            .extend_from_slice(&observer_cell.private_memory);
-        input.randomness = randomness;
-        Ok(())
-    }
-
-    fn activity_cue(&self, cell: &CellState) -> (ActivityCue, Option<ProgressBucket>) {
-        let Some(pending) = &cell.pending_action else {
-            return (
-                if cell.guarded {
-                    ActivityCue::Guarding
-                } else {
-                    ActivityCue::Ready
-                },
-                None,
-            );
-        };
-        let activity = if pending.rejection.is_some() {
-            ActivityCue::OtherBusy
-        } else {
-            match pending.request {
-                ActionRequest::Wait => ActivityCue::OtherBusy,
-                ActionRequest::Move { .. } => ActivityCue::Moving,
-                ActionRequest::Attack { .. } => ActivityCue::AttackWindup,
-                ActionRequest::Guard { .. } => ActivityCue::Guarding,
-                ActionRequest::Consume { .. } => ActivityCue::Feeding,
-                ActionRequest::Split { .. } => ActivityCue::Splitting,
-                ActionRequest::Regurgitate { .. } => ActivityCue::OtherBusy,
-                ActionRequest::Signal { .. } => ActivityCue::OtherBusy,
-                ActionRequest::Excavate | ActionRequest::DepositTerrain => {
-                    ActivityCue::ManipulatingTerrain
-                }
-            }
-        };
-        let duration = pending.completes_at.0.saturating_sub(pending.started_at.0);
-        let elapsed = self
-            .now
-            .0
-            .saturating_sub(pending.started_at.0)
-            .min(duration);
-        let progress = if duration == 0 {
-            ProgressBucket::Late
-        } else {
-            match (u128::from(elapsed) * 3) / u128::from(duration) {
-                0 => ProgressBucket::Early,
-                1 => ProgressBucket::Middle,
-                _ => ProgressBucket::Late,
-            }
-        };
-        (activity, Some(progress))
     }
 
     pub fn commit_action(
@@ -4674,8 +4005,7 @@ impl ReferenceSimulation {
             return Ok(());
         }
         let denominator = self.rules.digestion_rate_denominator;
-        let dense = self.active_digestion_cells.len() == self.cells.len()
-            && self.cells.has_dense_key_space();
+        let dense = self.active_digestion_cells.len() == self.cells.len();
         let sparse_active = if dense {
             Vec::new()
         } else {
@@ -4703,54 +4033,31 @@ impl ReferenceSimulation {
                 .is_some_and(|threshold| self.cells.len() >= threshold);
         #[cfg(not(target_arch = "wasm32"))]
         if parallel_candidate {
-            let exact_slots = self.cells.slots.len() == self.cells.len();
-            let (transfer_fits, deadlines_fit) = if exact_slots {
-                self.cells
-                    .slots
-                    .par_iter()
-                    .map(|slot| {
-                        dense_digestion_preflight(
-                            slot.as_deref()
-                                .expect("hole-free dense cell storage contains an empty slot"),
-                            elapsed,
-                            numerator,
-                            denominator,
-                            now,
-                            metabolism_numerator,
-                            metabolism_denominator,
-                        )
-                    })
-                    .reduce(
-                        || (true, true),
-                        |left, right| (left.0 && right.0, left.1 && right.1),
+            let (transfer_fits, deadlines_fit) = self
+                .cells
+                .par_iter()
+                .map(|(_, cell)| {
+                    dense_digestion_preflight(
+                        cell,
+                        elapsed,
+                        numerator,
+                        denominator,
+                        now,
+                        metabolism_numerator,
+                        metabolism_denominator,
                     )
-            } else {
-                (
-                    self.cells.par_iter().all(|(_, cell)| {
-                        u128::from(cell.assimilated_energy) + u128::from(cell.gut_energy)
-                            <= u128::from(u64::MAX)
-                    }),
-                    false,
-                )
-            };
+                })
+                .reduce(
+                    || (true, true),
+                    |left, right| (left.0 && right.0, left.1 && right.1),
+                );
             if transfer_fits && deadlines_fit {
-                let len = self.cells.len();
-                self.metabolic_exhaustion.prepare_dense_exact(len);
-                let (slots, heap) = (&mut self.cells.slots, &mut self.metabolic_exhaustion.heap);
-                slots
+                let events = self
+                    .cells
                     .par_iter_mut()
-                    .zip(heap.par_iter_mut())
-                    .enumerate()
-                    .try_for_each(|(index, (slot, event))| {
-                        let cell =
-                            slot.as_deref_mut()
-                                .ok_or(ResolutionError::InvariantViolation(
-                                    "hole-free dense cell storage contains an empty slot",
-                                ))?;
+                    .map(|(key, cell)| {
                         advance_cell_digestion(cell, elapsed, numerator, denominator)?;
-                        let key =
-                            CellKey(u64::try_from(index).expect("cell slot does not fit CellKey"));
-                        *event = (
+                        Ok((
                             metabolic_exhaustion_time(
                                 now,
                                 cell,
@@ -4758,10 +4065,10 @@ impl ReferenceSimulation {
                                 metabolism_denominator,
                             )?,
                             key,
-                        );
-                        Ok::<_, ResolutionError>(())
-                    })?;
-                self.metabolic_exhaustion.heapify();
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, ResolutionError>>()?;
+                self.metabolic_exhaustion.replace_events(events);
                 parallel_applied = true;
                 exhaustion_fused = true;
             } else if transfer_fits {
@@ -4834,8 +4141,7 @@ impl ReferenceSimulation {
         let divisor = PassiveRateDivisor::new(denominator);
         let mut activated = Vec::new();
         let mut exhausted = Vec::new();
-        let dense = self.active_metabolism_cells.len() == self.cells.len()
-            && self.cells.has_dense_key_space();
+        let dense = self.active_metabolism_cells.len() == self.cells.len();
         #[cfg(not(target_arch = "wasm32"))]
         let dense_gather_candidate = dense
             && !self.field_frontiers_dirty
@@ -4852,20 +4158,7 @@ impl ReferenceSimulation {
             let check = |cell: &CellState| {
                 self.tiles[cell.position.0].diffuse_energy <= u64::MAX - cell.assimilated_energy
             };
-            if self.cells.slots.len() == self.cells.len() {
-                self.cells
-                    .slots
-                    .par_iter()
-                    .map(|slot| {
-                        check(
-                            slot.as_deref()
-                                .expect("hole-free dense cell storage contains an empty slot"),
-                        )
-                    })
-                    .all(std::convert::identity)
-            } else {
-                self.cells.par_iter().all(|(_, cell)| check(cell))
-            }
+            self.cells.par_iter().all(|(_, cell)| check(cell))
         };
         #[cfg(target_arch = "wasm32")]
         let dense_gather = false;
@@ -6430,517 +5723,6 @@ impl ReferenceSimulation {
     }
 }
 
-fn observed_energy(
-    visible: bool,
-    tile: Option<&TileState>,
-    value: impl FnOnce(&TileState) -> u64,
-) -> Option<u64> {
-    visible.then(|| tile.map(value)).flatten()
-}
-
-#[derive(Clone, Copy)]
-struct PassiveRateDivisor {
-    denominator: u64,
-    power_of_two_shift: Option<u32>,
-}
-
-impl PassiveRateDivisor {
-    fn new(denominator: u64) -> Self {
-        Self {
-            denominator,
-            power_of_two_shift: denominator
-                .is_power_of_two()
-                .then(|| denominator.trailing_zeros()),
-        }
-    }
-
-    fn quotient(self, numerator: u128) -> u128 {
-        self.power_of_two_shift.map_or_else(
-            || numerator / u128::from(self.denominator),
-            |shift| numerator >> shift,
-        )
-    }
-
-    fn remainder(self, numerator: u128) -> u128 {
-        self.power_of_two_shift.map_or_else(
-            || numerator % u128::from(self.denominator),
-            |_| numerator & u128::from(self.denominator - 1),
-        )
-    }
-}
-
-#[cfg(test)]
-fn advance_plant_growth(
-    tile: &mut TileState,
-    elapsed: u64,
-    denominator: u64,
-) -> Result<(), ResolutionError> {
-    advance_plant_growth_with_divisor(tile, elapsed, PassiveRateDivisor::new(denominator))
-}
-
-fn advance_plant_growth_with_divisor(
-    tile: &mut TileState,
-    elapsed: u64,
-    divisor: PassiveRateDivisor,
-) -> Result<(), ResolutionError> {
-    if tile.plant_growth_rate == 0 {
-        tile.plant_growth_remainder = 0;
-        return Ok(());
-    }
-    let available_room = tile.plant_capacity.saturating_sub(tile.plant_energy);
-    if available_room == 0 || tile.diffuse_energy == 0 {
-        // Growth cannot be banked while its source or sink is absent.
-        tile.plant_growth_remainder = 0;
-        return Ok(());
-    }
-    let generated = u128::from(elapsed)
-        .checked_mul(u128::from(tile.plant_growth_rate))
-        .and_then(|value| value.checked_add(u128::from(tile.plant_growth_remainder)))
-        .ok_or(ResolutionError::ArithmeticOverflow(
-            "accumulating plant growth progress",
-        ))?;
-    let potential = u64::try_from(divisor.quotient(generated).min(u128::from(u64::MAX)))
-        .map_err(|_| ResolutionError::ArithmeticOverflow("converting plant growth"))?;
-    let grown = potential.min(tile.diffuse_energy).min(available_room);
-    tile.diffuse_energy -= grown;
-    tile.plant_energy =
-        tile.plant_energy
-            .checked_add(grown)
-            .ok_or(ResolutionError::ArithmeticOverflow(
-                "adding grown plant energy",
-            ))?;
-    tile.plant_growth_remainder = if tile.diffuse_energy == 0
-        || tile.plant_energy == tile.plant_capacity
-    {
-        0
-    } else {
-        u64::try_from(divisor.remainder(generated))
-            .map_err(|_| ResolutionError::ArithmeticOverflow("storing plant growth remainder"))?
-    };
-    Ok(())
-}
-
-/// Returns exact per-channel energy deposited into the tile's diffuse
-/// reservoir. Each tile is independent, so dense hosts may call this in
-/// parallel without changing reduction order.
-#[cfg(not(target_arch = "wasm32"))]
-fn planned_signal_frontier_changes(
-    tile: &TileState,
-    elapsed: u64,
-    numerator: u64,
-    denominator: u64,
-) -> (bool, bool) {
-    let mut has_signal_before = false;
-    let mut has_signal_after = false;
-    let mut deposits_diffuse = false;
-    for channel in 0..REFERENCE_SIGNAL_CHANNELS {
-        let energy = tile.signal_energy[channel];
-        if energy == 0 {
-            continue;
-        }
-        has_signal_before = true;
-        // Unsigned 64-bit multiplication and addition fit in u128. Ruleset
-        // validation guarantees the denominator is nonzero.
-        let generated = u128::from(elapsed) * u128::from(numerator)
-            + u128::from(tile.signal_decay_remainder[channel]);
-        let decayed = (generated / u128::from(denominator)).min(u128::from(energy));
-        has_signal_after |= decayed < u128::from(energy);
-        deposits_diffuse |= decayed > 0;
-    }
-    (
-        has_signal_before && !has_signal_after,
-        tile.diffuse_energy == 0 && deposits_diffuse,
-    )
-}
-
-fn advance_signal_decay(
-    tile: &mut TileState,
-    elapsed: u64,
-    numerator: u64,
-    denominator: u64,
-) -> Result<[u64; REFERENCE_SIGNAL_CHANNELS], ResolutionError> {
-    let mut deposited = [0_u64; REFERENCE_SIGNAL_CHANNELS];
-    for (channel, deposited_channel) in deposited.iter_mut().enumerate() {
-        let energy = tile.signal_energy[channel];
-        if energy == 0 {
-            tile.signal_decay_remainder[channel] = 0;
-            continue;
-        }
-        let generated = u128::from(elapsed)
-            .checked_mul(u128::from(numerator))
-            .and_then(|value| value.checked_add(u128::from(tile.signal_decay_remainder[channel])))
-            .ok_or(ResolutionError::ArithmeticOverflow(
-                "accumulating signal decay",
-            ))?;
-        let decayed = u64::try_from((generated / u128::from(denominator)).min(u128::from(energy)))
-            .map_err(|_| ResolutionError::ArithmeticOverflow("converting signal decay"))?;
-        tile.signal_energy[channel] -= decayed;
-        tile.signal_decay_remainder[channel] = if tile.signal_energy[channel] == 0 {
-            0
-        } else {
-            u64::try_from(generated % u128::from(denominator)).map_err(|_| {
-                ResolutionError::ArithmeticOverflow("storing signal decay remainder")
-            })?
-        };
-        tile.diffuse_energy =
-            tile.diffuse_energy
-                .checked_add(decayed)
-                .ok_or(ResolutionError::ArithmeticOverflow(
-                    "depositing decayed signal energy",
-                ))?;
-        *deposited_channel = decayed;
-    }
-    Ok(deposited)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-struct DenseSignalDecayPage {
-    decayed: [u128; REFERENCE_SIGNAL_CHANNELS],
-    active_signal: [u64; REFERENCE_TILE_PAGE_BITMAP_WORDS],
-    active_diffuse: [u64; REFERENCE_TILE_PAGE_BITMAP_WORDS],
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn dense_frontier_from_page_bitmaps<'a>(
-    bitmaps: impl IntoIterator<Item = &'a [u64; REFERENCE_TILE_PAGE_BITMAP_WORDS]>,
-) -> BTreeSet<TileIndex> {
-    bitmaps
-        .into_iter()
-        .enumerate()
-        .flat_map(|(page_index, bits)| {
-            bits.iter().enumerate().flat_map(move |(word_index, word)| {
-                let mut remaining = *word;
-                std::iter::from_fn(move || {
-                    if remaining == 0 {
-                        return None;
-                    }
-                    let bit = remaining.trailing_zeros() as usize;
-                    remaining &= remaining - 1;
-                    Some(TileIndex(
-                        page_index * REFERENCE_TILE_PAGE_LEN + word_index * 64 + bit,
-                    ))
-                })
-            })
-        })
-        .collect()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Debug, Clone, Copy)]
-struct DenseDiffusionFlux {
-    remainder: u64,
-    share: u64,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn plan_dense_diffusion(
-    tile: &TileState,
-    neighbors: &[TileIndex],
-    numerator: u64,
-    denominator: u64,
-) -> DenseDiffusionFlux {
-    let energy = tile.diffuse_energy;
-    let neighbor_count = u64::try_from(neighbors.len())
-        .expect("validated dense diffusion neighborhood count fits u64");
-    if neighbors.is_empty() || energy < neighbor_count {
-        return DenseDiffusionFlux {
-            remainder: 0,
-            share: 0,
-        };
-    }
-    let generated = u128::from(energy)
-        .checked_mul(u128::from(numerator))
-        .and_then(|value| value.checked_add(u128::from(tile.diffusion_remainder)))
-        .expect("u64 diffusion product and remainder fit u128");
-    let desired = u64::try_from((generated / u128::from(denominator)).min(u128::from(energy)))
-        .expect("planned dense diffusion is bounded by tile energy");
-    let remainder = u64::try_from(generated % u128::from(denominator))
-        .expect("validated dense diffusion remainder fits u64");
-    let share = desired / neighbor_count;
-    DenseDiffusionFlux { remainder, share }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn dense_diffusion_final_energy(
-    destination: usize,
-    tiles: &ReferenceTileStore,
-    diffusion_neighbors: &[Vec<TileIndex>],
-    diffusion_sources: &[Vec<TileIndex>],
-    shares: &[u64],
-) -> Result<u64, ResolutionError> {
-    let neighbor_count = u64::try_from(diffusion_neighbors[destination].len())
-        .expect("validated dense diffusion neighborhood count fits u64");
-    let transported = shares[destination]
-        .checked_mul(neighbor_count)
-        .expect("equal dense diffusion shares cannot exceed source energy");
-    let remaining_energy = tiles[destination].diffuse_energy - transported;
-    let incoming = diffusion_sources[destination]
-        .iter()
-        .try_fold(0_u64, |total, source| {
-            total
-                .checked_add(shares[source.0])
-                .ok_or(ResolutionError::ArithmeticOverflow(
-                    "aggregating diffuse transport",
-                ))
-        })?;
-    remaining_energy
-        .checked_add(incoming)
-        .ok_or(ResolutionError::ArithmeticOverflow(
-            "committing diffuse transport",
-        ))
-}
-
-fn advance_cell_digestion(
-    cell: &mut CellState,
-    elapsed: u64,
-    numerator: u64,
-    denominator: u64,
-) -> Result<(), ResolutionError> {
-    if cell.gut_energy == 0 || numerator == 0 {
-        cell.digestion_remainder = 0;
-        return Ok(());
-    }
-    let generated = u128::from(elapsed)
-        .checked_mul(u128::from(numerator))
-        .and_then(|value| value.checked_add(u128::from(cell.digestion_remainder)))
-        .ok_or(ResolutionError::ArithmeticOverflow(
-            "accumulating digestion progress",
-        ))?;
-    let potential = generated / u128::from(denominator);
-    let digested = u64::try_from(potential.min(u128::from(cell.gut_energy)))
-        .map_err(|_| ResolutionError::ArithmeticOverflow("converting digestion amount"))?;
-    cell.gut_energy -= digested;
-    cell.assimilated_energy = cell.assimilated_energy.checked_add(digested).ok_or(
-        ResolutionError::ArithmeticOverflow("adding digested energy"),
-    )?;
-    cell.digestion_remainder = if cell.gut_energy == 0 {
-        0
-    } else {
-        u64::try_from(generated % u128::from(denominator))
-            .map_err(|_| ResolutionError::ArithmeticOverflow("storing digestion remainder"))?
-    };
-    Ok(())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn dense_digestion_preflight(
-    cell: &CellState,
-    elapsed: u64,
-    digestion_numerator: u64,
-    digestion_denominator: u64,
-    now: SimTime,
-    metabolism_numerator: u64,
-    metabolism_denominator: u64,
-) -> (bool, bool) {
-    let generated = u128::from(elapsed) * u128::from(digestion_numerator)
-        + u128::from(cell.digestion_remainder);
-    let digested = (generated / u128::from(digestion_denominator)).min(u128::from(cell.gut_energy));
-    let Ok(digested) = u64::try_from(digested) else {
-        return (false, false);
-    };
-    let Some(assimilated_energy) = cell.assimilated_energy.checked_add(digested) else {
-        return (false, false);
-    };
-    let deadline_fits = metabolism_numerator > 0
-        && metabolic_exhaustion_time_from_values(
-            now,
-            assimilated_energy,
-            cell.metabolism_remainder,
-            metabolism_numerator,
-            metabolism_denominator,
-        )
-        .is_ok();
-    (true, deadline_fits)
-}
-
-#[cfg(test)]
-fn advance_cell_metabolism(
-    cell: &mut CellState,
-    elapsed: u64,
-    numerator: u64,
-    denominator: u64,
-) -> Result<u64, ResolutionError> {
-    advance_cell_metabolism_with_divisor(
-        cell,
-        elapsed,
-        numerator,
-        PassiveRateDivisor::new(denominator),
-    )
-}
-
-fn advance_cell_metabolism_with_divisor(
-    cell: &mut CellState,
-    elapsed: u64,
-    numerator: u64,
-    divisor: PassiveRateDivisor,
-) -> Result<u64, ResolutionError> {
-    if cell.assimilated_energy == 0 || numerator == 0 {
-        cell.metabolism_remainder = 0;
-        return Ok(0);
-    }
-    let generated = u128::from(elapsed)
-        .checked_mul(u128::from(numerator))
-        .and_then(|value| value.checked_add(u128::from(cell.metabolism_remainder)))
-        .ok_or(ResolutionError::ArithmeticOverflow(
-            "accumulating metabolism progress",
-        ))?;
-    let potential = divisor.quotient(generated);
-    let spent = u64::try_from(potential.min(u128::from(cell.assimilated_energy)))
-        .map_err(|_| ResolutionError::ArithmeticOverflow("converting metabolism cost"))?;
-    cell.assimilated_energy -= spent;
-    cell.metabolism_remainder = if cell.assimilated_energy == 0 {
-        0
-    } else {
-        u64::try_from(divisor.remainder(generated))
-            .map_err(|_| ResolutionError::ArithmeticOverflow("storing metabolism remainder"))?
-    };
-    Ok(spent)
-}
-
-fn metabolic_exhaustion_time(
-    now: SimTime,
-    cell: &CellState,
-    numerator: u64,
-    denominator: u64,
-) -> Result<SimTime, ResolutionError> {
-    metabolic_exhaustion_time_from_values(
-        now,
-        cell.assimilated_energy,
-        cell.metabolism_remainder,
-        numerator,
-        denominator,
-    )
-}
-
-fn metabolic_exhaustion_time_from_values(
-    now: SimTime,
-    assimilated_energy: u64,
-    metabolism_remainder: u64,
-    numerator: u64,
-    denominator: u64,
-) -> Result<SimTime, ResolutionError> {
-    let required = u128::from(assimilated_energy)
-        .checked_mul(u128::from(denominator))
-        .and_then(|value| value.checked_sub(u128::from(metabolism_remainder)))
-        .ok_or(ResolutionError::ArithmeticOverflow(
-            "scheduling metabolic exhaustion",
-        ))?;
-    let elapsed = required.checked_add(u128::from(numerator - 1)).ok_or(
-        ResolutionError::ArithmeticOverflow("rounding metabolic exhaustion time"),
-    )? / u128::from(numerator);
-    let elapsed = u64::try_from(elapsed)
-        .map_err(|_| ResolutionError::ArithmeticOverflow("converting metabolic exhaustion time"))?;
-    now.0
-        .checked_add(elapsed)
-        .map(SimTime)
-        .ok_or(ResolutionError::ArithmeticOverflow(
-            "scheduling metabolic exhaustion time",
-        ))
-}
-
-fn compile_diffusion_neighbors(
-    neighborhood: &CompiledNeighborhood,
-    mask: SlotMask,
-) -> Vec<Vec<TileIndex>> {
-    (0..neighborhood.tile_count())
-        .map(|index| {
-            let origin = TileIndex(index);
-            let mut neighbors = std::collections::BTreeSet::new();
-            for slot_index in 0..neighborhood.spec().slots.len() {
-                let slot = LocalSlot(slot_index as u8);
-                if !mask.contains(slot) {
-                    continue;
-                }
-                if let Some(target) = neighborhood.target(origin, slot) {
-                    if target != origin {
-                        neighbors.insert(target);
-                    }
-                }
-            }
-            neighbors.into_iter().collect()
-        })
-        .collect()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn compile_diffusion_sources(
-    neighbors: &[Vec<TileIndex>],
-    tile_count: usize,
-) -> Vec<Vec<TileIndex>> {
-    let mut sources = vec![Vec::new(); tile_count];
-    for (source, destinations) in neighbors.iter().enumerate() {
-        let source = TileIndex(source);
-        for destination in destinations {
-            sources[destination.0].push(source);
-        }
-    }
-    sources
-}
-
-fn reference_neighbor(value: NeighborCue) -> ReferenceNeighbor {
-    ReferenceNeighbor {
-        marker: value.marker,
-        apparent_mass_bucket: value.apparent_mass_bucket,
-        activity: value.activity.map(|activity| match activity {
-            ActivityCue::Ready => ReferenceActivity::Ready,
-            ActivityCue::Moving => ReferenceActivity::Moving,
-            ActivityCue::AttackWindup => ReferenceActivity::AttackWindup,
-            ActivityCue::Guarding => ReferenceActivity::Guarding,
-            ActivityCue::Feeding => ReferenceActivity::Feeding,
-            ActivityCue::Splitting => ReferenceActivity::Splitting,
-            ActivityCue::ManipulatingTerrain => ReferenceActivity::ManipulatingTerrain,
-            ActivityCue::OtherBusy => ReferenceActivity::OtherBusy,
-        }),
-        progress: value.progress.map(|progress| match progress {
-            ProgressBucket::Early => ReferenceProgress::Early,
-            ProgressBucket::Middle => ReferenceProgress::Middle,
-            ProgressBucket::Late => ReferenceProgress::Late,
-        }),
-    }
-}
-
-fn reference_outcome(value: OutcomeStatus) -> ReferenceOutcome {
-    match value {
-        OutcomeStatus::Success => ReferenceOutcome {
-            status: ReferenceOutcomeStatus::Success,
-            rejected_reason: None,
-        },
-        OutcomeStatus::Frustrated => ReferenceOutcome {
-            status: ReferenceOutcomeStatus::Frustrated,
-            rejected_reason: None,
-        },
-        OutcomeStatus::Contested => ReferenceOutcome {
-            status: ReferenceOutcomeStatus::Contested,
-            rejected_reason: None,
-        },
-        OutcomeStatus::Interrupted => ReferenceOutcome {
-            status: ReferenceOutcomeStatus::Interrupted,
-            rejected_reason: None,
-        },
-        OutcomeStatus::Rejected(reason) => ReferenceOutcome {
-            status: ReferenceOutcomeStatus::Rejected,
-            rejected_reason: Some(match reason {
-                RejectReason::InvalidSlot => ReferenceRejectReason::InvalidSlot,
-                RejectReason::ActionNotAllowedInSlot => {
-                    ReferenceRejectReason::ActionNotAllowedInSlot
-                }
-                RejectReason::TargetOutsideWorld => ReferenceRejectReason::TargetOutsideWorld,
-                RejectReason::TargetsSelf => ReferenceRejectReason::TargetsSelf,
-                RejectReason::ZeroPayload => ReferenceRejectReason::ZeroPayload,
-                RejectReason::InsufficientGutEnergy => ReferenceRejectReason::InsufficientGutEnergy,
-                RejectReason::ChildAllocationTooSmall => {
-                    ReferenceRejectReason::ChildAllocationTooSmall
-                }
-                RejectReason::PrivateMemoryTooLarge => ReferenceRejectReason::PrivateMemoryTooLarge,
-                RejectReason::InsufficientEnergy => ReferenceRejectReason::InsufficientEnergy,
-                RejectReason::InsufficientMaterial => ReferenceRejectReason::InsufficientMaterial,
-                RejectReason::TerrainLimit => ReferenceRejectReason::TerrainLimit,
-                RejectReason::ArithmeticOverflow => ReferenceRejectReason::ArithmeticOverflow,
-            }),
-        },
-    }
-}
-
 fn ceil_ratio(numerator: u64, denominator: u64) -> Result<u64, RejectReason> {
     if denominator == 0 {
         return Err(RejectReason::ArithmeticOverflow);
@@ -7395,6 +6177,37 @@ mod tests {
         );
     }
     use crate::resolution::BoundaryRule;
+
+    #[test]
+    fn exhaustion_index_releases_sparse_historical_keys() {
+        let mut simulation = ReferenceSimulation::new(1, 1, ReferenceRuleset::default()).unwrap();
+        let key = simulation.add_cell(TileIndex(0), 10, 100, 0).unwrap();
+        let mut cell = simulation.cell(key).unwrap().clone();
+        let mut index = MetabolicExhaustionIndex::default();
+        let mut oracle = BTreeMap::new();
+        for birth in 0..5000_u64 {
+            let key = CellKey((1 << 60) + birth * 512);
+            cell.assimilated_energy = 1 + birth % 17;
+            index.sync(key, Some(&cell), SimTime(0), 1, 1);
+            oracle.insert(
+                key,
+                metabolic_exhaustion_time(SimTime(0), &cell, 1, 1).unwrap(),
+            );
+            if birth >= 8 {
+                let dead = CellKey((1 << 60) + (birth - 8) * 512);
+                index.sync(dead, None, SimTime(0), 1, 1);
+                oracle.remove(&dead);
+            }
+            assert_eq!(index.next_event().unwrap(), oracle.values().copied().min());
+            assert_eq!(index.heap.len(), oracle.len());
+            assert!(index.positions.page_count() <= 8);
+        }
+        for key in oracle.keys() {
+            index.sync(*key, None, SimTime(0), 1, 1);
+        }
+        assert!(index.heap.is_empty());
+        assert_eq!(index.positions.page_count(), 0);
+    }
 
     #[test]
     fn indexed_cell_store_preserves_canonical_order_across_holes() {
@@ -7879,43 +6692,170 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn dense_parallel_bulk_preflight_matches_former_oracle() {
-        const CELLS: usize = PARALLEL_COMMIT_PREFLIGHT_THRESHOLD;
-        let mut bulk = ReferenceSimulation::new(64, 32, uniform_rules()).unwrap();
-        for tile in 0..CELLS {
-            bulk.add_cell(TileIndex(tile), 10, 100, 0).unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
+    fn mixed_bulk_fixture(count: usize) -> (ReferenceSimulation, Vec<DecisionCommitment>) {
+        let mut rules = uniform_rules();
+        rules.max_private_memory_bytes = 16;
+        let mut simulation = ReferenceSimulation::new(64, 33, rules.clone()).unwrap();
+        for tile in 0..count {
+            simulation
+                .add_cell(TileIndex(tile), 10, 100, tile as u32)
+                .unwrap();
         }
-        let mut oracle = ReferenceSimulation::from_canonical_state(
-            64,
-            32,
-            uniform_rules(),
-            bulk.canonical_state(),
-        )
-        .unwrap();
-        let decisions = bulk
+        let mut state = simulation.canonical_state();
+        for (_, cell) in &mut state.cells {
+            cell.gut_energy = 32;
+            cell.carried_material_mass = 20;
+        }
+        let simulation = ReferenceSimulation::from_canonical_state(64, 33, rules, state).unwrap();
+        let decisions = simulation
             .cells
             .keys()
             .copied()
-            .map(|actor| DecisionCommitment {
-                actor,
-                request: ActionRequest::Wait,
-                signal: None,
-                memory_update: ReferenceMemoryUpdate::Retain,
+            .enumerate()
+            .map(|(index, actor)| {
+                let target = LocalSlot(if index % 20 == 1 { 31 } else { 4 });
+                let effort = [EffortTier::Low, EffortTier::Standard, EffortTier::High][index % 3];
+                let request = match index % 10 {
+                    0 => ActionRequest::Wait,
+                    1 => ActionRequest::Move { target, effort },
+                    2 => ActionRequest::Attack {
+                        target,
+                        effort,
+                        payload: 7,
+                    },
+                    3 => ActionRequest::Guard { effort },
+                    4 => ActionRequest::Consume { amount: 8 },
+                    5 => ActionRequest::Split {
+                        target,
+                        child_allocation: 20,
+                        marker: index as u32,
+                        private_memory: vec![3; 16],
+                    },
+                    6 => ActionRequest::Regurgitate { target, amount: 8 },
+                    7 => ActionRequest::Signal {
+                        amounts: [0, 0, 0, 1],
+                    },
+                    8 => ActionRequest::Excavate,
+                    _ => ActionRequest::DepositTerrain,
+                };
+                DecisionCommitment {
+                    actor,
+                    request,
+                    signal: (index % 3 == 0 && index % 10 != 7).then_some(
+                        ReferenceSignalEmission {
+                            channel: (index % 4) as u8,
+                            amount: 1,
+                        },
+                    ),
+                    memory_update: if index % 3 == 0 {
+                        ReferenceMemoryUpdate::Retain
+                    } else {
+                        ReferenceMemoryUpdate::Replace(vec![index as u8; 1 + index % 16])
+                    },
+                }
             })
-            .collect::<Vec<_>>();
+            .collect();
+        (simulation, decisions)
+    }
 
-        let bulk_receipts = bulk.commit_decisions_ordered(&decisions).unwrap();
-        let oracle_receipts = decisions
-            .iter()
-            .map(|decision| former_single_decision_oracle(&mut oracle, decision))
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn dense_parallel_bulk_preflight_matches_former_oracle() {
+        for count in [
+            PARALLEL_COMMIT_PREFLIGHT_THRESHOLD - 1,
+            PARALLEL_COMMIT_PREFLIGHT_THRESHOLD,
+            PARALLEL_COMMIT_PREFLIGHT_THRESHOLD + 1,
+        ] {
+            let (baseline, decisions) = mixed_bulk_fixture(count);
+            let mut oracle = baseline.clone();
+            let expected = decisions
+                .iter()
+                .map(|decision| former_single_decision_oracle(&mut oracle, decision))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert!(expected.iter().any(|receipt| receipt.accepted));
+            assert!(expected.iter().any(|receipt| !receipt.accepted));
+            for workers in [1, 4] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(workers)
+                    .build()
+                    .unwrap();
+                let mut bulk = baseline.clone();
+                assert_eq!(
+                    pool.install(|| bulk.commit_decisions_ordered(&decisions))
+                        .unwrap(),
+                    expected
+                );
+                assert_eq!(bulk.canonical_state(), oracle.canonical_state());
+                assert_eq!(bulk.due_actions, oracle.due_actions);
+                assert_eq!(bulk.active_signal_tiles, oracle.active_signal_tiles);
+                assert_eq!(bulk.active_diffuse_tiles, oracle.active_diffuse_tiles);
+                assert_eq!(bulk.state_hash(), oracle.state_hash());
+                let mut oracle_next = oracle.clone();
+                assert_eq!(
+                    bulk.resolve_next_batch_parallel(workers).unwrap(),
+                    oracle_next.resolve_next_batch().unwrap()
+                );
+                assert_eq!(bulk.canonical_state(), oracle_next.canonical_state());
+                assert_eq!(
+                    bulk.total_energy_equivalent(),
+                    baseline.total_energy_equivalent()
+                );
+            }
+        }
+    }
 
-        assert_eq!(bulk_receipts, oracle_receipts);
-        assert_eq!(bulk.canonical_state(), oracle.canonical_state());
-        assert_eq!(bulk.due_actions, oracle.due_actions);
-        assert_eq!(bulk.state_hash(), oracle.state_hash());
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn dense_parallel_preflight_selects_first_error_without_mutation() {
+        let (baseline, decisions) = mixed_bulk_fixture(PARALLEL_COMMIT_PREFLIGHT_THRESHOLD + 1);
+        let before = baseline.canonical_state();
+        let before_hash = baseline.state_hash();
+        for workers in [1, 4] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            for first in [0, decisions.len() / 2, decisions.len() - 2] {
+                let mut invalid = decisions.clone();
+                // A second distinct failure must not race ahead of the earlier
+                // actor's oversized-memory error during parallel preflight.
+                invalid[first].memory_update = ReferenceMemoryUpdate::Replace(vec![1; 17]);
+                invalid[first + 1].signal = Some(ReferenceSignalEmission {
+                    channel: 4,
+                    amount: 1,
+                });
+                let mut simulation = baseline.clone();
+                assert_eq!(
+                    pool.install(|| simulation.commit_decisions_ordered(&invalid)),
+                    Err(CommitError::PrivateMemoryTooLarge {
+                        actual: 17,
+                        limit: 16
+                    })
+                );
+                assert_eq!(simulation.canonical_state(), before);
+                assert_eq!(simulation.state_hash(), before_hash);
+                assert_eq!(simulation.due_actions, baseline.due_actions);
+                assert_eq!(simulation.active_signal_tiles, baseline.active_signal_tiles);
+                assert_eq!(
+                    simulation.active_diffuse_tiles,
+                    baseline.active_diffuse_tiles
+                );
+                // Continue after rejection to catch derived-state residue too.
+                let mut clean = baseline.clone();
+                assert_eq!(
+                    pool.install(|| simulation.commit_decisions_ordered(&decisions))
+                        .unwrap(),
+                    clean.commit_decisions_ordered(&decisions).unwrap()
+                );
+                assert_eq!(
+                    simulation.resolve_next_batch_parallel(workers).unwrap(),
+                    clean.resolve_next_batch().unwrap()
+                );
+                assert_eq!(simulation.canonical_state(), clean.canonical_state());
+            }
+        }
     }
 
     #[test]
@@ -8946,7 +7886,7 @@ mod tests {
         }
         let mut holes =
             ReferenceSimulation::from_canonical_state(3, 1, seeded.rules.clone(), state).unwrap();
-        assert_eq!(holes.cells.slots.len(), 3);
+        assert_eq!(holes.cells.slots.page_count(), 1);
         assert_eq!(holes.cells.len(), 2);
         holes.set_passive_parallel_thresholds(Some(2), Some(2));
         let mut holes_serial = holes.clone();
@@ -9342,18 +8282,18 @@ mod tests {
         let schedule_calculation_elapsed = schedule_calculation_started.elapsed();
         let mut assembled_exhaustion = MetabolicExhaustionIndex::default();
         let schedule_assembly_started = Instant::now();
-        assembled_exhaustion
-            .positions
-            .resize(parallel_digestion.slots.len(), NO_METABOLIC_SCHEDULE);
         for (key, schedule) in &schedules {
-            let key_index = MetabolicExhaustionIndex::cell_index(*key);
             match schedule {
                 Ok(time) => {
-                    assembled_exhaustion.positions[key_index] = assembled_exhaustion.heap.len();
+                    assembled_exhaustion
+                        .positions
+                        .insert(key.0, assembled_exhaustion.heap.len());
                     assembled_exhaustion.heap.push((*time, *key));
                 }
                 Err(error) => {
-                    assembled_exhaustion.positions[key_index] = OVERFLOWED_METABOLIC_SCHEDULE;
+                    assembled_exhaustion
+                        .positions
+                        .insert(key.0, OVERFLOWED_METABOLIC_SCHEDULE);
                     assembled_exhaustion.overflows.insert(*key, error.clone());
                 }
             }

@@ -13,11 +13,49 @@ blob_interface = { path = "../blob_interface" }
 libfuzzer-sys = "0.4"
 sha2 = "0.10"
 
+[dev-dependencies]
+wasmparser = "0.224.1"
+
 [workspace]
+
+[[bin]]
+name = "movement"
+path = "fuzz_targets/movement.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "observations"
+path = "fuzz_targets/observations.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "neighborhood"
+path = "fuzz_targets/neighborhood.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wasm_admission"
+path = "fuzz_targets/wasm_admission.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "replay_formats"
 path = "fuzz_targets/replay_formats.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resolver_commands"
+path = "fuzz_targets/resolver_commands.rs"
 test = false
 doc = false
 bench = false

@@ -27,6 +27,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes capnproto libvulkan1 mesa-vulkan-drivers
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --all-features --locked
+      - run: cargo test --locked -p blob_rl --all-features --example target_set_probe --example feeding_utility_probe
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   schemas-and-web-source:
@@ -39,10 +40,12 @@ jobs:
         with:
           node-version: "24.3.0"
       - run: python3 scripts/check_schema_registry.py
+      - run: python3 -B scripts/test_feeding_cohort.py
       - run: node --check blob_web/web/blob_web.js
       - run: node --check blob_web/viewer/match-explorer.js
+      - run: node --check blob_web/viewer/match-history.js
       - run: node scripts/check_match_explorer_sample.mjs
-      - run: bash -n scripts/conformance.sh scripts/build_browser_package.sh scripts/build_language_minds.sh
+      - run: bash -n scripts/conformance.sh scripts/build_browser_package.sh scripts/build_language_minds.sh scripts/prepare_browser_tests.sh
 
   wasm:
     name: WASM boundaries
@@ -61,12 +64,51 @@ jobs:
           -p simple_mind -p aggressive_mind -p defensive_mind -p explorer_mind
           -p colony_mind -p isolation_canary -p invalid_mind_canary
 
-  browser:
-    name: Chromium match explorer
+  learned-mind:
+    name: Learned Mind export and replay parity
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      RAYON_NUM_THREADS: "4"
     steps:
       - uses: actions/checkout@v6
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes capnproto libvulkan1 mesa-vulkan-drivers
+      - run: cargo test --locked -p blob_policy
+      - name: Generate explicit synthetic deployment fixture
+        run: |
+          mkdir -p training-output/learned-mind-ci
+          cargo run --locked -p blob_policy --example deployment_fixture -- training-output/learned-mind-ci/export
+      - name: Build frozen WASM Mind
+        run: python3 scripts/build_learned_mind.py training-output/learned-mind-ci/export
+      - name: Check native/WASM decisions, memory, isolation and signed replay
+        run: cargo run --locked -p blob_game --example verify_learned_mind -- training-output/learned-mind-ci/export training-output/learned-mind-ci/verification
+      - name: Build and verify explicit synthetic composite Mind
+        run: |
+          cargo run --locked -p blob_policy --example deployment_fixture -- training-output/learned-mind-ci/composite --composite
+          python3 scripts/build_learned_mind.py training-output/learned-mind-ci/composite
+          cargo run --locked -p blob_game --example verify_learned_mind -- training-output/learned-mind-ci/composite training-output/learned-mind-ci/composite-verification
+      - name: Build explicit untrained categorical-decoder canary
+        run: cargo build --release --locked -p blob_policy --example sampled_target_canary --target wasm32-unknown-unknown
+      - name: Check sampled target weights and choices through the ordinary ABI
+        run: cargo run --locked -p blob_game --example verify_sampled_target -- target/wasm32-unknown-unknown/release/examples/sampled_target_canary.wasm training-output/learned-mind-ci/sampled-target-verification
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: learned-mind-parity
+          path: training-output/learned-mind-ci/
+          retention-days: 14
+
+  browser:
+    name: Chromium replay and verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install browser package build dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install --yes capnproto
+          cargo install wasm-bindgen-cli --version 0.2.100 --locked
       - uses: actions/setup-node@v6
         with:
           node-version: "24.3.0"
@@ -74,6 +116,7 @@ jobs:
           cache-dependency-path: browser-tests/package-lock.json
       - run: npm ci --prefix browser-tests
       - run: npm exec --prefix browser-tests -- playwright install --with-deps chromium
+      - run: npm run prepare:wasm --prefix browser-tests
       - run: npm test --prefix browser-tests
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
@@ -95,6 +138,38 @@ jobs:
           rustup toolchain install nightly-2026-08-01 --profile minimal
           cargo +nightly-2026-08-01 install cargo-fuzz --version 0.13.2 --locked
       - name: Fuzz canonical replay decoders
-        run: cargo +nightly-2026-08-01 fuzz run replay_formats -- -max_total_time=15 -max_len=4096
+        run: cargo +nightly-2026-08-01 fuzz run replay_formats -- -max_total_time=15 -max_len=4096 -rss_limit_mb=1024 -timeout=10
       - name: Fuzz Mind ABI decoders
-        run: cargo +nightly-2026-08-01 fuzz run mind_abi -- -max_total_time=15 -max_len=4096
+        run: cargo +nightly-2026-08-01 fuzz run mind_abi -- -max_total_time=15 -max_len=4096 -rss_limit_mb=1024 -timeout=10
+      - name: Check deterministic fuzz-harness contracts
+        run: RAYON_NUM_THREADS=2 cargo +nightly-2026-08-01 test --manifest-path fuzz/Cargo.toml --lib
+      - name: Fuzz resolver command sequences
+        run: |
+          python3 fuzz/generate_resolver_seeds.py
+          RAYON_NUM_THREADS=2 cargo +nightly-2026-08-01 fuzz run resolver_commands -- -max_total_time=15 -max_len=516 -rss_limit_mb=1024 -timeout=10
+      - name: Fuzz structural Wasm admission
+        run: |
+          cargo +nightly-2026-08-01 run --manifest-path fuzz/Cargo.toml --example wasm_admission_seeds
+          cargo +nightly-2026-08-01 fuzz run wasm_admission -- -max_total_time=15 -max_len=8192 -rss_limit_mb=1024 -timeout=10
+      - name: Fuzz neighborhood compiler
+        run: |
+          python3 fuzz/generate_neighborhood_seeds.py
+          cargo +nightly-2026-08-01 fuzz run neighborhood -- -max_total_time=15 -max_len=256 -rss_limit_mb=1024 -timeout=10
+      - name: Fuzz Mind observation visibility
+        run: |
+          python3 fuzz/generate_observation_seeds.py
+          RAYON_NUM_THREADS=2 cargo +nightly-2026-08-01 fuzz run observations -- -max_total_time=15 -max_len=256 -rss_limit_mb=1024 -timeout=10
+      - name: Fuzz local movement rules
+        run: |
+          python3 fuzz/generate_movement_seeds.py
+          RAYON_NUM_THREADS=2 cargo +nightly-2026-08-01 fuzz run movement -- -max_total_time=15 -max_len=64 -rss_limit_mb=1024 -timeout=10
+      - name: Retain fuzz corpus and findings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-corpus-${{ github.sha }}
+          path: |
+            fuzz/corpus/
+            fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

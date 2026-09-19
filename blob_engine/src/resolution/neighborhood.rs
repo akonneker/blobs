@@ -323,8 +323,13 @@ impl CompiledNeighborhood {
         let entry_count = tile_count
             .checked_mul(spec.slots.len())
             .ok_or(NeighborhoodError::WorldTooLarge)?;
-        let mut neighbors = Vec::with_capacity(entry_count);
-        for tile in 0..tile_count {
+        let mut neighbors = Vec::new();
+        neighbors
+            .try_reserve_exact(entry_count)
+            .map_err(|_| NeighborhoodError::WorldTooLarge)?;
+        // Empty neighborhoods have no per-tile entries. In particular, avoid
+        // iterating a potentially enormous virtual world to append nothing.
+        for tile in 0..if spec.slots.is_empty() { 0 } else { tile_count } {
             let x = tile % width;
             let y = tile / width;
             for offset in &spec.slots {
@@ -357,32 +362,39 @@ impl CompiledNeighborhood {
         dx: i8,
         dy: i8,
     ) -> Option<TileIndex> {
-        let x = i64::try_from(x).ok()?;
-        let y = i64::try_from(y).ok()?;
-        let width_i64 = i64::try_from(width).ok()?;
-        let height_i64 = i64::try_from(height).ok()?;
-        let target_x = x + i64::from(dx);
-        let target_y = y + i64::from(dy);
-
-        let (resolved_x, resolved_y) = match boundary {
-            BoundaryRule::Bounded => {
-                if target_x < 0 || target_y < 0 || target_x >= width_i64 || target_y >= height_i64 {
-                    return None;
-                }
-                (target_x, target_y)
-            }
-            BoundaryRule::Wrap => (
-                target_x.rem_euclid(width_i64),
-                target_y.rem_euclid(height_i64),
-            ),
-        };
-
-        let resolved_x = usize::try_from(resolved_x).ok()?;
-        let resolved_y = usize::try_from(resolved_y).ok()?;
+        let resolved_x = Self::resolve_axis(x, width, dx, boundary)?;
+        let resolved_y = Self::resolve_axis(y, height, dy, boundary)?;
         resolved_y
             .checked_mul(width)
             .and_then(|row| row.checked_add(resolved_x))
             .map(TileIndex)
+    }
+
+    fn resolve_axis(
+        value: usize,
+        bound: usize,
+        offset: i8,
+        boundary: BoundaryRule,
+    ) -> Option<usize> {
+        if boundary == BoundaryRule::Bounded {
+            return value
+                .checked_add_signed(isize::from(offset))
+                .filter(|target| *target < bound);
+        }
+        // Reduce before adding/subtracting: neither signed coordinate conversion
+        // nor an overflowing sum is needed, even for a usize-sized virtual world.
+        let shift = usize::from(offset.unsigned_abs()) % bound;
+        Some(if offset >= 0 {
+            if value >= bound - shift {
+                value - (bound - shift)
+            } else {
+                value + shift
+            }
+        } else if value < shift {
+            bound - (shift - value)
+        } else {
+            value - shift
+        })
     }
 
     pub fn width(&self) -> usize {
@@ -460,6 +472,57 @@ impl CompiledNeighborhood {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_neighborhoods_handle_large_virtual_worlds_without_coordinate_overflow() {
+        for width in [
+            usize::MAX,
+            (i64::MAX as u64).min(usize::MAX as u64) as usize,
+        ] {
+            for boundary in [BoundaryRule::Bounded, BoundaryRule::Wrap] {
+                let compiled = NeighborhoodSpec::new(
+                    vec![],
+                    ObservationMasks::all(0),
+                    [SlotMask::empty(); 4],
+                    DiagonalCornerRule::Allow,
+                    boundary,
+                    127,
+                )
+                .compile(width, 1)
+                .unwrap();
+                assert_eq!(compiled.tile_count(), width);
+                assert_eq!(compiled.targets(TileIndex(width - 1)), Some(&[][..]));
+                assert_eq!(
+                    compiled.coordinate(TileIndex(width - 1)),
+                    Some((width - 1, 0))
+                );
+                assert_eq!(
+                    compiled.target_at_offset(TileIndex(width - 1), 127, 0),
+                    if boundary == BoundaryRule::Wrap {
+                        Some(TileIndex(126))
+                    } else {
+                        None
+                    }
+                );
+                assert_eq!(
+                    compiled.target_at_offset(TileIndex(0), -128, 0),
+                    if boundary == BoundaryRule::Wrap {
+                        Some(TileIndex(width - 128))
+                    } else {
+                        None
+                    }
+                );
+                assert_eq!(
+                    compiled.target_at_offset(TileIndex(width - 1), -1, 0),
+                    Some(TileIndex(width - 2))
+                );
+            }
+        }
+        assert!(matches!(
+            NeighborhoodSpec::moore_8(BoundaryRule::Wrap).compile(usize::MAX, 2),
+            Err(NeighborhoodError::WorldTooLarge)
+        ));
+    }
 
     #[test]
     fn bounded_and_wrapped_edges_compile_differently() {

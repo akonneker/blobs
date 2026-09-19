@@ -22,6 +22,7 @@ dependencies = [
  "blob_interface",
  "libfuzzer-sys",
  "sha2",
+ "wasmparser",
 ]
 
 [[package]]

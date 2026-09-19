@@ -1317,6 +1317,10 @@ fn validate_observation_policy_report(
     Ok(())
 }
 
+fn supported_demonstration_schema(schema: u32) -> bool {
+    matches!(schema, 11..=DEMONSTRATION_SCHEMA_VERSION)
+}
+
 fn validate_dataset(
     manifest: &DemonstrationManifest,
     payload: &DemonstrationPayload,
@@ -1335,10 +1339,8 @@ fn validate_dataset(
     ]
     .iter()
     .any(|profile| profile.as_str() == manifest.teacher);
-    let supported_schema = matches!(
-        manifest.schema_version,
-        11 | 12 | 13 | 14 | 15 | 16 | 17 | DEMONSTRATION_SCHEMA_VERSION
-    ) && payload.schema_version == manifest.schema_version;
+    let supported_schema = supported_demonstration_schema(manifest.schema_version)
+        && payload.schema_version == manifest.schema_version;
     if !supported_schema
         || manifest.observation_dim != OBS_DIM
         || manifest.action_count != NUM_ACTIONS
@@ -1654,7 +1656,9 @@ fn validate_dataset(
             minimum_effort,
             active_correction: _,
         } => {
-            if manifest.schema_version != DEMONSTRATION_SCHEMA_VERSION
+            // This collection format was introduced in schema 16. Later
+            // schemas changed greedy-policy telemetry, not effort corrections.
+            if manifest.schema_version < 16
                 || manifest.teacher != "counterfactual_effort"
                 || !is_sha256(source_counterfactual_sha256)
                 || !is_sha256(source_value_sha256)
@@ -1859,34 +1863,16 @@ pub fn publish_demonstrations(
 
 pub fn load_demonstrations(directory: &Path) -> Result<LoadedDemonstrations, String> {
     let manifest_path = directory.join(MANIFEST_FILE);
-    let manifest_length = fs::metadata(&manifest_path)
-        .map_err(|error| format!("failed to inspect {}: {error}", manifest_path.display()))?
-        .len();
-    if manifest_length > 1024 * 1024 {
-        return Err("demonstration manifest exceeds 1 MiB".into());
-    }
-    let manifest_bytes = fs::read(&manifest_path)
-        .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
+    let manifest_bytes = crate::artifact_io::read_bounded(&manifest_path, 1024 * 1024)?;
     let manifest: DemonstrationManifest = serde_json::from_slice(&manifest_bytes)
         .map_err(|error| format!("failed to decode {}: {error}", manifest_path.display()))?;
-    if !matches!(
-        manifest.schema_version,
-        11 | 12 | 13 | 14 | 15 | 16 | DEMONSTRATION_SCHEMA_VERSION
-    ) || manifest.payload_file != PAYLOAD_FILE
+    if !supported_demonstration_schema(manifest.schema_version)
+        || manifest.payload_file != PAYLOAD_FILE
     {
         return Err("demonstration manifest schema or payload path mismatch".into());
     }
     let payload_path = directory.join(&manifest.payload_file);
-    let length = fs::metadata(&payload_path)
-        .map_err(|error| format!("failed to inspect {}: {error}", payload_path.display()))?
-        .len();
-    if length > MAX_DATASET_BYTES {
-        return Err(format!(
-            "demonstration payload exceeds {MAX_DATASET_BYTES} bytes"
-        ));
-    }
-    let payload_bytes = fs::read(&payload_path)
-        .map_err(|error| format!("failed to read {}: {error}", payload_path.display()))?;
+    let payload_bytes = crate::artifact_io::read_bounded(&payload_path, MAX_DATASET_BYTES)?;
     if sha256(&payload_bytes) != manifest.payload_sha256 {
         return Err("demonstration payload SHA-256 mismatch".into());
     }
@@ -1986,6 +1972,70 @@ mod tests {
             policy_action,
             teacher_action
         ));
+    }
+
+    #[test]
+    fn effort_correction_schemas_16_onward_remain_hash_verified_and_strict() {
+        let (mut manifest, mut payload) = generate_demonstrations(
+            &small_config(),
+            sha256(b"source"),
+            &DemonstrationOptions {
+                teacher: MaintainedMindProfile::Simple,
+                seeds: vec![77],
+                max_samples: 1,
+            },
+        )
+        .unwrap();
+        let sample = &mut payload.samples[0];
+        sample.action =
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind: PolicyActionKind::Move.index(),
+                target: 0,
+                effort: 0,
+            })
+            .unwrap() as u16;
+        sample.action_mask[usize::from(sample.action)] = true;
+        sample.initial_policy_memory = vec![0.25; 8];
+        manifest.teacher = "counterfactual_effort".into();
+        manifest.collection = DemonstrationCollection::CounterfactualEffortCorrection {
+            source_counterfactual_sha256: sha256(b"counterfactual"),
+            source_value_sha256: sha256(b"value"),
+            behavior_clone_model_sha256: sha256(b"model"),
+            perspective: "conservative".into(),
+            horizon_quanta: 4096,
+            recurrent_size: 8,
+            minimum_effort: 0,
+            active_correction: false,
+        };
+        manifest.action_family_samples.fill(0);
+        manifest.action_family_samples[PolicyActionFamily::Move.index()] = 1;
+        manifest.completed_episodes = 0;
+        manifest.wins = 0;
+        manifest.losses = 0;
+        manifest.timeouts = 0;
+        let root = tempfile::tempdir().unwrap();
+        for schema in [16, 17, DEMONSTRATION_SCHEMA_VERSION] {
+            manifest.schema_version = schema;
+            payload.schema_version = schema;
+            manifest.payload_sha256 = sha256(&rmp_serde::to_vec_named(&payload).unwrap());
+            let output = root.path().join(schema.to_string());
+            publish_demonstrations(&output, &manifest, &payload).unwrap();
+            assert_eq!(
+                load_demonstrations(&output)
+                    .unwrap()
+                    .manifest
+                    .schema_version,
+                schema
+            );
+            let mut malformed = payload.clone();
+            malformed.samples[0].initial_policy_memory.pop();
+            assert!(validate_dataset(&manifest, &malformed).is_err());
+            fs::write(output.join(PAYLOAD_FILE), b"tampered").unwrap();
+            assert!(load_demonstrations(&output).is_err());
+        }
+        manifest.schema_version = 15;
+        payload.schema_version = 15;
+        assert!(validate_dataset(&manifest, &payload).is_err());
     }
 
     #[test]

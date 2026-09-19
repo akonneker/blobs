@@ -294,17 +294,7 @@ fn hash_json(value: &impl Serialize) -> Result<String, String> {
 }
 
 fn load_spec(path: &Path) -> Result<(AdjudicationSensitivitySpec, String), String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_POLICY_FILE_BYTES {
-        return Err(format!(
-            "{} is {length} bytes; policy limit is {MAX_POLICY_FILE_BYTES}",
-            path.display()
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_POLICY_FILE_BYTES)?;
     let text = std::str::from_utf8(&bytes)
         .map_err(|error| format!("policy file is not UTF-8: {error}"))?;
     let spec: AdjudicationSensitivitySpec = toml::from_str(text)
@@ -392,17 +382,7 @@ pub fn analyze_adjudication_sensitivity(
     matrix_file: &Path,
     policy_file: &Path,
 ) -> Result<AdjudicationSensitivityReport, String> {
-    let matrix_length = fs::metadata(matrix_file)
-        .map_err(|error| format!("failed to inspect {}: {error}", matrix_file.display()))?
-        .len();
-    if matrix_length > MAX_SOURCE_MATRIX_BYTES {
-        return Err(format!(
-            "{} is {matrix_length} bytes; source matrix limit is {MAX_SOURCE_MATRIX_BYTES}",
-            matrix_file.display()
-        ));
-    }
-    let matrix_bytes = fs::read(matrix_file)
-        .map_err(|error| format!("failed to read {}: {error}", matrix_file.display()))?;
+    let matrix_bytes = crate::artifact_io::read_bounded(matrix_file, MAX_SOURCE_MATRIX_BYTES)?;
     let source_report_sha256 = sha256(&matrix_bytes);
     let source = decode_control_matrix_report(&matrix_bytes)
         .map_err(|error| format!("failed to decode {}: {error}", matrix_file.display()))?;

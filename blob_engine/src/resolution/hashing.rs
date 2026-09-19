@@ -5,6 +5,9 @@
 //! collection lengths use `u64`, so native and WASM builds share one byte
 //! contract.
 
+mod cell_tree;
+pub(crate) use cell_tree::CellMerkleCache;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 
@@ -241,19 +244,19 @@ pub(crate) fn canonical_state_hash(
 pub(crate) struct IncrementalStateHash {
     compiled_ruleset_hash: CanonicalHash,
     tile_tree: MerkleCache,
-    cell_tree: MerkleCache,
+    cell_tree: CellMerkleCache,
     /// Canonical per-cell commitments keep unchanged private-memory bytes out
     /// of dirty page rehashes. The map is derived and never serialized.
-    cell_leaves: Vec<Option<CanonicalHash>>,
-    cell_memory_hashes: Vec<Option<CanonicalHash>>,
+    cell_leaves: BTreeMap<CellKey, CanonicalHash>,
+    cell_memory_hashes: BTreeMap<CellKey, CanonicalHash>,
     dirty_tile_pages: BTreeSet<usize>,
     dirty_cells: BTreeSet<CellKey>,
     dirty_cell_memories: BTreeSet<CellKey>,
     all_cells_dirty: bool,
 }
 
-/// Trusted in-memory seed for the complete incremental hash cache. Planner
-/// checkpoints chunk and share these derived arrays; public checkpoints never
+/// Trusted in-memory tile hashes and shared compact cell-tree branches. Planner
+/// checkpoints chunk and share tile arrays; public checkpoints never
 /// serialize them and server verification still reconstructs from canonical
 /// state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,11 +265,7 @@ pub(crate) struct IncrementalStateHashSeed {
     pub tile_page_count: usize,
     pub tile_base: usize,
     pub tile_nodes: Vec<CanonicalHash>,
-    pub cell_page_count: usize,
-    pub cell_base: usize,
-    pub cell_nodes: Vec<CanonicalHash>,
-    pub cell_leaves: Vec<Option<CanonicalHash>>,
-    pub cell_memory_hashes: Vec<Option<CanonicalHash>>,
+    pub cell_tree: CellMerkleCache,
 }
 
 impl IncrementalStateHash {
@@ -276,14 +275,11 @@ impl IncrementalStateHash {
         cells: &CellStore,
         next_cell_key: u64,
     ) -> Self {
-        let (cell_memory_hashes, cell_leaves) = cell_commitment_slots(cells, next_cell_key);
+        let (cell_memory_hashes, cell_leaves) = cell_commitments_store(cells);
         Self {
             compiled_ruleset_hash,
             tile_tree: MerkleCache::new(0, tile_page_hashes(tiles)),
-            cell_tree: MerkleCache::new(
-                1,
-                cell_page_hashes_from_slots(&cell_leaves, next_cell_key),
-            ),
+            cell_tree: CellMerkleCache::new(cell_page_count(next_cell_key), &cell_leaves),
             cell_leaves,
             cell_memory_hashes,
             dirty_tile_pages: BTreeSet::new(),
@@ -302,31 +298,22 @@ impl IncrementalStateHash {
     ) -> Option<Self> {
         if seed.compiled_ruleset_hash != compiled_ruleset_hash
             || seed.tile_page_count != tile_count.div_ceil(STATE_TILE_PAGE_SIZE)
-            || seed.cell_page_count != cell_page_count(next_cell_key)
+            || seed.cell_tree.page_count() != cell_page_count(next_cell_key)
         {
             return None;
         }
-        let (cell_memory_hashes, cell_leaves) =
-            if seed.cell_leaves.is_empty() && seed.cell_memory_hashes.is_empty() {
-                cell_commitment_slots(cells, next_cell_key)
-            } else if seed.cell_leaves.len() == cell_slot_count(next_cell_key)
-                && seed.cell_memory_hashes.len() == cell_slot_count(next_cell_key)
-            {
-                (seed.cell_memory_hashes, seed.cell_leaves)
-            } else {
-                return None;
-            };
+        let (cell_memory_hashes, cell_leaves) = cell_commitments_store(cells);
         let tile_tree = if seed.tile_nodes.len() == seed.tile_page_count {
             let tree = MerkleCache::new(0, seed.tile_nodes);
             (tree.base == seed.tile_base).then_some(tree)?
         } else {
             MerkleCache::from_seed(0, seed.tile_page_count, seed.tile_base, seed.tile_nodes)?
         };
-        let cell_tree = if seed.cell_nodes.is_empty() {
-            MerkleCache::new(1, cell_page_hashes_from_slots(&cell_leaves, next_cell_key))
-        } else {
-            MerkleCache::from_seed(1, seed.cell_page_count, seed.cell_base, seed.cell_nodes)?
-        };
+        if seed.cell_tree.base != seed.cell_tree.page_count().max(1).next_power_of_two() {
+            return None;
+        }
+        let mut cell_tree = seed.cell_tree;
+        cell_tree.refresh_live_pages(&cell_leaves);
         Some(Self {
             compiled_ruleset_hash: seed.compiled_ruleset_hash,
             tile_tree,
@@ -354,11 +341,7 @@ impl IncrementalStateHash {
             tile_page_count: self.tile_tree.page_count,
             tile_base: self.tile_tree.base,
             tile_nodes: self.tile_tree.nodes.clone(),
-            cell_page_count: self.cell_tree.page_count,
-            cell_base: self.cell_tree.base,
-            cell_nodes: self.cell_tree.nodes.clone(),
-            cell_leaves: self.cell_leaves.clone(),
-            cell_memory_hashes: self.cell_memory_hashes.clone(),
+            cell_tree: self.cell_tree.clone(),
         })
     }
 
@@ -391,23 +374,25 @@ impl IncrementalStateHash {
         self.dirty_cells.clear();
     }
 
-    fn refresh_all_cell_leaves(
-        &mut self,
-        cells: &CellStore,
-        next_cell_key: u64,
-    ) -> Vec<CanonicalHash> {
+    fn refresh_all_cell_leaves(&mut self, cells: &CellStore) -> Vec<(usize, CanonicalHash)> {
+        let same_live_keys = self.cell_memory_hashes.len() == cells.len()
+            && self.cell_memory_hashes.keys().eq(cells.keys());
+        if !same_live_keys {
+            self.cell_memory_hashes
+                .retain(|key, _| cells.get(key).is_some());
+        }
         let dirty_memories = std::mem::take(&mut self.dirty_cell_memories);
         for key in dirty_memories {
             match cells.get(&key) {
                 Some(cell) => {
-                    set_cell_slot(
+                    set_cell_hash(
                         &mut self.cell_memory_hashes,
                         key,
                         Some(cell_memory_hash(cell)),
                     );
                 }
                 None => {
-                    set_cell_slot(&mut self.cell_memory_hashes, key, None);
+                    set_cell_hash(&mut self.cell_memory_hashes, key, None);
                 }
             }
         }
@@ -415,21 +400,18 @@ impl IncrementalStateHash {
         // A birth can therefore occur while the full refresh is pending and
         // have no pre-existing private-memory slot. The full leaf pass already
         // visits every live cell, so fill only those missing commitments first.
-        for (key, cell) in cells {
-            if cell_slot(&self.cell_memory_hashes, *key).is_none() {
-                set_cell_slot(
-                    &mut self.cell_memory_hashes,
-                    *key,
-                    Some(cell_memory_hash(cell)),
-                );
+        if !same_live_keys {
+            for (key, cell) in cells {
+                if cached_cell_hash(&self.cell_memory_hashes, *key).is_none() {
+                    set_cell_hash(
+                        &mut self.cell_memory_hashes,
+                        *key,
+                        Some(cell_memory_hash(cell)),
+                    );
+                }
             }
         }
-        refresh_cell_pages(
-            cells,
-            &self.cell_memory_hashes,
-            &mut self.cell_leaves,
-            next_cell_key,
-        )
+        refresh_cell_pages(cells, &self.cell_memory_hashes, &mut self.cell_leaves)
     }
 
     pub(crate) fn hash<T: TileSource + ?Sized>(
@@ -440,17 +422,6 @@ impl IncrementalStateHash {
         next_cell_key: u64,
     ) -> CanonicalHash {
         let required_cell_pages = cell_page_count(next_cell_key);
-        if required_cell_pages != self.cell_tree.page_count() {
-            (self.cell_memory_hashes, self.cell_leaves) =
-                cell_commitment_slots(cells, next_cell_key);
-            self.cell_tree = MerkleCache::new(
-                1,
-                cell_page_hashes_from_slots(&self.cell_leaves, next_cell_key),
-            );
-            self.dirty_cells.clear();
-            self.dirty_cell_memories.clear();
-            self.all_cells_dirty = false;
-        }
         let dirty_tile_pages: Vec<_> = std::mem::take(&mut self.dirty_tile_pages)
             .into_iter()
             .filter(|page| *page < self.tile_tree.page_count())
@@ -474,9 +445,22 @@ impl IncrementalStateHash {
             .collect();
         self.tile_tree.set_many(tile_updates);
 
+        let mut dirty_cell_pages = BTreeSet::new();
+        let mut cell_updates = Vec::new();
         if self.all_cells_dirty {
-            let pages = self.refresh_all_cell_leaves(cells, next_cell_key);
-            self.cell_tree = MerkleCache::new(1, pages);
+            // Include previously live pages so deaths disappear from the tree.
+            let mut previous_page = None;
+            for page in self
+                .cell_leaves
+                .keys()
+                .filter_map(|key| usize::try_from(key.0 / STATE_CELL_PAGE_SIZE).ok())
+            {
+                if previous_page != Some(page) {
+                    dirty_cell_pages.insert(page);
+                    previous_page = Some(page);
+                }
+            }
+            cell_updates = self.refresh_all_cell_leaves(cells);
             self.dirty_cells.clear();
             self.dirty_cell_memories.clear();
             self.all_cells_dirty = false;
@@ -486,29 +470,29 @@ impl IncrementalStateHash {
         for key in dirty_memories {
             match cells.get(&key) {
                 Some(cell) => {
-                    set_cell_slot(
+                    set_cell_hash(
                         &mut self.cell_memory_hashes,
                         key,
                         Some(cell_memory_hash(cell)),
                     );
                 }
                 None => {
-                    set_cell_slot(&mut self.cell_memory_hashes, key, None);
+                    set_cell_hash(&mut self.cell_memory_hashes, key, None);
                 }
             }
         }
         for key in &dirty_cells {
             match cells.get(key) {
-                Some(cell) if cell_slot(&self.cell_memory_hashes, *key).is_none() => {
-                    set_cell_slot(
+                Some(cell) if cached_cell_hash(&self.cell_memory_hashes, *key).is_none() => {
+                    set_cell_hash(
                         &mut self.cell_memory_hashes,
                         *key,
                         Some(cell_memory_hash(cell)),
                     );
                 }
                 None => {
-                    set_cell_slot(&mut self.cell_memory_hashes, *key, None);
-                    set_cell_slot(&mut self.cell_leaves, *key, None);
+                    set_cell_hash(&mut self.cell_memory_hashes, *key, None);
+                    set_cell_hash(&mut self.cell_leaves, *key, None);
                 }
                 Some(_) => {}
             }
@@ -516,52 +500,55 @@ impl IncrementalStateHash {
         let dense_cell_refresh =
             dirty_cells.len() >= 512 && dirty_cells.len().saturating_mul(4) >= cells.len();
         if dense_cell_refresh {
-            let pages = refresh_cell_pages(
-                cells,
-                &self.cell_memory_hashes,
-                &mut self.cell_leaves,
-                next_cell_key,
-            );
-            self.cell_tree = MerkleCache::new(1, pages);
+            cell_updates =
+                refresh_cell_pages(cells, &self.cell_memory_hashes, &mut self.cell_leaves);
         }
-        let mut dirty_cell_pages = BTreeSet::new();
-        if !dense_cell_refresh {
-            for key in dirty_cells {
+        let mut previous_page = None;
+        for key in dirty_cells {
+            if !dense_cell_refresh {
                 if let Some(cell) = cells.get(&key) {
-                    let memory_hash = cell_slot(&self.cell_memory_hashes, key)
+                    let memory_hash = cached_cell_hash(&self.cell_memory_hashes, key)
                         .expect("live cell is missing its cached private-memory commitment");
-                    set_cell_slot(
+                    set_cell_hash(
                         &mut self.cell_leaves,
                         key,
                         Some(cell_leaf_hash(key, cell, memory_hash)),
                     );
                 }
-                if let Ok(page) = usize::try_from(key.0 / STATE_CELL_PAGE_SIZE) {
-                    if page < self.cell_tree.page_count() {
-                        dirty_cell_pages.insert(page);
-                    }
+            }
+            if let Ok(page) = usize::try_from(key.0 / STATE_CELL_PAGE_SIZE) {
+                if page < required_cell_pages && previous_page != Some(page) {
+                    dirty_cell_pages.insert(page);
+                    previous_page = Some(page);
                 }
             }
         }
+        // Dense refresh already hashed its live pages while producing leaves.
+        // Only separately dirty pages (including pages emptied by deaths) remain.
+        for (page, _) in &cell_updates {
+            dirty_cell_pages.remove(page);
+        }
         let dirty_cell_pages = dirty_cell_pages.into_iter().collect::<Vec<_>>();
         #[cfg(not(target_arch = "wasm32"))]
-        let cell_updates: Vec<_> = if dirty_cell_pages.len() >= 2 {
+        let remaining_cell_updates: Vec<_> = if dirty_cell_pages.len() >= 2 {
             dirty_cell_pages
                 .into_par_iter()
-                .map(|page| (page, cell_page_hash_from_slots(page, &self.cell_leaves)))
+                .map(|page| (page, cell_page_hash_from_leaves(page, &self.cell_leaves)))
                 .collect()
         } else {
             dirty_cell_pages
                 .into_iter()
-                .map(|page| (page, cell_page_hash_from_slots(page, &self.cell_leaves)))
+                .map(|page| (page, cell_page_hash_from_leaves(page, &self.cell_leaves)))
                 .collect()
         };
         #[cfg(target_arch = "wasm32")]
-        let cell_updates: Vec<_> = dirty_cell_pages
+        let remaining_cell_updates: Vec<_> = dirty_cell_pages
             .into_iter()
-            .map(|page| (page, cell_page_hash_from_slots(page, &self.cell_leaves)))
+            .map(|page| (page, cell_page_hash_from_leaves(page, &self.cell_leaves)))
             .collect();
-        self.cell_tree.set_many(cell_updates);
+        cell_updates.extend(remaining_cell_updates);
+        self.cell_tree
+            .update(required_cell_pages, cell_updates, &self.cell_leaves);
         state_root_hash(
             self.compiled_ruleset_hash,
             now,
@@ -661,58 +648,30 @@ fn cell_page_hash_from_leaves(
     encoder.finish()
 }
 
-fn cell_slot_count(next_cell_key: u64) -> usize {
-    cell_page_count(next_cell_key).saturating_mul(STATE_CELL_PAGE_SIZE as usize)
+fn cached_cell_hash(
+    slots: &BTreeMap<CellKey, CanonicalHash>,
+    key: CellKey,
+) -> Option<CanonicalHash> {
+    slots.get(&key).copied()
 }
-
-fn cell_slot(slots: &[Option<CanonicalHash>], key: CellKey) -> Option<CanonicalHash> {
-    usize::try_from(key.0)
-        .ok()
-        .and_then(|index| slots.get(index))
-        .copied()
-        .flatten()
-}
-
-fn set_cell_slot(
-    slots: &mut Vec<Option<CanonicalHash>>,
+fn set_cell_hash(
+    slots: &mut BTreeMap<CellKey, CanonicalHash>,
     key: CellKey,
     value: Option<CanonicalHash>,
 ) {
-    let index = usize::try_from(key.0).expect("cell key does not fit the host address space");
-    if index >= slots.len() {
-        slots.resize(index.saturating_add(1), None);
+    if let Some(value) = value {
+        slots.insert(key, value);
+    } else {
+        slots.remove(&key);
     }
-    slots[index] = value;
 }
 
-fn cell_page_hashes_from_slots(
-    leaves: &[Option<CanonicalHash>],
-    next_cell_key: u64,
-) -> Vec<CanonicalHash> {
-    (0..cell_page_count(next_cell_key))
-        .map(|page| cell_page_hash_from_slots(page, leaves))
-        .collect()
-}
-
-fn cell_page_hash_from_slots(page: usize, leaves: &[Option<CanonicalHash>]) -> CanonicalHash {
-    let start = page.saturating_mul(STATE_CELL_PAGE_SIZE as usize);
-    let end = start
-        .saturating_add(STATE_CELL_PAGE_SIZE as usize)
-        .min(leaves.len());
-    let page_leaves = &leaves[start.min(leaves.len())..end];
-    let mut encoder = CanonicalEncoder::new(STATE_CELL_PAGE_DOMAIN);
-    encoder.usize(page);
-    encoder.usize(page_leaves.iter().filter(|leaf| leaf.is_some()).count());
-    for leaf in page_leaves.iter().flatten() {
-        encoder.hash(*leaf);
-    }
-    encoder.finish()
-}
-
-fn cell_commitment_slots(
+fn cell_commitments_store(
     cells: &CellStore,
-    next_cell_key: u64,
-) -> (Vec<Option<CanonicalHash>>, Vec<Option<CanonicalHash>>) {
+) -> (
+    BTreeMap<CellKey, CanonicalHash>,
+    BTreeMap<CellKey, CanonicalHash>,
+) {
     #[cfg(not(target_arch = "wasm32"))]
     let commitments = if cells.len() >= 512 {
         cells
@@ -739,69 +698,91 @@ fn cell_commitment_slots(
             (*key, memory, cell_leaf_hash(*key, cell, memory))
         })
         .collect::<Vec<_>>();
-    let slot_count = cell_slot_count(next_cell_key);
-    let mut memories = vec![None; slot_count];
-    let mut leaves = vec![None; slot_count];
-    for (key, memory, leaf) in commitments {
-        let index = usize::try_from(key.0).expect("cell key does not fit the host address space");
-        memories[index] = Some(memory);
-        leaves[index] = Some(leaf);
-    }
+    let memories = commitments
+        .iter()
+        .map(|(key, memory, _)| (*key, *memory))
+        .collect();
+    let leaves = commitments
+        .into_iter()
+        .map(|(key, _, leaf)| (key, leaf))
+        .collect();
     (memories, leaves)
 }
 
+/// Refresh only live pages, combining cell-leaf and page hashing in one pass.
+/// Empty historical pages are represented by the existing compact tree.
 fn refresh_cell_pages(
     cells: &CellStore,
-    memories: &[Option<CanonicalHash>],
-    leaves: &mut Vec<Option<CanonicalHash>>,
-    next_cell_key: u64,
-) -> Vec<CanonicalHash> {
-    let page_count = cell_page_count(next_cell_key);
+    memories: &BTreeMap<CellKey, CanonicalHash>,
+    leaves: &mut BTreeMap<CellKey, CanonicalHash>,
+) -> Vec<(usize, CanonicalHash)> {
+    let mut pages = Vec::new();
+    for key in cells.keys() {
+        let page = usize::try_from(key.0 / STATE_CELL_PAGE_SIZE)
+            .expect("live cell page does not fit the host address space");
+        if pages.last() != Some(&page) {
+            pages.push(page);
+        }
+    }
     let refresh_page = |page: usize| {
-        let start = u64::try_from(page)
-            .unwrap_or(u64::MAX)
-            .saturating_mul(STATE_CELL_PAGE_SIZE);
+        let start = (page as u64).saturating_mul(STATE_CELL_PAGE_SIZE);
         let end = start.saturating_add(STATE_CELL_PAGE_SIZE);
-        let range = cells.range(CellKey(start)..CellKey(end));
-        let count = range.clone().count();
+        let range = CellKey(start)..CellKey(end);
+        let mut memory_range = memories.range(range.clone());
+        let count = memory_range.clone().count();
         let mut encoder = CanonicalEncoder::new(STATE_CELL_PAGE_DOMAIN);
         encoder.usize(page);
         encoder.usize(count);
         let mut page_leaves = Vec::with_capacity(count);
-        for (key, cell) in range {
-            let memory_hash = cell_slot(memories, *key)
+        for (key, cell) in cells.range(range) {
+            let (memory_key, memory) = memory_range
+                .next()
                 .expect("live cell is missing its cached private-memory commitment");
-            let leaf = cell_leaf_hash(*key, cell, memory_hash);
+            assert_eq!(
+                key, memory_key,
+                "live cell and private-memory cache keys differ"
+            );
+            let leaf = cell_leaf_hash(*key, cell, *memory);
             encoder.hash(leaf);
             page_leaves.push((*key, leaf));
         }
-        (encoder.finish(), page_leaves)
+        assert!(
+            memory_range.next().is_none(),
+            "private-memory cache contains dead cells"
+        );
+        (page, encoder.finish(), page_leaves)
     };
-
     #[cfg(not(target_arch = "wasm32"))]
-    let refreshed = if page_count >= 2 {
-        (0..page_count)
-            .into_par_iter()
-            .map(refresh_page)
-            .collect::<Vec<_>>()
+    let refreshed: Vec<_> = if pages.len() >= 2 {
+        pages.into_par_iter().map(refresh_page).collect()
     } else {
-        (0..page_count).map(refresh_page).collect::<Vec<_>>()
+        pages.into_iter().map(refresh_page).collect()
     };
     #[cfg(target_arch = "wasm32")]
-    let refreshed = (0..page_count).map(refresh_page).collect::<Vec<_>>();
-
-    leaves.clear();
-    leaves.resize(cell_slot_count(next_cell_key), None);
-    let mut pages = Vec::with_capacity(page_count);
-    for (page_hash, page_leaves) in refreshed {
-        pages.push(page_hash);
-        for (key, leaf) in page_leaves {
-            let index =
-                usize::try_from(key.0).expect("cell key does not fit the host address space");
-            leaves[index] = Some(leaf);
+    let refreshed: Vec<_> = pages.into_iter().map(refresh_page).collect();
+    let updates = refreshed
+        .iter()
+        .map(|(page, hash, _)| (*page, *hash))
+        .collect();
+    let refreshed_leaves = || refreshed.iter().flat_map(|(_, _, leaves)| leaves.iter());
+    // Stable populations retain their map allocations. Membership changes take
+    // the normal ordered-map construction path, including equal-count churn.
+    if leaves.len() == cells.len()
+        && leaves
+            .keys()
+            .zip(refreshed_leaves())
+            .all(|(key, (new_key, _))| key == new_key)
+    {
+        for (leaf, (_, refreshed_leaf)) in leaves.values_mut().zip(refreshed_leaves()) {
+            *leaf = *refreshed_leaf;
         }
+    } else {
+        *leaves = refreshed
+            .into_iter()
+            .flat_map(|(_, _, leaves)| leaves)
+            .collect();
     }
-    pages
+    updates
 }
 
 fn cell_commitments_slice(
@@ -1367,6 +1348,57 @@ mod tests {
     }
 
     #[test]
+    fn dense_refresh_reuses_live_entries_and_handles_equal_count_churn() {
+        use super::super::reference::ReferenceSimulation;
+
+        let mut simulation = ReferenceSimulation::new(1, 1, ReferenceRuleset::default()).unwrap();
+        let actor = simulation.add_cell(TileIndex(0), 20, 100, 7).unwrap();
+        let template = simulation.cell(actor).unwrap().clone();
+        for (count, stride) in [(7, 1), (1025, 1), (1025, 257)] {
+            let mut cells: CellStore = (0..count)
+                .map(|index| (CellKey(index * stride), template.clone()))
+                .collect();
+            let (mut memories, mut leaves) = cell_commitments_store(&cells);
+            let addresses: Vec<_> = leaves.values().map(std::ptr::from_ref).collect();
+            let old_leaves = leaves.clone();
+            for cell in cells.values_mut() {
+                cell.marker += 1;
+            }
+            let updates = refresh_cell_pages(&cells, &memories, &mut leaves);
+            assert_ne!(leaves, old_leaves);
+            assert_eq!(
+                addresses,
+                leaves.values().map(std::ptr::from_ref).collect::<Vec<_>>()
+            );
+            assert_eq!(leaves, cell_commitments_store(&cells).1);
+            for (page, hash) in updates {
+                assert_eq!(hash, cell_page_hash_from_leaves(page, &leaves));
+            }
+
+            // Same population count with a different key set must drop the old
+            // commitment and visit only live pages after a large historical gap.
+            let old_key = *cells.keys().next().unwrap();
+            let new_key = CellKey(1 << 30);
+            let mut replacement = cells.remove(&old_key).unwrap();
+            replacement.private_memory = Arc::from([3, 1, 4]);
+            memories.remove(&old_key);
+            memories.insert(new_key, cell_memory_hash(&replacement));
+            cells.insert(new_key, replacement);
+            let updates = refresh_cell_pages(&cells, &memories, &mut leaves);
+            assert!(!leaves.contains_key(&old_key));
+            assert!(leaves.contains_key(&new_key));
+            assert!(updates.len() <= cells.len());
+            assert_eq!(leaves, cell_commitments_store(&cells).1);
+            for (page, hash) in updates {
+                assert_eq!(hash, cell_page_hash_from_leaves(page, &leaves));
+            }
+            let updates = refresh_cell_pages(&CellStore::default(), &BTreeMap::new(), &mut leaves);
+            assert!(updates.is_empty());
+            assert!(leaves.is_empty());
+        }
+    }
+
+    #[test]
     fn slot_cache_matches_full_hash_across_sparse_topology_and_memory_changes() {
         let compiled = CanonicalHash::from_bytes([0x42; 32]);
         let mut cells = [0_u64, 255, 256, 511]
@@ -1414,6 +1446,9 @@ mod tests {
             full_hash(&cells, next_cell_key)
         );
 
+        // A full refresh must handle a pending memory edit and equal-count
+        // death/birth churn; equal lengths alone cannot establish membership.
+        cache.mark_all_cells();
         cells.get_mut(&CellKey(255)).unwrap().private_memory = Arc::from([9, 8, 7]);
         cache.mark_cell_memory(CellKey(255));
         cells.remove(&CellKey(256));
@@ -1451,5 +1486,77 @@ mod tests {
             cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
             full_hash(&cells, next_cell_key)
         );
+
+        // A small live population after a million historical births retains
+        // live commitments and logarithmic empty-region summaries only.
+        let high = CellKey(1_048_575);
+        cells.insert(high, cells[&CellKey(511)].clone());
+        next_cell_key = high.0 + 1;
+        cache.mark_cell(high);
+        assert_eq!(
+            cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
+            full_hash(&cells, next_cell_key)
+        );
+        assert_eq!(cache.cell_leaves.len(), cells.len());
+        assert_eq!(cache.cell_memory_hashes.len(), cells.len());
+        assert!(cache.cell_tree.retained_nodes() < 128);
+        let template = cells[&high].clone();
+        cache.mark_all_cells();
+        for key in cells.keys().copied().collect::<Vec<_>>() {
+            cells.remove(&key);
+            cache.mark_cell(key);
+        }
+        assert_eq!(
+            cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
+            full_hash(&cells, next_cell_key)
+        );
+        assert!(cache.cell_leaves.is_empty());
+        assert!(cache.cell_memory_hashes.is_empty());
+        assert_eq!(cache.cell_tree.retained_nodes(), 25);
+
+        // Dense dirty batches and all-cell refreshes must also retain exact
+        // commitments after a large dead prefix, including disappearing pages.
+        for offset in 0..1024 {
+            let key = CellKey(next_cell_key + offset);
+            cells.insert(key, template.clone());
+            cache.mark_cell(key);
+        }
+        next_cell_key += 1024;
+        assert_eq!(
+            cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
+            full_hash(&cells, next_cell_key)
+        );
+        let keys = cells.keys().copied().collect::<Vec<_>>();
+        for key in keys.iter().take(600) {
+            cells.get_mut(key).unwrap().guarded = true;
+            if key.0 % 13 == 0 {
+                cells.get_mut(key).unwrap().private_memory = Arc::from([1, 9, 7]);
+                cache.mark_cell_memory(*key);
+            } else {
+                cache.mark_cell(*key);
+            }
+        }
+        assert_eq!(
+            cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
+            full_hash(&cells, next_cell_key)
+        );
+        for key in keys.iter().take(512) {
+            cells.remove(key);
+            cache.mark_cell(*key);
+        }
+        assert_eq!(
+            cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
+            full_hash(&cells, next_cell_key)
+        );
+        for cell in cells.values_mut() {
+            cell.marker = 99;
+        }
+        cache.mark_all_cells();
+        assert_eq!(
+            cache.hash(SimTime(0), &tiles, &cells, next_cell_key),
+            full_hash(&cells, next_cell_key)
+        );
+        assert_eq!(cache.cell_memory_hashes.len(), cells.len());
+        assert_eq!(cache.cell_leaves.len(), cells.len());
     }
 }

@@ -222,16 +222,7 @@ pub fn publish_combat_horizon_evaluation(
 pub fn load_combat_horizon_evaluation(
     path: &Path,
 ) -> Result<CombatHorizonEvaluationArtifact, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_ARTIFACT_BYTES {
-        return Err(format!(
-            "combat-horizon artifact exceeds {MAX_ARTIFACT_BYTES} bytes"
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_ARTIFACT_BYTES)?;
     let artifact: CombatHorizonEvaluationArtifact = serde_json::from_slice(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;
@@ -251,8 +242,8 @@ pub fn verify_combat_horizon_evaluation(
         ));
     }
     let metadata = verify_checkpoint_metadata(checkpoint)?;
-    let metadata_bytes = fs::read(checkpoint.join("metadata.json"))
-        .map_err(|error| format!("failed to read checkpoint metadata: {error}"))?;
+    let metadata_bytes =
+        crate::artifact_io::read_bounded(&checkpoint.join("metadata.json"), 1024 * 1024)?;
     if artifact.checkpoint_metadata_sha256 != sha256(&metadata_bytes)
         || artifact.checkpoint_model_sha256 != metadata.model_sha256
         || artifact.checkpoint_update != metadata.update

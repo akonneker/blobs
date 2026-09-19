@@ -5,17 +5,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::action::{
-    compose_policy_action, policy_action_kind_mask, policy_effort_mask, policy_target_mask,
-    HierarchicalActionChoice, PolicyChoice, NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS,
-    NUM_POLICY_AMOUNT_LOGITS, NUM_POLICY_EFFORTS, NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGETS,
-    NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES, NUM_SIGNAL_STRENGTH_CHOICES,
+    PolicyChoice, NUM_AMOUNT_CHOICES, NUM_POLICY_ACTION_KINDS, NUM_POLICY_AMOUNT_LOGITS,
+    NUM_POLICY_EFFORT_LOGITS, NUM_POLICY_TARGET_LOGITS, NUM_SIGNAL_CHOICES,
+    NUM_SIGNAL_STRENGTH_CHOICES,
 };
 use crate::artifact::PolicySnapshot;
 use crate::config::{EnvConfig, OpponentProfile, RewardConfig};
 use crate::env::{BlobEnv, EpisodeEndReason, EpisodeOutcome};
 use crate::match_explorer::{MatchExplorerConfig, RecordedExplorerMatch};
 use crate::model::{decode_policy_memory, encode_policy_memory, PolicyValueNet};
-use crate::observation::{Observation, OBS_DIM};
+#[cfg(test)]
+use crate::observation::Observation;
+use crate::observation::OBS_DIM;
 
 /// Stable identity of one held-out opponent. Snapshot hashes make similarly
 /// named checkpoints unambiguous in logs and published artifact metadata.
@@ -79,75 +80,9 @@ pub struct EvaluationMetrics {
     pub actions: u64,
 }
 
-pub(crate) fn greedy_policy_action(
-    kind_logits: &[f32],
-    target_logits: &[f32],
-    effort_logits: &[f32],
-    observation: &Observation,
-) -> usize {
-    let kind = greedy_masked(
-        kind_logits,
-        &policy_action_kind_mask(&observation.action_mask),
-    );
-    let target_start = kind * NUM_POLICY_TARGETS;
-    let target = greedy_masked(
-        &target_logits[target_start..target_start + NUM_POLICY_TARGETS],
-        &policy_target_mask(&observation.action_mask, kind),
-    );
-    let effort_start = kind * NUM_POLICY_EFFORTS;
-    let effort = greedy_masked(
-        &effort_logits[effort_start..effort_start + NUM_POLICY_EFFORTS],
-        &policy_effort_mask(&observation.action_mask, kind, target),
-    );
-    compose_policy_action(HierarchicalActionChoice {
-        kind,
-        target,
-        effort,
-    })
-    .expect("projected hierarchical masks must compose to a flat policy action")
-}
-
-pub(crate) fn greedy_amount(logits: &[f32], observation: &Observation, action: usize) -> usize {
-    greedy_masked(logits, &observation.amount_mask(action))
-}
-
-pub(crate) fn greedy_signal(
-    logits: &[f32],
-    observation: &Observation,
-    action: usize,
-    amount: usize,
-) -> usize {
-    greedy_masked(logits, &observation.signal_mask(action, amount))
-}
-
-pub(crate) fn greedy_signal_strength(
-    logits: &[f32],
-    observation: &Observation,
-    action: usize,
-    amount: usize,
-    signal: usize,
-) -> usize {
-    greedy_masked(
-        logits,
-        &observation.signal_strength_mask(action, amount, signal),
-    )
-}
-
-fn greedy_masked<const N: usize>(logits: &[f32], mask: &[bool; N]) -> usize {
-    logits
-        .iter()
-        .copied()
-        .zip(mask)
-        .enumerate()
-        .filter(|(_, (logit, allowed))| **allowed && logit.is_finite())
-        .max_by(|left, right| {
-            left.1
-                 .0
-                .total_cmp(&right.1 .0)
-                .then_with(|| right.0.cmp(&left.0))
-        })
-        .map_or(0, |(index, _)| index)
-}
+pub(crate) use blob_policy::greedy::{
+    greedy_amount, greedy_policy_action, greedy_signal, greedy_signal_strength,
+};
 
 /// Run one deterministic, batched policy frontier. Keeping this decoder in
 /// one place ensures scientific counterfactual evaluators use exactly the

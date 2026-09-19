@@ -110,13 +110,7 @@ fn valid_sha256(value: &str) -> bool {
 }
 
 fn read_bounded(path: &Path, maximum: u64, label: &str) -> Result<Vec<u8>, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {label} {}: {error}", path.display()))?
-        .len();
-    if length > maximum {
-        return Err(format!("{label} {} is too large", path.display()));
-    }
-    fs::read(path).map_err(|error| format!("failed to read {label} {}: {error}", path.display()))
+    crate::artifact_io::read_bounded(path, maximum).map_err(|error| format!("{label}: {error}"))
 }
 
 fn sha256_file(path: &Path) -> Result<(String, u64), String> {

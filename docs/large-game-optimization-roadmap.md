@@ -5,6 +5,20 @@ resources that changed, not to total board area or population. Every optimized
 path must remain bit-for-bit equivalent to the serial reference semantics and
 worker-count invariant.
 
+Current storage status (2026-09-05): the [lifetime-storage cleanup](lifetime-storage.md)
+replaces historical-key-sized cell, scheduler, and commitment arrays with sparse
+storage. Measurements below describe earlier milestones unless explicitly updated.
+[Incremental append and live-page updates](hash-update-2026-09-11.md) now avoid
+historical-page rebuilding during ordinary work. [Trusted planner restoration](hash-restore-2026-09-11.md)
+now reuses shared compact cell-tree branches. Cold/unseeded restore and arbitrary
+old empty-page reactivation still scale with historical hash pages.
+[End-to-end capacity qualification](capacity-2026-09-11.md) found and reduced a
+dense verified-hash regression: the final cleanup remains 5.5–6.5% below the old
+dense-storage baseline on the measured Wait profiles. With eight live cells and
+four million historical keys, a separate canonical-state fixture reduces peak
+RSS from 319.55 to 4.22 MiB and 100 active-metabolism batches from 360.27 to 5.71 ms.
+These are bounded native comparisons, not learned-policy or submitted-WASM rates.
+
 ## Priorities
 
 1. **Measurement and board-sized scratch removal — completed**
@@ -23,12 +37,12 @@ worker-count invariant.
    - Canonical hash format 6 adds domain-separated per-cell leaves and separate
      private-memory commitments. Sparse updates rehash only changed leaves and
      affected pages; dense updates use a parallel full-leaf crossover.
-   - The derived live cache stores memory and leaf commitments in key-indexed
-     slots. Dense workers fuse leaf creation with canonical page encoding,
-     avoiding intermediate ordered-tree construction without changing the
-     authoritative cell map or hash bytes. Native encoding uses an optimized
-     SHA-256 backend while WASM retains the portable backend under the same
-     golden vectors.
+   - The derived live cache stores memory and leaf commitments in ordered maps
+     containing only live cells. Empty historical Merkle subtrees collapse to
+     their exact digest, preserving format 7 without retaining lifetime-sized
+     leaf/node arrays. Dense leaf refresh remains parallel. Native encoding uses
+     an optimized SHA-256 backend while WASM retains the portable backend under
+     the same golden vectors.
    - Host execution can select explicit on-demand integrity for trusted RL and
      local rollouts. Dirty commitment metadata remains exact, so a requested
      current/final hash commits all skipped batches. Batch reports expose the
@@ -55,11 +69,10 @@ worker-count invariant.
      invocation instead of retaining the complete observation frontier. The
      submitted-WASM path uses the same scratch projection before producing each
      isolated serialized input buffer.
-   - Authoritative cells now use direct key-indexed slots plus a separate
-     canonical active-key traversal. Observation projection borrows that index
-     directly, eliminating both repeated tree searches and the former
-     frontier-scoped index allocation. Dead historical keys retain only
-     pointer-sized holes. Slot projection walks compiled target rows directly.
+   - Authoritative cells use sparse, two-level key pages plus a separate canonical
+     active-key traversal. Observation projection borrows that index directly,
+     avoiding a frontier-scoped index allocation. Empty pages and directories
+     are released after deaths. Slot projection walks compiled target rows directly.
      RL observation and action decoding reuse scratch inputs instead of
      allocating private-memory and slot buffers per cell.
    - Private decision randomness keeps the same domain-separated SHA-256 bytes
@@ -174,7 +187,7 @@ worker-count invariant.
      distinct owned copy at the isolation boundary. Canonical encodings and
      hashes remained byte-identical for that storage-only slice; hash format 6
      intentionally versions the commitment structure described below.
-   - Tree-based hot cell lookup has been replaced by stable indexed slots plus
+   - Per-cell tree lookup has been replaced by sparse indexed pages plus
      a canonical active-key traversal. Canonical bytes and equality ignore
      physical slot capacity. Mutation preflight now updates due actors through
      direct lookup, and observation batches allocate no secondary index.

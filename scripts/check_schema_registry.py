@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "schemas" / "registry.json"
-SOURCE_ROOTS = ["blob_engine", "blob_interface", "blob_game", "blob_rl", "blob_web"]
+SOURCE_ROOTS = ["blob_engine", "blob_interface", "blob_game", "blob_rl", "blob_web", "blob_policy"]
 VERSION = re.compile(
     r"^(?:pub )?const "
     r"(?P<symbol>[A-Z0-9_]*(?:_SCHEMA_VERSION|_FORMAT_VERSION|_API_VERSION|"

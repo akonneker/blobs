@@ -279,16 +279,7 @@ pub fn publish_feeding_layout_evaluation(
 pub fn load_feeding_layout_evaluation(
     path: &Path,
 ) -> Result<FeedingLayoutEvaluationArtifact, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_ARTIFACT_BYTES {
-        return Err(format!(
-            "feeding-layout artifact exceeds {MAX_ARTIFACT_BYTES} bytes"
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_ARTIFACT_BYTES)?;
     let artifact: FeedingLayoutEvaluationArtifact = serde_json::from_slice(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;
@@ -307,6 +298,11 @@ pub fn verify_feeding_layout_evaluation_request(
     seeds: &[u64],
 ) -> Result<(), String> {
     artifact.validate()?;
+    if artifact.code_revision.as_deref() != option_env!("BLOB_CODE_REVISION") {
+        return Err(
+            "evaluation reuse requires the same source build and policy execution semantics".into(),
+        );
+    }
     if artifact.source_config_sha256 != source_config_sha256
         || &artifact.policy != policy
         || &artifact.config != config
@@ -328,13 +324,17 @@ pub fn merge_feeding_layout_evaluations(
         .first()
         .ok_or_else(|| "feeding-layout merge requires at least one artifact".to_string())?;
     first.validate()?;
+    if first.code_revision.as_deref() != option_env!("BLOB_CODE_REVISION") {
+        return Err("merge requires evaluation shards from the current source build".into());
+    }
     let mut layouts = Vec::new();
     let mut seeds = Vec::new();
     let mut trials = HashMap::new();
 
     for artifact in artifacts {
         artifact.validate()?;
-        if artifact.source_config_sha256 != first.source_config_sha256
+        if artifact.code_revision != first.code_revision
+            || artifact.source_config_sha256 != first.source_config_sha256
             || artifact.policy != first.policy
             || artifact.config != first.config
         {
@@ -494,6 +494,23 @@ mod tests {
             &artifact,
             &artifact.source_config_sha256,
             &wrong_policy,
+            &artifact.config,
+            &artifact.layouts,
+            &artifact.seeds,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn historical_results_cannot_resume_under_a_different_source_build() {
+        let mut artifact = artifact();
+        artifact.code_revision = Some("historical-source-build".into());
+        artifact.artifact_hash = artifact.recompute_hash().unwrap();
+        artifact.validate().unwrap();
+        assert!(verify_feeding_layout_evaluation_request(
+            &artifact,
+            &artifact.source_config_sha256,
+            &artifact.policy,
             &artifact.config,
             &artifact.layouts,
             &artifact.seeds,

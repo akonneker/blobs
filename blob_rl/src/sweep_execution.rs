@@ -387,16 +387,7 @@ fn unix_millis() -> u64 {
 }
 
 fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_CONTROL_FILE_BYTES {
-        return Err(format!(
-            "{} is {length} bytes; control-file limit is {MAX_CONTROL_FILE_BYTES}",
-            path.display()
-        ));
-    }
-    fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))
+    crate::artifact_io::read_bounded(path, MAX_CONTROL_FILE_BYTES)
 }
 
 fn sync_directory(path: &Path) -> Result<(), String> {

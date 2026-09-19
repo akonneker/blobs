@@ -10,11 +10,34 @@ evaluation, event-time GAE, exact update-boundary resume, sweep recovery, and
 telemetry tests.
 
 Maintained `cargo-fuzz` harnesses now cover the canonical replay family and the
-Mind ABI with tight allocation limits and bounded pull-request smoke runs. They
-establish the untrusted-byte foundation, but do not yet cover Wasm admission,
-imitation and ecological artifacts, long resolver command sequences, or
-crash-state persistence. Deterministic garbage, truncation, and randomized
+Mind ABI with tight allocation limits and bounded pull-request smoke runs. A
+stateful resolver harness now covers small worlds and up to 64 commands, including
+checkpoint restoration, conservation, hash/delta oracles and serial/parallel
+equivalence. Structural Wasm admission now has a bounded generated-module and
+arbitrary-byte harness. These do not yet cover executable Wasm differential
+fuzzing, imitation and ecological artifacts, large/long-running resolver histories,
+or crash-state persistence.
+Deterministic garbage, truncation, and randomized
 tests remain useful regressions rather than substitutes for those campaigns.
+
+The Chromium gate now builds real wasm-bindgen glue and native-signed fixtures.
+It checks native/browser replay hashes, bounded seeking, BigInt/typed-array
+exports, Ed25519 acceptance and tamper rejection through actual WebCrypto,
+replay-manifest binding, malformed bytes and unavailable crypto. This closes
+the earlier JSON-viewer-only browser coverage gap; guest execution and other
+browser engines remain separate qualification work.
+Fresh Rust, AssemblyScript and Go guests now also pass the existing 18
+guest/runtime conformance gates (23 tests, including three normally ignored
+language tests); see [the pinned-build evidence](language-conformance-2026-09-11.md).
+This fixture-based executor comparison does not replace executable Wasm fuzzing.
+
+Learned-policy deployment now has a [portable inference and WASM gate](learned-mind-deployment.md).
+It checks exact deployment-native/WASM decisions and private memory, stock/compatible
+executor samples, unrelated-invocation isolation, and one/four-worker signed server
+replay. CI generates a synthetic nonzero network explicitly; a separate retained
+run uses the trained frozen parent. Burn/export numerical fidelity has its own
+recorded tolerance and cannot be conflated with exact WASM parity. Direct PPO
+export, cross-host numerical qualification and deterministic fuel remain open.
 
 ## Missing deterministic tests
 
@@ -73,7 +96,14 @@ expectations rather than outstanding work:
    segments, oversized lists, non-canonical visibility bits, invalid actions,
    memory-update combinations, and randomness lengths. Accepted decisions must
    survive encode/decode and resolver preflight without identity leakage.
-3. **Wasm admission and Extism compatibility.** Use `wasm-smith` plus mutated
+3. **Wasm admission and Extism compatibility (structural harness implemented).**
+   `wasm_admission` covers raw bytes and valid generated PDK modules with
+   admission/rejection oracles, all import signatures, capability and import-kind
+   rejection, export types, memory/table limits and initialization metadata.
+   Its 12,480 deterministic cases separately prove generated Wasm validity, and
+   custom-section insertion must preserve accepted inspection. CI runs bounded
+   sanitizer smoke and retains corpora. Execution is deliberately outside this
+   structural harness. Remaining work: use `wasm-smith` plus mutated
    Extism-PDK modules to exercise import admission, signatures, allocation
    ranges, pointer/length pairs, output ownership, traps, fuel/deadline limits,
    and pristine-instance reset. Extism and the compatible executor should
@@ -98,15 +128,41 @@ expectations rather than outstanding work:
 
 ### P1: stateful semantic properties
 
-6. **Resolver command sequences.** Generate small valid worlds and sequences
+6. **Resolver command sequences (bounded harness implemented).** Generate small valid worlds and sequences
    of arbitrary decisions, clock advances, checkpoints, and restores. After
    every accepted step assert occupancy consistency, mass-energy conservation,
    canonical ordering, incremental-hash equality, delta reversibility, commit
-   order invariance, and serial/parallel equality.
-7. **Neighborhood compiler.** Generate dimensions, boundary modes, offsets,
+   order invariance, and serial/parallel equality. `fuzz/src/lib.rs` shares the
+   harness with 128 deterministic sequences; `fuzz/generate_resolver_seeds.py`
+   produces action-family, passive-profile and sparse historical-key seeds.
+   The latter exercise COW hash branches against canonical hashing and restore.
+   CI retains corpus/findings.
+   The initial deterministic run found an idle-cell checkpoint admission bug:
+   idle ready times may precede the current clock. This is fixed with a focused
+   checkpoint/continuation regression. See `fuzz-campaigns-2026-09-11.md` for
+   campaign bounds and results. Mixed decisions within permuted batches and
+   atomic ordered decisions now have 640 explicit sequences, five focused fatal
+   preflight/continuation cases and a further 35,212 passing sanitizer inputs.
+   The atomic oracle checks signals and private-memory updates as well as action
+   receipts. Native deterministic tests additionally cover mixed frontiers at
+   2,047/2,048/2,049 decisions under one/four workers, plus competing fatal errors
+   at early/middle/late positions and exact valid continuation after rejection.
+   Larger-frontier fuzzing and longer histories remain useful extensions.
+7. **Neighborhood compiler (bounded harness implemented).** Generate dimensions, boundary modes, offsets,
    observation masks, and per-action masks. Compilation must reject invalid
    topology without panicking; accepted topologies must never target an
-   out-of-range tile or expose a disallowed field/action.
+   out-of-range tile or expose a disallowed field/action. The shared harness
+   checks geometry with an independent i128 oracle and preserves all masks;
+   deterministic cases and a 300-second sanitizer campaign pass. It found and
+   fixed huge empty-world iteration and signed coordinate overflow edge cases.
+   Follow-up `observations` and `movement` harnesses check actual masked field
+   values/absence, ABI and scratch-buffer behavior, host-key/private-peer
+   anonymity, action permissions, elevation and occupancy-dependent corners.
+   Both bounded sanitizer campaigns and their independent deterministic oracles
+   pass. Observation coverage now includes all ten actions, accepted/rejected
+   commitments and exact early/middle/late progress transitions, with 110
+   additional explicit fixtures and a further 712,110 sanitizer inputs passing.
+   Longer mixed histories remain useful extensions.
 8. **RL environment sequences.** Generate valid scenario/rules profiles and
    masked action sequences. Observations and rewards must remain finite,
    reported action counts must equal commitments, telemetry must conserve its

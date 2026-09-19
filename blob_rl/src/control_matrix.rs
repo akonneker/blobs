@@ -1225,17 +1225,7 @@ pub fn write_control_matrix_progress(
 }
 
 pub fn load_control_matrix_report(path: &Path) -> Result<ControlMatrixReport, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_CONTROL_MATRIX_BYTES {
-        return Err(format!(
-            "{} is {length} bytes; control-matrix limit is {MAX_CONTROL_MATRIX_BYTES}",
-            path.display()
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_CONTROL_MATRIX_BYTES)?;
     decode_control_matrix_report(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))
 }

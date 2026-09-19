@@ -25,7 +25,6 @@ use crate::artifact::{
     RolloutLeagueMember, RolloutOpponentAssignment, TrainingResumeState,
     TRAINING_ARTIFACT_SCHEMA_VERSION,
 };
-use crate::behavior_cloning::verify_behavior_clone_artifact;
 use crate::competency_frontier::{
     publish_competency_frontier, CompetencyCheckpointIdentity, CompetencyFrontier,
     CompetencyFrontierEntry, CompetencyMetrics, SpecialistTeacherSelection,
@@ -44,6 +43,7 @@ use crate::model::{
     decode_policy_memory, encode_policy_memory, PolicyValueNet, PolicyValueNetConfig,
 };
 use crate::observation::OBS_DIM;
+use crate::policy_artifact::load_behavior_clone;
 use crate::ppo::{ppo_update_anchored, PolicyAnchorTarget, RolloutBuffer, Transition};
 use crate::telemetry::{
     publish_episode_record, publish_training_summary, TelemetryEpisodeOutcome,
@@ -1032,21 +1032,7 @@ pub fn train<B: AutodiffBackend>(
             .unwrap_or_else(|error| panic!("invalid initial-policy qualification: {error}"))
         })
     });
-    let configured_initial_model = if resume_checkpoint.is_none() {
-        config.initial_policy.as_ref().map(|initial| {
-            verify_behavior_clone_artifact(
-                Path::new(&initial.directory),
-                &initial.artifact_sha256,
-                &config.model,
-            )
-            .unwrap_or_else(|error| panic!("invalid configured initial policy: {error}"))
-        })
-    } else {
-        None
-    };
-    let load_model_path = load_model_path
-        .map(PathBuf::from)
-        .or(configured_initial_model);
+    let load_model_path = load_model_path.map(PathBuf::from);
     let evaluation_snapshots = if config.fixed_evaluation_enabled()
         || config.self_play.max_opponent_pool > 0
     {
@@ -1093,12 +1079,6 @@ pub fn train<B: AutodiffBackend>(
                 .initial_policy
                 .as_ref()
                 .expect("validated initial-policy anchoring has an initial policy");
-            let model_path = verify_behavior_clone_artifact(
-                Path::new(&initial.directory),
-                &initial.artifact_sha256,
-                &config.model,
-            )
-            .unwrap_or_else(|error| panic!("invalid initial-policy anchor: {error}"));
             println!(
                 "  Anchoring policy to: {} (ordinary {}, contact {})",
                 initial.directory,
@@ -1108,10 +1088,13 @@ pub fn train<B: AutodiffBackend>(
                     .contact_initial_policy_anchor_coeff
                     .unwrap_or(config.ppo.initial_policy_anchor_coeff),
             );
-            model_config
-                .init::<B::InnerBackend>(&device)
-                .load_file(model_path, &CompactRecorder::new(), &device)
-                .expect("failed to load initial-policy anchor")
+            load_behavior_clone::<B::InnerBackend>(
+                Path::new(&initial.directory),
+                &initial.artifact_sha256,
+                &config.model,
+                &device,
+            )
+            .expect("failed to load initial-policy anchor")
         });
     let initial_model: Option<PolicyValueNet<B>> = if resume_checkpoint.is_some() {
         None
@@ -1122,6 +1105,16 @@ pub fn train<B: AutodiffBackend>(
                 .init(&device)
                 .load_file(path, &CompactRecorder::new(), &device)
                 .expect("Failed to load model"),
+        )
+    } else if let Some(initial) = config.initial_policy.as_ref() {
+        Some(
+            load_behavior_clone::<B>(
+                Path::new(&initial.directory),
+                &initial.artifact_sha256,
+                &config.model,
+                &device,
+            )
+            .expect("failed to load configured initial policy"),
         )
     } else {
         Some(model_config.init(&device))

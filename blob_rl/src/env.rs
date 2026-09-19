@@ -663,6 +663,14 @@ pub enum EpisodeEndReason {
     DecisionFrontierSafetyLimit,
 }
 
+/// Per-call host assessment boundary. Never stored in a training checkpoint,
+/// ruleset, Mind input or canonical match configuration.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AssessmentBoundary {
+    CanonicalMatch,
+    TrainingSurvival,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeadlineRewardOutcome {
     Win,
@@ -1607,6 +1615,23 @@ impl BlobEnv {
     /// persistent behavior must travel only through its returned private-memory
     /// update, exactly as it does for a Wasm guest.
     pub(crate) fn step_with_reference_mind(&mut self, mind: &mut dyn ReferenceMind) -> StepOutput {
+        self.step_with_mind_boundary(mind, AssessmentBoundary::CanonicalMatch)
+    }
+
+    /// Feeding assessment only: opponent extinction is observed but does not
+    /// terminate the assessment. Canonical match callers retain their boundary.
+    pub(crate) fn step_with_survival_assessment(
+        &mut self,
+        mind: &mut dyn ReferenceMind,
+    ) -> StepOutput {
+        self.step_with_mind_boundary(mind, AssessmentBoundary::TrainingSurvival)
+    }
+
+    fn step_with_mind_boundary(
+        &mut self,
+        mind: &mut dyn ReferenceMind,
+        boundary: AssessmentBoundary,
+    ) -> StepOutput {
         let prepared = self
             .prepare_training_reference_inputs()
             .expect("failed to prepare baseline Mind inputs");
@@ -1614,7 +1639,7 @@ impl BlobEnv {
             .into_iter()
             .map(|(cell_id, input)| (cell_id, mind.decide(&input)))
             .collect();
-        self.step_with_training_decisions(decisions)
+        self.step_with_decision_boundary(decisions, boundary)
     }
 
     /// Prepare independently owned anonymous inputs for every ready training
@@ -1706,6 +1731,19 @@ impl BlobEnv {
         &mut self,
         training_actions: HashMap<CellId, ReferenceMindDecision>,
     ) -> StepOutput {
+        self.step_with_decision_boundary(training_actions, AssessmentBoundary::CanonicalMatch)
+    }
+
+    fn step_with_decision_boundary(
+        &mut self,
+        training_actions: HashMap<CellId, ReferenceMindDecision>,
+        boundary: AssessmentBoundary,
+    ) -> StepOutput {
+        let opponents_were_alive = self
+            .engine
+            .cells
+            .values()
+            .any(|cell| cell.team_id != self.training_team);
         // The supplied decisions consume exactly the cached invocation. The
         // next frontier is prepared once after canonical resolution advances.
         self.pending_policy_invocations = None;
@@ -1789,7 +1827,13 @@ impl BlobEnv {
                     .get(&cell_id)
                     .is_some_and(|cell| cell.team_id == self.training_team)
             });
-            if !training_alive || !opponents_alive || deadline_reached || training_ready {
+            // Stop once at the ordinary opponent-extinction boundary so the
+            // assessor can hash the exact shared prefix. Later assessment steps
+            // return at real training frontiers rather than every empty tick.
+            let observe_opponent_extinction = !opponents_alive
+                && (boundary == AssessmentBoundary::CanonicalMatch || opponents_were_alive);
+            if !training_alive || observe_opponent_extinction || deadline_reached || training_ready
+            {
                 break;
             }
         }
@@ -1811,7 +1855,9 @@ impl BlobEnv {
             .values()
             .filter(|c| c.team_id != self.training_team)
             .count();
-        let exterminated = training_cells == 0 || opponent_cells == 0;
+        let opponent_victory =
+            opponent_cells == 0 && boundary == AssessmentBoundary::CanonicalMatch;
+        let exterminated = training_cells == 0 || opponent_victory;
         let sim_time_quanta = self
             .engine
             .reference_simulation()
@@ -1835,7 +1881,7 @@ impl BlobEnv {
         let outcome = if done {
             if training_cells == 0 {
                 Some(EpisodeOutcome::Loss)
-            } else if opponent_cells == 0 {
+            } else if opponent_victory {
                 Some(EpisodeOutcome::Win)
             } else if deadline_reached {
                 Some(EpisodeOutcome::Timeout)
@@ -3724,5 +3770,113 @@ mod tests {
             new_elapsed.as_secs_f64() * 1_000.0,
             old_elapsed.as_secs_f64() / new_elapsed.as_secs_f64(),
         );
+    }
+}
+
+#[cfg(test)]
+mod survival_assessment_tests {
+    use super::*;
+
+    fn environment(energy: u32, opponent_energy: u32, steps: u64) -> BlobEnv {
+        let config = EnvConfig {
+            world_size: 8,
+            cells_per_team: 1,
+            min_energy: 1,
+            initial_energy: energy,
+            max_episode_len: steps,
+            num_plants: 0,
+            num_scattered_energy: 0,
+            opponent: OpponentProfile::Wait,
+            victory: crate::config::VictoryConfig {
+                sim_time_limit_quanta: 4096,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        BlobEnv::new_with_opponent_starting_state(
+            config,
+            RewardConfig::default(),
+            701,
+            OpponentStartingState {
+                cells_per_team: 1,
+                initial_energy: opponent_energy,
+            },
+        )
+    }
+
+    #[test]
+    fn survival_assay_matches_canonical_prefix_then_reaches_deadline_without_a_win() {
+        let mut canonical = environment(100, 1, 64);
+        let mut assessment = environment(100, 1, 64);
+        loop {
+            let a = canonical.step_with_baseline(OpponentProfile::Wait);
+            let b = assessment.step_with_survival_assessment(&mut ActionBufferMind::new_opponent(
+                OpponentProfile::Wait,
+            ));
+            assert_eq!(
+                canonical
+                    .reference_simulation_for_diagnostics()
+                    .unwrap()
+                    .state_hash(),
+                assessment
+                    .reference_simulation_for_diagnostics()
+                    .unwrap()
+                    .state_hash()
+            );
+            assert_eq!(a.episode_step, b.episode_step);
+            assert_eq!(a.policy_observations, b.policy_observations);
+            if a.done {
+                assert_eq!(a.outcome, Some(EpisodeOutcome::Win));
+                assert_eq!(a.end_reason, Some(EpisodeEndReason::Extermination));
+                assert!(!b.done);
+                break;
+            }
+        }
+        let terminal = loop {
+            let result = assessment.step_with_survival_assessment(
+                &mut ActionBufferMind::new_opponent(OpponentProfile::Wait),
+            );
+            if result.done {
+                break result;
+            }
+        };
+        assert_eq!(terminal.outcome, Some(EpisodeOutcome::Timeout));
+        assert_eq!(terminal.end_reason, Some(EpisodeEndReason::SimTimeDeadline));
+        assert_eq!(assessment.sim_time_quanta(), 4096);
+        assert_eq!(terminal.opponent_cells, 0);
+        assert_eq!(terminal.training_cells, 1);
+        // The mode is call-scoped. A normal caller still observes canonical victory.
+        let normal = assessment.step_with_baseline(OpponentProfile::Wait);
+        assert_eq!(normal.outcome, Some(EpisodeOutcome::Win));
+    }
+
+    #[test]
+    fn survival_assay_still_stops_on_own_extinction_and_host_guard() {
+        let mut dying = environment(1, 100, 64);
+        let terminal = loop {
+            let result = dying.step_with_survival_assessment(&mut ActionBufferMind::new_opponent(
+                OpponentProfile::Wait,
+            ));
+            if result.done {
+                break result;
+            }
+        };
+        assert_eq!(terminal.outcome, Some(EpisodeOutcome::Loss));
+        assert_eq!(terminal.end_reason, Some(EpisodeEndReason::Extermination));
+        let mut guarded = environment(100, 1, 2);
+        let terminal = loop {
+            let result = guarded.step_with_survival_assessment(
+                &mut ActionBufferMind::new_opponent(OpponentProfile::Wait),
+            );
+            if result.done {
+                break result;
+            }
+        };
+        assert_eq!(terminal.outcome, Some(EpisodeOutcome::SafetyAbort));
+        assert_eq!(
+            terminal.end_reason,
+            Some(EpisodeEndReason::DecisionFrontierSafetyLimit)
+        );
+        assert_eq!(terminal.opponent_cells, 0);
     }
 }

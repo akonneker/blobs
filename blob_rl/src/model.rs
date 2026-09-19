@@ -1,5 +1,9 @@
 //! Actor-critic neural network model using Burn.
 
+mod deployment;
+mod target_residual;
+use target_residual::TargetResidual;
+
 use burn::nn;
 use burn::prelude::*;
 
@@ -9,12 +13,11 @@ use crate::action::{
 };
 use crate::observation::{
     ObservationExpertContext, CURRENT_TILE_LOOSE_ENERGY_FEATURE,
-    CURRENT_TILE_PLANT_CAPACITY_FEATURE, HEADER_FEATURES, OBS_DIM, OBS_RANDOMNESS_FEATURE_START,
-    SLOT_FEATURES, SLOT_NEIGHBOR_ACTIVITY_FEATURE, SLOT_NEIGHBOR_PRESENT_FEATURE,
+    CURRENT_TILE_PLANT_CAPACITY_FEATURE, HEADER_FEATURES, OBS_DIM, OBS_RANDOMNESS_FEATURE_END,
+    OBS_RANDOMNESS_FEATURE_START, SLOT_FEATURES, SLOT_NEIGHBOR_ACTIVITY_FEATURE,
+    SLOT_NEIGHBOR_PRESENT_FEATURE,
 };
 
-const POLICY_MEMORY_MAGIC: [u8; 4] = *b"BRM1";
-const POLICY_MEMORY_HEADER_BYTES: usize = 8;
 pub const NUM_ACTION_KIND_EXPERTS: usize = ObservationExpertContext::COUNT;
 const FORAGING_ADAPTER_FEATURES: usize = 8;
 const FORAGING_ADAPTER_HIDDEN: usize = 16;
@@ -28,6 +31,39 @@ const CONTEXT_ADAPTER_HIDDEN: usize = 16;
 /// stateful Minds.
 #[derive(Module, Debug)]
 pub struct PolicyValueNet<B: Backend> {
+    slot_encoder: nn::Linear<B>,
+    phase_slot_encoder: nn::Linear<B>,
+    phase_gate_fc: nn::Linear<B>,
+    shared_fc1: nn::Linear<B>,
+    recurrent: nn::Linear<B>,
+    shared_fc2: nn::Linear<B>,
+    foraging_action_kind_head: nn::Linear<B>,
+    foraging_adapter_fc: nn::Linear<B>,
+    foraging_adapter_head: nn::Linear<B>,
+    interaction_action_kind_head: nn::Linear<B>,
+    interaction_adapter_fc: nn::Linear<B>,
+    interaction_adapter_head: nn::Linear<B>,
+    interaction_slot_adapter_fc: nn::Linear<B>,
+    interaction_slot_adapter_head: nn::Linear<B>,
+    exploration_action_kind_head: nn::Linear<B>,
+    exploration_adapter_fc: nn::Linear<B>,
+    exploration_adapter_head: nn::Linear<B>,
+    exploration_slot_adapter_fc: nn::Linear<B>,
+    exploration_slot_adapter_head: nn::Linear<B>,
+    exploration_guard_readiness_head: nn::Linear<B>,
+    phase_gate_head: nn::Linear<B>,
+    target_query_head: nn::Linear<B>,
+    effort_head: nn::Linear<B>,
+    amount_head: nn::Linear<B>,
+    signal_head: nn::Linear<B>,
+    signal_strength_head: nn::Linear<B>,
+    value_head: nn::Linear<B>,
+    target_residual: TargetResidual<B>,
+}
+
+/// Recorder-compatible layout for cloning schemas 34–36, before target residuals.
+#[derive(Module, Debug)]
+pub struct PreTargetResidualPolicyValueNet<B: Backend> {
     slot_encoder: nn::Linear<B>,
     phase_slot_encoder: nn::Linear<B>,
     phase_gate_fc: nn::Linear<B>,
@@ -211,6 +247,7 @@ impl PolicyValueNetConfig {
             + linear(self.hidden2, NUM_SIGNAL_CHOICES)
             + linear(self.hidden2, NUM_SIGNAL_STRENGTH_CHOICES)
             + linear(self.hidden2, 1)
+            + target_residual::parameter_count()
     }
 
     /// Initialize a new PolicyValueNet on the given device.
@@ -314,7 +351,80 @@ impl PolicyValueNetConfig {
             exploration_guard_readiness_head: nn::LinearConfig::new(2, 1)
                 .with_initializer(nn::Initializer::Zeros)
                 .init(device),
+            target_residual: TargetResidual::new(device),
         }
+    }
+
+    pub fn init_pre_target_residual_legacy<B: Backend>(
+        &self,
+        device: &B::Device,
+    ) -> PreTargetResidualPolicyValueNet<B> {
+        let current = self.init::<B>(device);
+        PreTargetResidualPolicyValueNet {
+            slot_encoder: current.slot_encoder,
+            phase_slot_encoder: current.phase_slot_encoder,
+            phase_gate_fc: current.phase_gate_fc,
+            shared_fc1: current.shared_fc1,
+            recurrent: current.recurrent,
+            shared_fc2: current.shared_fc2,
+            foraging_action_kind_head: current.foraging_action_kind_head,
+            foraging_adapter_fc: current.foraging_adapter_fc,
+            foraging_adapter_head: current.foraging_adapter_head,
+            interaction_action_kind_head: current.interaction_action_kind_head,
+            interaction_adapter_fc: current.interaction_adapter_fc,
+            interaction_adapter_head: current.interaction_adapter_head,
+            interaction_slot_adapter_fc: current.interaction_slot_adapter_fc,
+            interaction_slot_adapter_head: current.interaction_slot_adapter_head,
+            exploration_action_kind_head: current.exploration_action_kind_head,
+            exploration_adapter_fc: current.exploration_adapter_fc,
+            exploration_adapter_head: current.exploration_adapter_head,
+            exploration_slot_adapter_fc: current.exploration_slot_adapter_fc,
+            exploration_slot_adapter_head: current.exploration_slot_adapter_head,
+            exploration_guard_readiness_head: current.exploration_guard_readiness_head,
+            phase_gate_head: current.phase_gate_head,
+            target_query_head: current.target_query_head,
+            effort_head: current.effort_head,
+            amount_head: current.amount_head,
+            signal_head: current.signal_head,
+            signal_strength_head: current.signal_strength_head,
+            value_head: current.value_head,
+        }
+    }
+
+    pub fn migrate_pre_target_residual<B: Backend>(
+        &self,
+        legacy: PreTargetResidualPolicyValueNet<B>,
+        device: &B::Device,
+    ) -> PolicyValueNet<B> {
+        let mut model = self.init(device);
+        model.slot_encoder = legacy.slot_encoder;
+        model.phase_slot_encoder = legacy.phase_slot_encoder;
+        model.phase_gate_fc = legacy.phase_gate_fc;
+        model.shared_fc1 = legacy.shared_fc1;
+        model.recurrent = legacy.recurrent;
+        model.shared_fc2 = legacy.shared_fc2;
+        model.foraging_action_kind_head = legacy.foraging_action_kind_head;
+        model.foraging_adapter_fc = legacy.foraging_adapter_fc;
+        model.foraging_adapter_head = legacy.foraging_adapter_head;
+        model.interaction_action_kind_head = legacy.interaction_action_kind_head;
+        model.interaction_adapter_fc = legacy.interaction_adapter_fc;
+        model.interaction_adapter_head = legacy.interaction_adapter_head;
+        model.interaction_slot_adapter_fc = legacy.interaction_slot_adapter_fc;
+        model.interaction_slot_adapter_head = legacy.interaction_slot_adapter_head;
+        model.exploration_action_kind_head = legacy.exploration_action_kind_head;
+        model.exploration_adapter_fc = legacy.exploration_adapter_fc;
+        model.exploration_adapter_head = legacy.exploration_adapter_head;
+        model.exploration_slot_adapter_fc = legacy.exploration_slot_adapter_fc;
+        model.exploration_slot_adapter_head = legacy.exploration_slot_adapter_head;
+        model.exploration_guard_readiness_head = legacy.exploration_guard_readiness_head;
+        model.phase_gate_head = legacy.phase_gate_head;
+        model.target_query_head = legacy.target_query_head;
+        model.effort_head = legacy.effort_head;
+        model.amount_head = legacy.amount_head;
+        model.signal_head = legacy.signal_head;
+        model.signal_strength_head = legacy.signal_strength_head;
+        model.value_head = legacy.value_head;
+        model
     }
 
     pub fn init_slot_context_adapter_legacy<B: Backend>(
@@ -776,6 +886,69 @@ impl<B: Backend> PolicyValueNet<B> {
         self
     }
 
+    /// Copy only the random/local-slot target residual; inherited parameters
+    /// retain their exact values, including recurrent state and global heads.
+    pub fn with_target_residual_from(mut self, trained: Self) -> Self {
+        self.target_residual = trained.target_residual;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inherited_target_parameter_bits(&self) -> Vec<u32> {
+        let mut bits = Vec::new();
+        for layer in [
+            &self.slot_encoder,
+            &self.phase_slot_encoder,
+            &self.phase_gate_fc,
+            &self.shared_fc1,
+            &self.recurrent,
+            &self.shared_fc2,
+            &self.foraging_action_kind_head,
+            &self.foraging_adapter_fc,
+            &self.foraging_adapter_head,
+            &self.interaction_action_kind_head,
+            &self.interaction_adapter_fc,
+            &self.interaction_adapter_head,
+            &self.interaction_slot_adapter_fc,
+            &self.interaction_slot_adapter_head,
+            &self.exploration_action_kind_head,
+            &self.exploration_adapter_fc,
+            &self.exploration_adapter_head,
+            &self.exploration_slot_adapter_fc,
+            &self.exploration_slot_adapter_head,
+            &self.exploration_guard_readiness_head,
+            &self.phase_gate_head,
+            &self.target_query_head,
+            &self.effort_head,
+            &self.amount_head,
+            &self.signal_head,
+            &self.signal_strength_head,
+            &self.value_head,
+        ] {
+            bits.extend(
+                layer
+                    .weight
+                    .val()
+                    .into_data()
+                    .to_vec::<f32>()
+                    .unwrap()
+                    .into_iter()
+                    .map(f32::to_bits),
+            );
+            if let Some(bias) = &layer.bias {
+                bits.extend(
+                    bias.val()
+                        .into_data()
+                        .to_vec::<f32>()
+                        .unwrap()
+                        .into_iter()
+                        .map(f32::to_bits),
+                );
+            }
+        }
+        bits
+    }
+
     pub fn recurrent_size(&self) -> usize {
         self.recurrent.weight.val().dims()[1]
     }
@@ -792,6 +965,15 @@ impl<B: Backend> PolicyValueNet<B> {
     /// One recurrent decision step. Every output row depends only on the
     /// corresponding observation and private-memory row.
     pub fn forward_with_memory(&self, obs: Tensor<B, 2>, memory: Tensor<B, 2>) -> ModelOutput<B> {
+        self.forward_core(obs, memory, true)
+    }
+
+    fn forward_core(
+        &self,
+        obs: Tensor<B, 2>,
+        memory: Tensor<B, 2>,
+        apply_target_residual: bool,
+    ) -> ModelOutput<B> {
         let [batch, observation_width] = obs.dims();
         debug_assert_eq!(observation_width, OBS_DIM);
         let header = obs.clone().slice([0..batch, 0..HEADER_FEATURES]);
@@ -811,6 +993,15 @@ impl<B: Backend> PolicyValueNet<B> {
         let raw_slots = obs
             .slice([0..batch, HEADER_FEATURES..OBS_DIM])
             .reshape([batch * NUM_POLICY_TARGETS, SLOT_FEATURES]);
+        let target_residual = apply_target_residual.then(|| {
+            self.target_residual.forward(
+                header.clone().slice([
+                    0..batch,
+                    OBS_RANDOMNESS_FEATURE_START..OBS_RANDOMNESS_FEATURE_END,
+                ]),
+                raw_slots.clone(),
+            )
+        });
         let current_loose_energy = header
             .clone()
             .slice([
@@ -968,6 +1159,10 @@ impl<B: Backend> PolicyValueNet<B> {
             .matmul(slots.swap_dims(1, 2))
             .div_scalar((self.hidden2() as f64).sqrt())
             .reshape([batch, NUM_POLICY_TARGET_LOGITS]);
+        let target_logits = match target_residual {
+            Some(residual) => target_logits + residual,
+            None => target_logits,
+        };
         let effort_logits = self.effort_head.forward(x.clone());
         let amount_logits = self.amount_head.forward(x.clone());
         let signal_logits = self.signal_head.forward(x.clone());
@@ -999,49 +1194,7 @@ impl<B: Backend> PolicyValueNet<B> {
     }
 }
 
-pub fn policy_memory_bytes(recurrent_size: usize) -> Option<usize> {
-    recurrent_size
-        .checked_mul(std::mem::size_of::<i16>())
-        .and_then(|bytes| bytes.checked_add(POLICY_MEMORY_HEADER_BYTES))
-}
-
-/// Decode only this policy's exact versioned memory format. Empty or malformed
-/// memory deterministically initializes a fresh zero state.
-pub fn decode_policy_memory(bytes: &[u8], recurrent_size: usize) -> Vec<f32> {
-    let Some(expected) = policy_memory_bytes(recurrent_size) else {
-        return vec![0.0; recurrent_size];
-    };
-    if bytes.len() != expected || bytes[..4] != POLICY_MEMORY_MAGIC {
-        return vec![0.0; recurrent_size];
-    }
-    let declared = u32::from_le_bytes(bytes[4..8].try_into().expect("fixed memory header"));
-    if usize::try_from(declared).ok() != Some(recurrent_size) {
-        return vec![0.0; recurrent_size];
-    }
-    bytes[POLICY_MEMORY_HEADER_BYTES..]
-        .chunks_exact(2)
-        .map(|chunk| {
-            f32::from(i16::from_le_bytes(
-                chunk.try_into().expect("two-byte memory element"),
-            )) / f32::from(i16::MAX)
-        })
-        .collect()
-}
-
-pub fn encode_policy_memory(memory: &[f32]) -> Vec<u8> {
-    let declared = u32::try_from(memory.len()).expect("validated recurrent state fits u32");
-    let mut bytes = Vec::with_capacity(
-        policy_memory_bytes(memory.len()).expect("validated recurrent state byte size"),
-    );
-    bytes.extend_from_slice(&POLICY_MEMORY_MAGIC);
-    bytes.extend_from_slice(&declared.to_le_bytes());
-    for value in memory {
-        let value = if value.is_finite() { *value } else { 0.0 };
-        let quantized = (value.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
-        bytes.extend_from_slice(&quantized.to_le_bytes());
-    }
-    bytes
-}
+pub use blob_policy::memory::{decode_policy_memory, encode_policy_memory, policy_memory_bytes};
 
 #[cfg(test)]
 mod tests {
@@ -1100,7 +1253,7 @@ mod tests {
         );
         assert_eq!(output.values.dims(), [batch_size, 1]);
         assert_eq!(output.next_memory.dims(), [batch_size, 64]);
-        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 104_780);
+        assert_eq!(PolicyValueNetConfig::new().parameter_count(), 107_222);
     }
 
     #[test]
@@ -1110,7 +1263,7 @@ mod tests {
             hidden2: 128,
             recurrent_size: 128,
         };
-        assert_eq!(large.parameter_count(), 344_140);
+        assert_eq!(large.parameter_count(), 346_582);
         assert_eq!(policy_memory_bytes(large.recurrent_size), Some(264));
     }
 
@@ -1315,12 +1468,13 @@ mod tests {
         let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
         let device = Default::default();
         TestBackend::seed(&device, 991);
-        let model: PolicyValueNet<TestBackend> = PolicyValueNetConfig {
+        let mut model: PolicyValueNet<TestBackend> = PolicyValueNetConfig {
             hidden1: 16,
             hidden2: 8,
             recurrent_size: 8,
         }
         .init(&device);
+        model.target_residual.activate_for_test(&device);
         let mut original = vec![0.0; OBS_DIM];
         for (index, value) in original.iter_mut().enumerate() {
             *value = index as f32 / OBS_DIM as f32;
@@ -1404,6 +1558,124 @@ mod tests {
                 assert!((left - right).abs() < 1.0e-5);
             }
         }
+    }
+
+    fn output_bits(output: ModelOutput<TestBackend>) -> Vec<u32> {
+        Tensor::cat(
+            vec![
+                output.action_kind_logits,
+                output.action_kind_expert_logits,
+                output.phase_gate_logits,
+                output.target_logits,
+                output.effort_logits,
+                output.amount_logits,
+                output.signal_logits,
+                output.signal_strength_logits,
+                output.values,
+                output.next_memory,
+            ],
+            1,
+        )
+        .into_data()
+        .to_vec::<f32>()
+        .unwrap()
+        .into_iter()
+        .map(f32::to_bits)
+        .collect()
+    }
+
+    #[test]
+    fn target_residual_migration_preserves_every_output_and_inherited_parameter_bit() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        TestBackend::seed(&device, 714);
+        let config = PolicyValueNetConfig {
+            hidden1: 16,
+            hidden2: 8,
+            recurrent_size: 8,
+        };
+        let before: PolicyValueNet<TestBackend> = config.init(&device);
+        let legacy = PreTargetResidualPolicyValueNet {
+            slot_encoder: before.slot_encoder.clone(),
+            phase_slot_encoder: before.phase_slot_encoder.clone(),
+            phase_gate_fc: before.phase_gate_fc.clone(),
+            shared_fc1: before.shared_fc1.clone(),
+            recurrent: before.recurrent.clone(),
+            shared_fc2: before.shared_fc2.clone(),
+            foraging_action_kind_head: before.foraging_action_kind_head.clone(),
+            foraging_adapter_fc: before.foraging_adapter_fc.clone(),
+            foraging_adapter_head: before.foraging_adapter_head.clone(),
+            interaction_action_kind_head: before.interaction_action_kind_head.clone(),
+            interaction_adapter_fc: before.interaction_adapter_fc.clone(),
+            interaction_adapter_head: before.interaction_adapter_head.clone(),
+            interaction_slot_adapter_fc: before.interaction_slot_adapter_fc.clone(),
+            interaction_slot_adapter_head: before.interaction_slot_adapter_head.clone(),
+            exploration_action_kind_head: before.exploration_action_kind_head.clone(),
+            exploration_adapter_fc: before.exploration_adapter_fc.clone(),
+            exploration_adapter_head: before.exploration_adapter_head.clone(),
+            exploration_slot_adapter_fc: before.exploration_slot_adapter_fc.clone(),
+            exploration_slot_adapter_head: before.exploration_slot_adapter_head.clone(),
+            exploration_guard_readiness_head: before.exploration_guard_readiness_head.clone(),
+            phase_gate_head: before.phase_gate_head.clone(),
+            target_query_head: before.target_query_head.clone(),
+            effort_head: before.effort_head.clone(),
+            amount_head: before.amount_head.clone(),
+            signal_head: before.signal_head.clone(),
+            signal_strength_head: before.signal_strength_head.clone(),
+            value_head: before.value_head.clone(),
+        };
+        let migrated = config.migrate_pre_target_residual(legacy, &device);
+        assert_eq!(
+            before.inherited_target_parameter_bits(),
+            migrated.inherited_target_parameter_bits()
+        );
+        let observations = Tensor::from_data(
+            TensorData::new(
+                (0..3 * OBS_DIM)
+                    .map(|i| ((i * 137 % 997) as f32 - 400.0) / 997.0)
+                    .collect::<Vec<_>>(),
+                [3, OBS_DIM],
+            ),
+            &device,
+        );
+        let memory = Tensor::from_data(
+            TensorData::new((0..24).map(|i| i as f32 / 31.0).collect::<Vec<_>>(), [3, 8]),
+            &device,
+        );
+        assert_eq!(
+            output_bits(before.forward_core(observations.clone(), memory.clone(), false)),
+            output_bits(migrated.forward_with_memory(observations, memory))
+        );
+    }
+
+    #[test]
+    fn active_target_residual_randomness_is_row_isolated() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        TestBackend::seed(&device, 715);
+        let mut model: PolicyValueNet<TestBackend> = PolicyValueNetConfig {
+            hidden1: 16,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init(&device);
+        model.target_residual.activate_for_test(&device);
+        let original = (0..OBS_DIM)
+            .map(|i| (i % 31) as f32 / 31.0)
+            .collect::<Vec<_>>();
+        let mut changed = original.clone();
+        changed[OBS_RANDOMNESS_FEATURE_START..OBS_RANDOMNESS_FEATURE_END].fill(0.99);
+        let baseline = output_bits(model.forward(Tensor::from_data(
+            TensorData::new([original.clone(), original.clone()].concat(), [2, OBS_DIM]),
+            &device,
+        )));
+        let altered = output_bits(model.forward(Tensor::from_data(
+            TensorData::new([original, changed].concat(), [2, OBS_DIM]),
+            &device,
+        )));
+        let row_width = baseline.len() / 2;
+        assert_eq!(&baseline[..row_width], &altered[..row_width]);
+        assert_ne!(&baseline[row_width..], &altered[row_width..]);
     }
 
     #[test]

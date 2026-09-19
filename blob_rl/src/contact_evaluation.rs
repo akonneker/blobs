@@ -222,14 +222,14 @@ fn ratio_u64(numerator: u64, denominator: u64) -> f64 {
     }
 }
 
-fn finalize_variant(mut metrics: ContactVariantMetrics) -> ContactVariantMetrics {
+pub(crate) fn finalize_variant(mut metrics: ContactVariantMetrics) -> ContactVariantMetrics {
     metrics.attacking_episode_rate = ratio(metrics.attacking_episodes, metrics.episodes);
     metrics.damaging_episode_rate = ratio(metrics.damaging_episodes, metrics.episodes);
     metrics.attack_success_rate = ratio_u64(metrics.attacks_succeeded, metrics.attacks_committed);
     metrics
 }
 
-fn report_from_variants(
+pub(crate) fn report_from_variants(
     ruleset_hash: String,
     seeds: Vec<u64>,
     contact_sim_time_limit_quanta: u64,

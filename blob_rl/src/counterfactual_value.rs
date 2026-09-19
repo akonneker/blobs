@@ -686,13 +686,7 @@ pub fn load_counterfactual_value_artifact(
     path: &Path,
     source: &CounterfactualBranchArtifact,
 ) -> Result<CounterfactualValueArtifact, String> {
-    let metadata = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
-    if metadata.len() > MAX_VALUE_ARTIFACT_BYTES {
-        return Err("counterfactual value artifact exceeds its byte bound".into());
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_VALUE_ARTIFACT_BYTES)?;
     let artifact: CounterfactualValueArtifact = serde_json::from_slice(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate_against(source)?;

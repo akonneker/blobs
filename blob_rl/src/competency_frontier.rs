@@ -510,15 +510,9 @@ pub fn publish_competency_frontier(
 }
 
 pub fn load_competency_frontier(path: &Path) -> Result<CompetencyFrontier, String> {
-    let metadata = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
-    if metadata.len() > MAX_FRONTIER_BYTES {
-        return Err("competency frontier exceeds its bounded artifact size".into());
-    }
-    let frontier: CompetencyFrontier = serde_json::from_slice(
-        &fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?,
-    )
-    .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_FRONTIER_BYTES)?;
+    let frontier: CompetencyFrontier = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     validate_competency_frontier(&frontier)?;
     Ok(frontier)
 }

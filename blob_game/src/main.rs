@@ -32,7 +32,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Args {
-    /// Paths to Rune script files containing team minds
+    /// Paths to WASM artifacts containing team Minds
     #[arg(required = true)]
     mind_paths: Vec<PathBuf>,
 

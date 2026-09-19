@@ -3,14 +3,13 @@
 
 use std::path::PathBuf;
 
-use blob_rl::behavior_cloning::{behavior_clone_artifact_sha256, verify_behavior_clone_artifact};
+use blob_rl::behavior_cloning::behavior_clone_artifact_sha256;
 use blob_rl::counterfactual_branch::{
     enrich_counterfactual_mind_evidence, load_counterfactual_branch_artifact,
     publish_counterfactual_branch_artifact,
 };
-use blob_rl::model::PolicyValueNetConfig;
+use blob_rl::policy_artifact::load_behavior_clone;
 use burn::prelude::*;
-use burn::record::CompactRecorder;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -41,19 +40,12 @@ where
     if metadata_sha256 != source.behavior_clone_metadata_sha256 {
         panic!("behavior clone metadata does not match the counterfactual source");
     }
-    let model_path = verify_behavior_clone_artifact(
+    let model = load_behavior_clone::<B>(
         &args.behavior_clone,
         &metadata_sha256,
         &source.config.model,
+        &device,
     )
-    .unwrap_or_else(|error| panic!("invalid behavior clone: {error}"));
-    let model = PolicyValueNetConfig {
-        hidden1: source.config.model.hidden1,
-        hidden2: source.config.model.hidden2,
-        recurrent_size: source.config.model.recurrent_size,
-    }
-    .init::<B>(&device)
-    .load_file(model_path, &CompactRecorder::new(), &device)
     .unwrap_or_else(|error| panic!("failed to load behavior clone: {error}"));
     let enriched = enrich_counterfactual_mind_evidence(&model, &source, &device)
         .unwrap_or_else(|error| panic!("failed to enrich counterfactual evidence: {error}"));

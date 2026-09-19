@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use blob_rl::action::{decompose_policy_action, PolicyActionFamily};
 use blob_rl::behavior_cloning::{
-    behavior_clone_artifact_sha256, expert_routing_phase, verify_behavior_clone_artifact,
-    BehaviorCloningArtifact, ExpertRoutingStrategy, SupervisionPhase,
+    behavior_clone_artifact_sha256, expert_routing_phase, BehaviorCloningArtifact,
+    ExpertRoutingStrategy, SupervisionPhase,
 };
 use blob_rl::config::{FeedingCurriculumStage, OpponentProfile, TrainingConfig};
 use blob_rl::control_matrix::MaintainedMindProfile;
@@ -16,9 +16,8 @@ use blob_rl::demonstration::{
     PolicyCorrectionLabelMode, PolicyCorrectionOptions, POLICY_KIND_MARGIN_THRESHOLDS_MICROLOGITS,
 };
 use blob_rl::feeding_layout_evaluation::FeedingQualificationLayout;
-use blob_rl::model::PolicyValueNetConfig;
+use blob_rl::policy_artifact::load_behavior_clone;
 use burn::prelude::*;
-use burn::record::CompactRecorder;
 use clap::{Parser, ValueEnum};
 use sha2::{Digest, Sha256};
 
@@ -123,19 +122,12 @@ where
     B::FloatElem: From<f32>,
     f32: From<B::FloatElem>,
 {
-    let model_path = verify_behavior_clone_artifact(
+    let model = load_behavior_clone::<B>(
         inputs.behavior_clone,
         &inputs.behavior_clone_metadata_sha256,
         &inputs.config.model,
+        &device,
     )
-    .unwrap_or_else(|error| panic!("invalid behavior clone: {error}"));
-    let model = PolicyValueNetConfig {
-        hidden1: inputs.config.model.hidden1,
-        hidden2: inputs.config.model.hidden2,
-        recurrent_size: inputs.config.model.recurrent_size,
-    }
-    .init::<B>(&device)
-    .load_file(model_path, &CompactRecorder::new(), &device)
     .unwrap_or_else(|error| panic!("failed to load behavior clone: {error}"));
     let (manifest, payload) = generate_policy_correction_demonstrations(
         &inputs.config,

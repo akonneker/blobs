@@ -28,4 +28,7 @@ rayon = "1.10"
 smallvec = "1.15"
 
 [dev-dependencies]
+blob_policy = { path = "../blob_policy" }
+sha2 = "0.10"
+serde_json = "1"
 wat = "1"

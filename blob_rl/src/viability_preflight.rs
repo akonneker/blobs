@@ -117,17 +117,7 @@ pub fn run_viability_preflight(
             spec_file.display()
         )
     })?;
-    let spec_length = fs::metadata(&spec_file)
-        .map_err(|error| format!("failed to inspect {}: {error}", spec_file.display()))?
-        .len();
-    if spec_length > MAX_PREFLIGHT_CONFIG_BYTES {
-        return Err(format!(
-            "{} is {spec_length} bytes; preflight config limit is {MAX_PREFLIGHT_CONFIG_BYTES}",
-            spec_file.display()
-        ));
-    }
-    let spec_bytes = fs::read(&spec_file)
-        .map_err(|error| format!("failed to read {}: {error}", spec_file.display()))?;
+    let spec_bytes = crate::artifact_io::read_bounded(&spec_file, MAX_PREFLIGHT_CONFIG_BYTES)?;
     let spec: RulesSweepSpec = toml::from_str(
         std::str::from_utf8(&spec_bytes)
             .map_err(|error| format!("sweep specification is not UTF-8: {error}"))?,
@@ -153,17 +143,8 @@ pub fn run_viability_preflight(
         return Err("existing sweep plan does not match the requested specification".into());
     }
     let base_config_file = Path::new(&sweep.manifest.base_config_file);
-    let base_length = fs::metadata(base_config_file)
-        .map_err(|error| format!("failed to inspect {}: {error}", base_config_file.display()))?
-        .len();
-    if base_length > MAX_PREFLIGHT_CONFIG_BYTES {
-        return Err(format!(
-            "{} is {base_length} bytes; preflight config limit is {MAX_PREFLIGHT_CONFIG_BYTES}",
-            base_config_file.display()
-        ));
-    }
-    let base_bytes = fs::read(base_config_file)
-        .map_err(|error| format!("failed to read {}: {error}", base_config_file.display()))?;
+    let base_bytes =
+        crate::artifact_io::read_bounded(base_config_file, MAX_PREFLIGHT_CONFIG_BYTES)?;
     if sha256(&base_bytes) != sweep.manifest.base_config_sha256 {
         return Err("existing sweep plan base configuration has changed".into());
     }

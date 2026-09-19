@@ -44,8 +44,10 @@ fn run_case(
     integrity_mode: IntegrityMode,
     memory_mode: MemoryMode,
     host_mode: ReferenceHostMode,
+    tick_override: Option<usize>,
 ) {
-    let ticks = (200_000 / requested_cells.max(1)).clamp(20, 200);
+    let ticks = tick_override.unwrap_or_else(|| (200_000 / requested_cells.max(1)).clamp(20, 200));
+    assert!(ticks > 0, "capacity benchmark requires at least one batch");
     let rules = ReferenceRuleset {
         digestion_rate_numerator: 0,
         metabolism_rate_numerator: 0,
@@ -172,6 +174,20 @@ fn run_case(
                 .saturating_sub(host_ns[..9].iter().sum()),
         ),
     );
+    // Audit outside the timed region so fast modes cannot hide divergent state.
+    let simulation = engine.reference_simulation().unwrap();
+    let canonical = simulation.canonical_state();
+    let canonical_hash = canonical.hash_with_compiled_ruleset(simulation.compiled_ruleset_hash());
+    assert_eq!(simulation.state_hash(), canonical_hash);
+    assert_eq!(simulation.cells().len(), cells);
+    println!(
+        "                 audit: final_hash={} committed={} completed={} live={} next_key={}",
+        canonical_hash.to_hex(),
+        committed,
+        completed,
+        canonical.cells.len(),
+        canonical.next_cell_key,
+    );
 }
 
 fn main() {
@@ -195,7 +211,10 @@ fn main() {
             panic!("unknown host mode {other:?}; expected projected or metadata-only")
         }
     };
-    let cases = if (2..=6).contains(&args.len()) {
+    let tick_override = args
+        .get(6)
+        .map(|value| value.parse().expect("invalid batch count"));
+    let cases = if (2..=7).contains(&args.len()) {
         vec![(
             args[0].parse().unwrap(),
             args[1].parse().unwrap(),
@@ -231,6 +250,7 @@ fn main() {
             integrity_mode,
             memory_mode,
             host_mode,
+            tick_override,
         );
     }
 }

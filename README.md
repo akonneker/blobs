@@ -105,6 +105,8 @@ cargo run --release -p blob_game -- --gui \
 Omit `--gui` for a headless match. Use `cargo run -p blob_game -- --help` for
 world, seed, configuration, step, and checkpoint options.
 
+Learned checkpoints can now be packaged as ordinary WASM Minds; see the [deployment guide](docs/learned-mind-deployment.md) for export, local play and parity qualification.
+
 ## Writing a Mind
 
 A Mind is an Extism-PDK module exporting `reference_mind_function`. The host
@@ -196,6 +198,7 @@ signing-key operations, leaderboard indexing/APIs, and site integration.
 ## Design and performance references
 
 - [Current project handoff and next slice](docs/project-handoff.md)
+- [Experiment dispositions and retained evidence](docs/experiment-index.md)
 - [Simulation and resolution design](docs/simulation-resolution-design.md)
 - [Large-game optimization roadmap](docs/large-game-optimization-roadmap.md)
 - [Measured performance baseline](docs/performance-baseline.md)

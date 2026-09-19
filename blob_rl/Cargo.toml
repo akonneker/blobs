@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+blob_policy = { path = "../blob_policy" }
+tempfile = "3"
 blob_interface = { path = "../blob_interface" }
 blob_engine = { path = "../blob_engine" }
 simple_mind = { path = "../minds/simple_mind" }
@@ -11,7 +13,14 @@ aggressive_mind = { path = "../minds/aggressive_mind" }
 defensive_mind = { path = "../minds/defensive_mind" }
 explorer_mind = { path = "../minds/explorer_mind" }
 colony_mind = { path = "../minds/colony_mind" }
-burn = { version = "0.20", features = ["autodiff", "train"] }
+# Burn 0.20's ndarray SIMD reciprocal uses an unrefined ARM estimate, biasing
+# log-softmax gradients for batches >= 32. Keep ndarray multithreading but disable
+# SIMD. Do not enable burn/default or burn/train: both restore ndarray/default.
+# Training here uses our own optimizer loop, not burn-train's learner framework.
+burn = { version = "0.20", default-features = false, features = ["std", "autodiff"] }
+burn-ndarray = { version = "0.20", optional = true, default-features = false, features = ["std", "multi-threads"] }
+# Preserve the GPU backend's existing default features independently of Burn's.
+burn-wgpu = { version = "0.20", optional = true }
 rayon = "1.10"
 rand = "0.9"
 rand_chacha = { version = "0.9", features = ["serde"] }
@@ -25,12 +34,16 @@ libc = "0.2"
 
 [features]
 default = ["wgpu"]
-wgpu = ["burn/wgpu"]
-ndarray = ["burn/ndarray"]
+wgpu = ["burn/wgpu", "dep:burn-wgpu"]
+ndarray = ["burn/ndarray", "dep:burn-ndarray"]
 
 [dev-dependencies]
-burn = { version = "0.20", features = ["ndarray"] }
-tempfile = "3"
+burn = { version = "0.20", default-features = false, features = ["ndarray"] }
+burn-ndarray = { version = "0.20", default-features = false, features = ["std", "multi-threads"] }
+blob_mind_utils = { path = "../minds/blob_mind_utils" }
+
+[build-dependencies]
+sha2 = "0.10"
 
 [[bin]]
 name = "train"
@@ -199,3 +212,8 @@ path = "src/bin/match_explorer.rs"
 [[bin]]
 name = "scenario-diagnosis"
 path = "src/bin/scenario_diagnosis.rs"
+
+[[bin]]
+name = "export-policy"
+path = "src/bin/export_policy.rs"
+required-features = ["ndarray"]

@@ -6,10 +6,12 @@ cd "$workspace_dir"
 
 cargo fmt --all -- --check
 python3 scripts/check_schema_registry.py
+python3 -B scripts/test_feeding_cohort.py
 cargo test -p blob_interface
 cargo test -p blob_engine --lib
 cargo test -p blob_engine \
   --test checkpoint \
+  --test checkpoint_allocation_limits \
   --test canonical_hashing \
   --test replay_bundle \
   --test replay_segments \
@@ -34,6 +36,7 @@ cargo clippy -p blob_web --lib --no-deps \
 cargo build --release --target wasm32-unknown-unknown -p blob_web
 node --check blob_web/web/blob_web.js
 node --check blob_web/viewer/match-explorer.js
+node --check blob_web/viewer/match-history.js
 node scripts/check_match_explorer_sample.mjs
 bash -n scripts/build_browser_package.sh
 bash -n scripts/build_language_minds.sh

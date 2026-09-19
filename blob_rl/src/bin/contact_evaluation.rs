@@ -5,14 +5,11 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use blob_rl::behavior_cloning::{
-    behavior_clone_artifact_sha256, verify_behavior_clone_artifact, BehaviorCloningArtifact,
-};
+use blob_rl::behavior_cloning::{behavior_clone_artifact_sha256, BehaviorCloningArtifact};
 use blob_rl::config::TrainingConfig;
 use blob_rl::contact_evaluation::{evaluate_contact, ContactEvaluationReport};
-use blob_rl::model::PolicyValueNetConfig;
+use blob_rl::policy_artifact::load_behavior_clone;
 use burn::prelude::*;
-use burn::record::CompactRecorder;
 use clap::Parser;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -65,19 +62,12 @@ where
     B::FloatElem: From<f32>,
     f32: From<B::FloatElem>,
 {
-    let model_path = verify_behavior_clone_artifact(
+    let model = load_behavior_clone::<B>(
         inputs.behavior_clone,
         &inputs.behavior_clone_metadata_sha256,
         &inputs.config.model,
+        &device,
     )
-    .unwrap_or_else(|error| panic!("invalid behavior clone: {error}"));
-    let model = PolicyValueNetConfig {
-        hidden1: inputs.config.model.hidden1,
-        hidden2: inputs.config.model.hidden2,
-        recurrent_size: inputs.config.model.recurrent_size,
-    }
-    .init::<B>(&device)
-    .load_file(model_path, &CompactRecorder::new(), &device)
     .unwrap_or_else(|error| panic!("failed to load behavior clone: {error}"));
     let report = evaluate_contact(
         &model,

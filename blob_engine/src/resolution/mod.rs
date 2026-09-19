@@ -5,11 +5,13 @@
 //! phases serially.
 
 mod attestation;
+mod cell_storage;
 mod checkpoint;
 mod delta;
 mod hashing;
 mod match_manifest;
 mod neighborhood;
+mod paged_slots;
 mod reference;
 mod replay;
 mod replay_bundle;

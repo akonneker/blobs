@@ -901,16 +901,7 @@ pub fn publish_feeding_recovery(
 }
 
 pub fn load_feeding_recovery(path: &Path) -> Result<FeedingRecoveryArtifact, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_ARTIFACT_BYTES {
-        return Err(format!(
-            "feeding recovery artifact exceeds {MAX_ARTIFACT_BYTES} bytes"
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_ARTIFACT_BYTES)?;
     let artifact: FeedingRecoveryArtifact = serde_json::from_slice(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;

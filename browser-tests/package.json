@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "prepare:wasm": "bash ../scripts/prepare_browser_tests.sh",
     "test": "playwright test"
   },
   "devDependencies": {

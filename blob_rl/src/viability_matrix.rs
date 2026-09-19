@@ -376,17 +376,7 @@ pub fn validate_viability_matrix_report(report: &ViabilityMatrixReport) -> Resul
 
 /// Load and fully validate a bounded matrix report for restart-safe reuse.
 pub fn load_viability_matrix_report(path: &Path) -> Result<ViabilityMatrixReport, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_VIABILITY_MATRIX_BYTES {
-        return Err(format!(
-            "{} is {length} bytes; viability matrix limit is {MAX_VIABILITY_MATRIX_BYTES}",
-            path.display()
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_VIABILITY_MATRIX_BYTES)?;
     let report: ViabilityMatrixReport = serde_json::from_slice(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     validate_viability_matrix_report(&report)?;

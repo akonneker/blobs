@@ -1,6 +1,11 @@
 //! Masked supervised pretraining from verified demonstration datasets.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
+
+mod dataset_partition;
+pub mod seed_ledger;
+use dataset_partition::{partition_datasets, DatasetPartition};
+use seed_ledger::{InheritedSeedLedger, SeedLedger};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -33,7 +38,7 @@ use crate::model::{
 };
 use crate::observation::{observation_expert_context, ObservationExpertContext, OBS_DIM};
 
-pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 34;
+pub const BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 37;
 const MIN_SUPPORTED_BEHAVIOR_CLONING_SCHEMA_VERSION: u32 = 22;
 static CLONING_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -121,12 +126,16 @@ pub struct BehaviorCloningConfig {
     /// stage, or `None` for a fresh model. The path is deliberately excluded
     /// so artifact identity remains machine-independent.
     pub initial_artifact_sha256: Option<String>,
+    #[serde(default)]
+    pub inherited_seed_ledger: Option<InheritedSeedLedger>,
+    /// Reserved final confirmation seeds, excluded from all demonstration input.
+    #[serde(default)]
+    pub confirmation_seeds: Vec<u64>,
     pub epochs: usize,
     pub minibatch_size: usize,
     pub learning_rate: f64,
     /// Fraction of distinct source seeds held out as complete trajectories.
-    /// The split is deterministic and shared across datasets with the same
-    /// seed suite.
+    /// Existing lineage roles are fixed; this fraction guides assignment of new seeds.
     pub validation_fraction: f64,
     pub dataset_sampling: DatasetSamplingStrategy,
     /// Optional explicit sampling mass for each dataset, in CLI order. When
@@ -196,6 +205,9 @@ pub struct BehaviorCloningConfig {
     /// preserving every parameter inherited from the verified parent.
     #[serde(default)]
     pub target_query_head_only: bool,
+    /// Update only the cell-private randomness/local-slot target residual.
+    #[serde(default)]
+    pub target_residual_only: bool,
     /// Update only the action-kind-conditioned effort head while preserving
     /// every parameter inherited from the verified parent.
     #[serde(default)]
@@ -219,6 +231,7 @@ pub struct BehaviorCloningConfig {
 
 impl BehaviorCloningConfig {
     pub fn validate(&self) -> Result<(), String> {
+        seed_ledger::inherited_roles(self)?;
         let valid_initial_artifact = self.initial_artifact_sha256.as_ref().is_none_or(|hash| {
             hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
         });
@@ -228,6 +241,7 @@ impl BehaviorCloningConfig {
             + usize::from(self.context_slot_adapter_only.is_some())
             + usize::from(self.exploration_guard_readiness_only)
             + usize::from(self.target_query_head_only)
+            + usize::from(self.target_residual_only)
             + usize::from(self.effort_head_only);
         if !valid_initial_artifact
             || self.epochs == 0
@@ -271,6 +285,7 @@ impl BehaviorCloningConfig {
             || !(0.0..=1_000.0).contains(&self.action_kind_margin_loss_weight)
             || (self.action_kind_margin.is_some() != (self.action_kind_margin_loss_weight > 0.0))
             || (self.target_query_head_only && self.initial_artifact_sha256.is_none())
+            || (self.target_residual_only && self.initial_artifact_sha256.is_none())
             || (self.effort_head_only && self.initial_artifact_sha256.is_none())
             || (self.foraging_adapter_only && self.action_kind_expert_only.is_some())
             || (self.context_adapter_only.is_some()
@@ -299,7 +314,7 @@ impl BehaviorCloningConfig {
                 .is_some_and(|ratio| !ratio.is_finite() || ratio < 1.0)
         {
             return Err(
-                "behavior-cloning initial artifact must be a SHA-256 hash; expert-head-only, foraging-adapter-only, interaction/exploration context-adapter-only and context-slot-adapter-only, exploration-Guard-readiness-only, target-query-head-only, and effort-head-only adaptation require an initial artifact and are mutually exclusive; authoritative three-context expert routing is required; epochs, batch size, learning rate, explicit dataset weights, epoch sample and optimizer-step budgets, and phase-gate loss weight must be positive; a total optimizer-step budget requires a fixed per-epoch budget and cannot exceed the configured run; a fractional terminal optimizer-step scale must be in (0, 1] and requires an exact total step budget; action-kind margin and its positive loss weight must be enabled together and bounded; validation fraction and action-balance exponent must be in [0, 1]; action-balance max ratio must be finite and at least 1; and recurrent unroll steps must be in 1..=256".into(),
+                "behavior-cloning initial artifact must be a SHA-256 hash; expert-head-only, foraging-adapter-only, interaction/exploration context-adapter-only and context-slot-adapter-only, exploration-Guard-readiness-only, target-query-head-only, target-residual-only, and effort-head-only adaptation require an initial artifact and are mutually exclusive; authoritative three-context expert routing is required; epochs, batch size, learning rate, explicit dataset weights, epoch sample and optimizer-step budgets, and phase-gate loss weight must be positive; a total optimizer-step budget requires a fixed per-epoch budget and cannot exceed the configured run; a fractional terminal optimizer-step scale must be in (0, 1] and requires an exact total step budget; action-kind margin and its positive loss weight must be enabled together and bounded; validation fraction and action-balance exponent must be in [0, 1]; action-balance max ratio must be finite and at least 1; and recurrent unroll steps must be in 1..=256".into(),
             );
         }
         Ok(())
@@ -311,6 +326,8 @@ impl Default for BehaviorCloningConfig {
         Self {
             seed: 42,
             initial_artifact_sha256: None,
+            inherited_seed_ledger: None,
+            confirmation_seeds: Vec::new(),
             epochs: 10,
             minibatch_size: 256,
             learning_rate: 3e-4,
@@ -331,6 +348,7 @@ impl Default for BehaviorCloningConfig {
             action_kind_margin: None,
             action_kind_margin_loss_weight: 0.0,
             target_query_head_only: false,
+            target_residual_only: false,
             effort_head_only: false,
             recurrent_unroll_steps: 16,
             exact_round_trip_only: false,
@@ -474,6 +492,8 @@ pub struct BehaviorCloningDatasetPartition {
     pub validation_trajectories: usize,
     pub samples_per_epoch: usize,
     pub held_out_seeds: Vec<u64>,
+    #[serde(default)]
+    pub training_seeds: Vec<u64>,
     /// Exact policy-catalog label counts, indexed by action ID. These make
     /// target-slot fragmentation and dominant fallback actions visible before
     /// a warm start is trusted.
@@ -495,6 +515,12 @@ pub struct BehaviorCloningDatasetIdentity {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct BehaviorCloningArtifact {
+    #[serde(default)]
+    pub seed_ledger: Option<SeedLedger>,
+    #[serde(default)]
+    pub execution: Option<crate::policy_artifact::PolicyExecutionIdentity>,
+    #[serde(default)]
+    pub code_revision: Option<String>,
     pub schema_version: u32,
     pub package_version: String,
     pub training_backend: String,
@@ -504,13 +530,6 @@ pub struct BehaviorCloningArtifact {
     pub metrics: BehaviorCloningMetrics,
     pub model_file: String,
     pub model_sha256: String,
-}
-
-struct DatasetPartition<'a> {
-    manifest_sha256: String,
-    training: Vec<&'a DemonstrationSample>,
-    validation: Vec<&'a DemonstrationSample>,
-    held_out_seeds: Vec<u64>,
 }
 
 fn action_histogram<'a>(samples: impl IntoIterator<Item = &'a DemonstrationSample>) -> Vec<usize> {
@@ -698,81 +717,6 @@ fn phase_weights_for_chunks(
         }
     }
     balanced_phase_weights(counts)
-}
-
-fn seed_rank(split_seed: u64, source_seed: u64) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(b"blob-behavior-cloning-validation-seed-v1");
-    hasher.update(split_seed.to_le_bytes());
-    hasher.update(source_seed.to_le_bytes());
-    hasher.finalize().into()
-}
-
-fn partition_datasets<'a>(
-    datasets: &'a [LoadedDemonstrations],
-    config: &BehaviorCloningConfig,
-) -> Result<Vec<DatasetPartition<'a>>, String> {
-    let mut identities = HashSet::with_capacity(datasets.len());
-    let mut partitions = Vec::with_capacity(datasets.len());
-    for dataset in datasets {
-        if !identities.insert(&dataset.manifest_sha256) {
-            return Err(format!(
-                "duplicate demonstration manifest {}",
-                dataset.manifest_sha256
-            ));
-        }
-        let eligible = dataset
-            .payload
-            .samples
-            .iter()
-            .filter(|sample| !config.exact_round_trip_only || sample.exact_round_trip)
-            .collect::<Vec<_>>();
-        if eligible.is_empty() {
-            return Err(format!(
-                "behavior-cloning filters removed every sample from dataset {}",
-                dataset.manifest_sha256
-            ));
-        }
-        let source_seeds = eligible
-            .iter()
-            .map(|sample| sample.source_seed)
-            .collect::<BTreeSet<_>>();
-        let held_out_seeds = if config.validation_fraction == 0.0 {
-            Vec::new()
-        } else {
-            if source_seeds.len() < 2 {
-                return Err(format!(
-                    "dataset {} needs at least two eligible source seeds for held-out validation",
-                    dataset.manifest_sha256
-                ));
-            }
-            let mut ranked = source_seeds.into_iter().collect::<Vec<_>>();
-            ranked.sort_unstable_by_key(|source_seed| seed_rank(config.seed, *source_seed));
-            let held_out_count = ((ranked.len() as f64 * config.validation_fraction).round()
-                as usize)
-                .clamp(1, ranked.len() - 1);
-            let mut held_out = ranked[..held_out_count].to_vec();
-            held_out.sort_unstable();
-            held_out
-        };
-        let held_out_set = held_out_seeds.iter().copied().collect::<HashSet<_>>();
-        let (validation, training): (Vec<_>, Vec<_>) = eligible
-            .into_iter()
-            .partition(|sample| held_out_set.contains(&sample.source_seed));
-        if training.is_empty() || (config.validation_fraction > 0.0 && validation.is_empty()) {
-            return Err(format!(
-                "dataset {} produced an empty training or validation partition",
-                dataset.manifest_sha256
-            ));
-        }
-        partitions.push(DatasetPartition {
-            manifest_sha256: dataset.manifest_sha256.clone(),
-            training,
-            validation,
-            held_out_seeds,
-        });
-    }
-    Ok(partitions)
 }
 
 /// The gate does not receive recurrent memory or host scenario metadata. Fail
@@ -1536,6 +1480,7 @@ struct SupervisedStep<'a, B: Backend> {
     action_kind_margin: Option<f64>,
     action_kind_margin_loss_weight: f64,
     target_query_head_only: bool,
+    target_residual_only: bool,
     effort_head_only: bool,
     frozen_template: Option<&'a PolicyValueNet<B>>,
     learning_rate: f64,
@@ -1824,6 +1769,12 @@ fn train_chunk_batch<B: AutodiffBackend>(
             .expect("effort-head-only adaptation has a frozen parent template")
             .clone()
             .with_effort_head_from(model);
+    } else if step.target_residual_only {
+        model = step
+            .frozen_template
+            .expect("target-residual-only adaptation has a frozen parent template")
+            .clone()
+            .with_target_residual_from(model);
     } else if step.target_query_head_only {
         model = step
             .frozen_template
@@ -1865,7 +1816,8 @@ where
 
 /// Train a behavior-cloning stage from either a fresh model or a verified
 /// parent model. Callers must put the parent's artifact hash in `config` when
-/// `initial_model` is present so the published lineage is self-authenticating.
+/// `initial_model` is present, and attach its verified cumulative seed ledger.
+/// Use `InheritedSeedLedger::from_artifact` (or an explicit historical audit).
 pub fn behavior_clone_from_model<B: AutodiffBackend>(
     datasets: &[LoadedDemonstrations],
     model_config: &ModelConfig,
@@ -1969,6 +1921,13 @@ where
                 validation_trajectories: validation_sequences_by_dataset[index].len(),
                 samples_per_epoch: *samples_per_epoch,
                 held_out_seeds: partition.held_out_seeds.clone(),
+                training_seeds: partition
+                    .training
+                    .iter()
+                    .map(|sample| sample.source_seed)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 eligible_action_histogram: action_histogram(
                     partition
                         .training
@@ -2004,6 +1963,7 @@ where
         .or(config.context_slot_adapter_only.map(|_| ()))
         .or(config.exploration_guard_readiness_only.then_some(()))
         .or(config.target_query_head_only.then_some(()))
+        .or(config.target_residual_only.then_some(()))
         .or(config.effort_head_only.then_some(()))
         .map(|()| model.clone().fork(&device));
     let mut optimizer = AdamWConfig::new()
@@ -2148,6 +2108,7 @@ where
                     action_kind_margin: config.action_kind_margin,
                     action_kind_margin_loss_weight: config.action_kind_margin_loss_weight,
                     target_query_head_only: config.target_query_head_only,
+                    target_residual_only: config.target_residual_only,
                     effort_head_only: config.effort_head_only,
                     frozen_template: frozen_template.as_ref(),
                     learning_rate,
@@ -2292,12 +2253,18 @@ pub fn verify_behavior_clone_artifact_with_schema(
     expected_artifact_sha256: &str,
     expected_model: &ModelConfig,
 ) -> Result<(PathBuf, u32), String> {
+    let artifact =
+        verify_behavior_clone_metadata(directory, expected_artifact_sha256, expected_model)?;
+    Ok((directory.join("model"), artifact.schema_version))
+}
+
+pub fn verify_behavior_clone_metadata(
+    directory: &Path,
+    expected_artifact_sha256: &str,
+    expected_model: &ModelConfig,
+) -> Result<BehaviorCloningArtifact, String> {
     let metadata_path = directory.join("behavior-cloning.json");
-    let metadata = fs::read(&metadata_path)
-        .map_err(|error| format!("failed to read {}: {error}", metadata_path.display()))?;
-    if metadata.len() > 1024 * 1024 {
-        return Err("behavior-cloning metadata exceeds 1 MiB".into());
-    }
+    let metadata = crate::artifact_io::read_bounded(&metadata_path, 1024 * 1024)?;
     if format!("{:x}", Sha256::digest(&metadata)) != expected_artifact_sha256 {
         return Err("behavior-cloning artifact SHA-256 mismatch".into());
     }
@@ -2305,16 +2272,44 @@ pub fn verify_behavior_clone_artifact_with_schema(
         .map_err(|error| format!("failed to decode {}: {error}", metadata_path.display()))?;
     if !(MIN_SUPPORTED_BEHAVIOR_CLONING_SCHEMA_VERSION..=BEHAVIOR_CLONING_SCHEMA_VERSION)
         .contains(&artifact.schema_version)
+        || artifact.schema_version == 30
+        || (artifact.schema_version < 37 && artifact.config.target_residual_only)
         || artifact.model != *expected_model
         || artifact.model_file != "model.mpk"
     {
         return Err("behavior-cloning artifact schema or model architecture mismatch".into());
     }
+    if artifact.execution.as_ref().is_some_and(|identity| {
+        *identity != crate::policy_artifact::PolicyExecutionIdentity::current()
+    }) || (artifact.schema_version >= 35
+        && (artifact.execution.is_none()
+            || artifact.code_revision.as_deref().is_none_or(str::is_empty)))
+    {
+        return Err("behavior-cloning policy execution identity is missing or incompatible".into());
+    }
     let model_file = directory.join(&artifact.model_file);
     if sha256_file(&model_file)? != artifact.model_sha256 {
         return Err("behavior-cloned model SHA-256 mismatch".into());
     }
-    Ok((directory.join("model"), artifact.schema_version))
+    if artifact.schema_version >= 36 {
+        artifact.config.validate()?;
+        let expected =
+            seed_ledger::ledger_from_metrics(&artifact.config, &artifact.metrics.partitions)?;
+        if artifact.seed_ledger.as_ref() != Some(&expected)
+            || artifact.metrics.partitions.is_empty()
+            || artifact.datasets.len() != artifact.metrics.partitions.len()
+            || artifact
+                .datasets
+                .iter()
+                .zip(&artifact.metrics.partitions)
+                .any(|(dataset, partition)| dataset.manifest_sha256 != partition.manifest_sha256)
+        {
+            return Err(
+                "behavior-cloning cumulative seed ledger is missing or inconsistent".into(),
+            );
+        }
+    }
+    Ok(artifact)
 }
 
 pub fn publish_behavior_clone<B: AutodiffBackend>(
@@ -2325,6 +2320,29 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
     datasets: &[LoadedDemonstrations],
     metrics: &BehaviorCloningMetrics,
 ) -> Result<PathBuf, String> {
+    config.validate()?;
+    let partitions = partition_datasets(datasets, config)?;
+    if partitions.is_empty()
+        || partitions.len() != metrics.partitions.len()
+        || partitions
+            .iter()
+            .zip(&metrics.partitions)
+            .any(|(actual, reported)| {
+                actual.manifest_sha256 != reported.manifest_sha256
+                    || actual.training.len() != reported.training_samples
+                    || actual.validation.len() != reported.validation_samples
+                    || actual.held_out_seeds != reported.held_out_seeds
+                    || actual
+                        .training
+                        .iter()
+                        .map(|sample| sample.source_seed)
+                        .collect::<std::collections::BTreeSet<_>>()
+                        != reported.training_seeds.iter().copied().collect()
+            })
+    {
+        return Err("published seed partitions do not match the training datasets".into());
+    }
+    let seed_ledger = seed_ledger::ledger_from_metrics(config, &metrics.partitions)?;
     if output.exists() {
         return Err(format!(
             "refusing to replace behavior-cloning artifact {}",
@@ -2351,6 +2369,9 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
             .map_err(|error| format!("failed to save behavior-cloned model: {error}"))?;
         let model_file = staging.join("model.mpk");
         let artifact = BehaviorCloningArtifact {
+            seed_ledger: Some(seed_ledger),
+            execution: Some(crate::policy_artifact::PolicyExecutionIdentity::current()),
+            code_revision: option_env!("BLOB_CODE_REVISION").map(str::to_owned),
             schema_version: BEHAVIOR_CLONING_SCHEMA_VERSION,
             package_version: env!("CARGO_PKG_VERSION").into(),
             training_backend: training_backend_id::<B>().into(),
@@ -2373,6 +2394,9 @@ pub fn publish_behavior_clone<B: AutodiffBackend>(
         let mut metadata = serde_json::to_vec_pretty(&artifact)
             .map_err(|error| format!("failed to encode behavior-cloning metadata: {error}"))?;
         metadata.push(b'\n');
+        if metadata.len() > 1024 * 1024 {
+            return Err("behavior-cloning metadata exceeds 1 MiB".into());
+        }
         let metadata_path = staging.join("behavior-cloning.json");
         let mut file = OpenOptions::new()
             .write(true)
@@ -2416,6 +2440,7 @@ mod tests {
         SLOT_NEIGHBOR_ACTIVITY_FEATURE, SLOT_NEIGHBOR_PRESENT_FEATURE, SLOT_PLANT_ENERGY_FEATURE,
     };
     use burn::backend::{Autodiff, NdArray};
+    use std::collections::HashSet;
 
     type TestBackend = Autodiff<NdArray<f32>>;
 
@@ -2664,9 +2689,15 @@ mod tests {
         assert!(conflicting_context_adapters.validate().is_err());
         let unparented_target_only = BehaviorCloningConfig {
             target_query_head_only: true,
+            target_residual_only: false,
             ..BehaviorCloningConfig::default()
         };
         assert!(unparented_target_only.validate().is_err());
+        let unparented_residual = BehaviorCloningConfig {
+            target_residual_only: true,
+            ..BehaviorCloningConfig::default()
+        };
+        assert!(unparented_residual.validate().is_err());
         let unparented_effort_only = BehaviorCloningConfig {
             effort_head_only: true,
             ..BehaviorCloningConfig::default()
@@ -2736,6 +2767,7 @@ mod tests {
                 action_kind_margin: None,
                 action_kind_margin_loss_weight: 0.0,
                 target_query_head_only: false,
+                target_residual_only: false,
                 effort_head_only: false,
                 frozen_template: Some(&frozen_template),
                 learning_rate: 1e-2,
@@ -2813,6 +2845,7 @@ mod tests {
                 action_kind_margin: None,
                 action_kind_margin_loss_weight: 0.0,
                 target_query_head_only: false,
+                target_residual_only: false,
                 effort_head_only: false,
                 frozen_template: Some(&frozen_template),
                 learning_rate: 1e-2,
@@ -2900,6 +2933,7 @@ mod tests {
                 action_kind_margin: None,
                 action_kind_margin_loss_weight: 0.0,
                 target_query_head_only: false,
+                target_residual_only: false,
                 effort_head_only: true,
                 frozen_template: Some(&frozen_template),
                 learning_rate: 1e-2,
@@ -2998,6 +3032,7 @@ mod tests {
                 action_kind_margin: Some(0.0),
                 action_kind_margin_loss_weight: 10.0,
                 target_query_head_only: false,
+                target_residual_only: false,
                 effort_head_only: false,
                 frozen_template: Some(&frozen_template),
                 learning_rate: 1e-2,
@@ -3108,6 +3143,7 @@ mod tests {
                 action_kind_margin: Some(0.0),
                 action_kind_margin_loss_weight: 10.0,
                 target_query_head_only: false,
+                target_residual_only: false,
                 effort_head_only: false,
                 frozen_template: Some(&frozen_template),
                 learning_rate: 1e-2,
@@ -3136,6 +3172,103 @@ mod tests {
         assert_eq!(
             after.next_memory.into_data().to_vec::<f32>().unwrap(),
             before_memory
+        );
+    }
+
+    #[test]
+    fn target_residual_training_changes_targets_and_freezes_every_inherited_parameter() {
+        let _backend_guard = crate::BACKEND_TEST_LOCK.lock().unwrap();
+        let device = Default::default();
+        <TestBackend as Backend>::seed(&device, 720);
+        let mut model = PolicyValueNetConfig {
+            hidden1: 8,
+            hidden2: 8,
+            recurrent_size: 8,
+        }
+        .init::<TestBackend>(&device);
+        let mut sample = demonstration_samples(1).remove(0);
+        for (i, value) in sample.observation.iter_mut().enumerate() {
+            *value = (i % 37) as f32 / 37.0;
+        }
+        sample.action_mask.fill(true);
+        let kind = crate::action::PolicyActionKind::Move.index();
+        sample.action = u16::try_from(
+            crate::action::compose_policy_action(crate::action::HierarchicalActionChoice {
+                kind,
+                target: 1,
+                effort: 0,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let observation = Tensor::<TestBackend, 2>::from_data(
+            TensorData::new(sample.observation.to_vec(), [1, OBS_DIM]),
+            &device,
+        );
+        let before = model.forward(observation.clone());
+        let before_targets = before.target_logits.into_data().to_vec::<f32>().unwrap();
+        let before_memory = before.next_memory.into_data().to_vec::<f32>().unwrap();
+        let before_kinds = before
+            .action_kind_logits
+            .into_data()
+            .to_vec::<f32>()
+            .unwrap();
+        let inherited_bits = model.inherited_target_parameter_bits();
+        let frozen_template = model.clone().fork(&device);
+        let mut optimizer = AdamWConfig::new().init();
+        let action_weights = vec![1.0; NUM_ACTIONS];
+        let phase_weights = [1.0; NUM_ACTION_KIND_EXPERTS];
+        for _ in 0..8 {
+            let chunk = SequenceChunk {
+                samples: vec![&sample],
+                initial_memory: vec![0.0; 8],
+            };
+            model = train_chunk_batch(
+                model,
+                &mut optimizer,
+                &[chunk],
+                SupervisedStep {
+                    loss_weights: SupervisedLossWeights {
+                        actions: &action_weights,
+                        phases: &phase_weights,
+                        phase_gate: 1.0,
+                    },
+                    expert_routing: ExpertRoutingStrategy::ForagingInteractionExploration,
+                    action_kind_expert_only: None,
+                    foraging_adapter_only: false,
+                    context_adapter_only: None,
+                    context_slot_adapter_only: None,
+                    exploration_guard_readiness_only: false,
+                    action_kind_margin: None,
+                    action_kind_margin_loss_weight: 0.0,
+                    target_query_head_only: false,
+                    target_residual_only: true,
+                    effort_head_only: false,
+                    frozen_template: Some(&frozen_template),
+                    learning_rate: 1e-2,
+                    device: &device,
+                },
+            );
+            assert_eq!(model.inherited_target_parameter_bits(), inherited_bits);
+        }
+        let after = model.forward(observation);
+        let targets = after.target_logits.into_data().to_vec::<f32>().unwrap();
+        let offset = kind * NUM_POLICY_TARGETS;
+        assert!(
+            targets[offset + 1] - targets[offset]
+                > before_targets[offset + 1] - before_targets[offset]
+        );
+        assert_eq!(
+            after.next_memory.into_data().to_vec::<f32>().unwrap(),
+            before_memory
+        );
+        assert_eq!(
+            after
+                .action_kind_logits
+                .into_data()
+                .to_vec::<f32>()
+                .unwrap(),
+            before_kinds
         );
     }
 
@@ -3481,6 +3614,8 @@ mod tests {
         let config = BehaviorCloningConfig {
             seed: 9,
             initial_artifact_sha256: None,
+            inherited_seed_ledger: None,
+            confirmation_seeds: Vec::new(),
             epochs: 20,
             minibatch_size: 16,
             learning_rate: 1e-2,
@@ -3501,6 +3636,7 @@ mod tests {
             action_kind_margin: None,
             action_kind_margin_loss_weight: 0.0,
             target_query_head_only: false,
+            target_residual_only: false,
             effort_head_only: false,
             recurrent_unroll_steps: 4,
             exact_round_trip_only: false,
@@ -3735,6 +3871,58 @@ mod tests {
             .to_vec::<f32>()
             .unwrap();
         assert_ne!(fractional_logits, full_logits);
+    }
+
+    #[test]
+    fn partially_overlapping_corpora_share_one_seed_partition() {
+        let training = small_training_config();
+        let (manifest, payload) = generate_demonstrations(
+            &training,
+            "config".into(),
+            &DemonstrationOptions {
+                teacher: MaintainedMindProfile::Simple,
+                seeds: vec![3, 2, 4, 1],
+                max_samples: 16,
+            },
+        )
+        .unwrap();
+        let dataset = |name: &str, seeds: &[u64]| {
+            let mut payload = payload.clone();
+            payload.samples.retain(|s| seeds.contains(&s.source_seed));
+            LoadedDemonstrations {
+                directory: name.into(),
+                manifest_sha256: name.into(),
+                manifest: manifest.clone(),
+                payload,
+            }
+        };
+        let config = BehaviorCloningConfig {
+            seed: 42,
+            validation_fraction: 0.5,
+            ..Default::default()
+        };
+        let datasets = vec![dataset("first", &[3, 2, 4]), dataset("second", &[2, 4, 1])];
+        let partitions = partition_datasets(&datasets, &config).unwrap();
+        let training: HashSet<_> = partitions
+            .iter()
+            .flat_map(|p| &p.training)
+            .map(|s| s.source_seed)
+            .collect();
+        let validation: HashSet<_> = partitions
+            .iter()
+            .flat_map(|p| &p.validation)
+            .map(|s| s.source_seed)
+            .collect();
+        assert!(training.is_disjoint(&validation));
+        assert_eq!(validation, HashSet::from([2, 3]));
+        let incompatible = vec![dataset("first", &[3, 2]), dataset("second", &[2, 4])];
+        assert!(
+            partition_datasets(&incompatible, &config).is_err(),
+            "never switch a seed's role to fill an empty partition"
+        );
+        let reversed = vec![datasets[1].clone(), datasets[0].clone()];
+        let reverse = partition_datasets(&reversed, &config).unwrap();
+        assert_eq!(partitions[0].held_out_seeds, reverse[1].held_out_seeds);
     }
 
     #[test]

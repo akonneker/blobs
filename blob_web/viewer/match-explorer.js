@@ -1,11 +1,7 @@
-const COLORS = ["#65e6a8", "#ffb55e", "#72b7ff", "#e987ff", "#f56f7d", "#d8e66a"];
-const CHECKPOINT_INTERVAL = 128;
-const MATCH_EXPLORER_SCHEMA_VERSION = 1;
+import { SparseMatchHistory } from "./match-history.js";
 
-const cloneState = (state) => ({
-  cells: new Map([...state.cells].map(([key, value]) => [key, { ...value }])),
-  tiles: state.tiles.map((tile) => ({ ...tile, signals: [...(tile.signals ?? [0, 0, 0, 0])] })),
-});
+const COLORS = ["#65e6a8", "#ffb55e", "#72b7ff", "#e987ff", "#f56f7d", "#d8e66a"];
+const MATCH_EXPLORER_SCHEMA_VERSION = 1;
 
 const number = (value) => Number(value ?? 0);
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]);
@@ -23,7 +19,9 @@ class BlobMatchExplorer extends HTMLElement {
     this.bundle = null;
     this.frames = [];
     this.metrics = [];
-    this.checkpoints = new Map();
+    this.history = null;
+    this.loadController = null;
+    this.ready = Promise.resolve();
     this.frameIndex = 0;
     this.state = null;
     this.selectedCell = null;
@@ -48,6 +46,7 @@ class BlobMatchExplorer extends HTMLElement {
   disconnectedCallback() {
     this.stop();
     this.resizeObserver.disconnect();
+    this.loadController?.abort();
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
@@ -60,41 +59,59 @@ class BlobMatchExplorer extends HTMLElement {
 
   setVerifiedMatch(value, verification) {
     if (!verification?.verified) throw new Error("A successful replay verification result is required");
-    this.acceptBundle(value, true);
+    return this.acceptBundle(value, true);
+  }
+
+  beginLoad() {
+    this.loadController?.abort();
+    this.loadController = new AbortController();
+    return this.loadController;
   }
 
   async load(src) {
-    if (!src) return;
+    if (!src) { this.beginLoad(); return; }
+    const controller = this.beginLoad();
     this.setStatus("Loading match…", "busy");
     try {
-      const response = await fetch(src, { cache: "no-store" });
+      const response = await fetch(src, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      this.acceptBundle(await response.json(), false);
+      const bundle = await response.json();
+      if (!controller.signal.aborted) return this.acceptBundle(bundle, false);
     } catch (error) {
-      this.setStatus(`Could not load match: ${error.message}`, "error");
+      if (!controller.signal.aborted) this.setStatus(`Could not load match: ${error.message}`, "error");
     }
   }
 
   acceptBundle(bundle, verified) {
     this.validate(bundle, verified);
     this.stop();
-    this.bundle = bundle;
-    this.verified = verified;
-    this.frameIndex = 0;
-    this.selectedCell = null;
-    this.camera = { scale: 1, x: 0, y: 0 };
-    this.buildIndex();
-    this.seek(0, true);
-    this.renderHeader();
-    const localStatus = bundle.run.canonical_replay
-      ? `Local replay · ${bundle.run.canonical_replay.events} canonical events`
-      : "Local replay · presentation trace";
-    this.setStatus(verified ? "Server-attested replay" : localStatus, verified ? "verified" : "local");
+    const controller = this.beginLoad();
+    this.setStatus("Indexing match…", "busy");
+    this.ready = SparseMatchHistory.build(bundle, controller.signal).then((history) => {
+      if (controller.signal.aborted) return;
+      this.bundle = bundle;
+      this.history = history;
+      this.frames = history.frames;
+      this.metrics = history.metrics;
+      this.verified = verified;
+      this.frameIndex = 0;
+      this.selectedCell = null;
+      this.camera = { scale: 1, x: 0, y: 0 };
+      this.seek(0, true);
+      this.renderHeader();
+      const localStatus = bundle.run.canonical_replay
+        ? `Local replay · ${bundle.run.canonical_replay.events} canonical events`
+        : "Local replay · presentation trace";
+      this.setStatus(verified ? "Server-attested replay" : localStatus, verified ? "verified" : "local");
+    }).catch((error) => {
+      if (!controller.signal.aborted) this.setStatus(`Could not index match: ${error.message}`, "error");
+    });
+    return this.ready;
   }
 
   validate(bundle, verified) {
     if (!bundle || bundle.schema_version !== MATCH_EXPLORER_SCHEMA_VERSION) throw new Error(`Expected match explorer schema ${MATCH_EXPLORER_SCHEMA_VERSION}`);
-    if (!bundle.run?.board || !Number.isInteger(bundle.run.board.width) || !Number.isInteger(bundle.run.board.height)) {
+    if (!bundle.run?.board || !Number.isSafeInteger(bundle.run.board.width) || bundle.run.board.width <= 0 || !Number.isSafeInteger(bundle.run.board.height) || bundle.run.board.height <= 0) {
       throw new Error("Match board dimensions are missing");
     }
     if (!Array.isArray(bundle.teams) || !Array.isArray(bundle.initial?.cells) || !Array.isArray(bundle.initial?.tiles)) {
@@ -111,7 +128,14 @@ class BlobMatchExplorer extends HTMLElement {
     }
     if (bundle.initial.tiles.length !== area) throw new Error(`Expected ${area} initial tiles`);
     const ids = new Set(bundle.teams.map((team) => String(team.id)));
-    for (const cell of [...bundle.initial.cells, ...bundle.events.flatMap((event) => event.cells ?? [])]) {
+    let changedValues = 0;
+    for (const event of bundle.events) {
+      changedValues += (event.tiles?.length ?? 0) + (event.cells?.length ?? 0);
+      if (changedValues > 2_000_000) throw new Error("Match patch history exceeds the local viewer limit");
+    }
+    const retainedValues = area + bundle.initial.cells.length + 2 * changedValues + bundle.teams.length * (bundle.events.length + 1);
+    if (retainedValues > 4_000_000) throw new Error("Match history exceeds the local viewer memory budget");
+    for (const cells of [bundle.initial.cells, ...bundle.events.map((event) => event.cells ?? [])]) for (const cell of cells) {
       if (Object.hasOwn(cell, "team")) throw new Error(`Cell ${cell.key} embeds a team; use presentation.cell_teams`);
       if (!ids.has(String(bundle.presentation.cell_teams[String(cell.key)]))) throw new Error(`Unknown presentation team for cell ${cell.key}`);
     }
@@ -121,89 +145,12 @@ class BlobMatchExplorer extends HTMLElement {
     return this.bundle.presentation.cell_teams[String(key)];
   }
 
-  buildIndex() {
-    const initial = {
-      cells: new Map(this.bundle.initial.cells.map((cell) => [String(cell.key), { ...cell, key: String(cell.key), team: this.teamForKey(cell.key) }])),
-      tiles: this.bundle.initial.tiles.map((tile) => ({ ...tile, signals: [...(tile.signals ?? [0, 0, 0, 0])] })),
-    };
-    this.frames = [{ sequence: "initial", time: number(this.bundle.initial.time), summary: "Initial state", actions: 0 }, ...this.bundle.events];
-    this.checkpoints = new Map([[0, cloneState(initial)]]);
-    this.metrics = [];
-    const actionTotals = new Map(this.bundle.teams.map((team) => [String(team.id), {
-      families: {}, foodOpportunities: 0, consumeSelections: 0, consumedEnergy: 0,
-    }]));
-    let working = initial;
-    this.metrics.push(this.measure(working, this.frames[0], actionTotals));
-    this.bundle.events.forEach((event, eventIndex) => {
-      this.applyEvent(working, event);
-      for (const action of event.resolved_actions ?? []) {
-        const totals = actionTotals.get(String(this.teamForKey(action.actor)));
-        if (!totals) continue;
-        const family = String(action.family ?? "unknown");
-        totals.families[family] = number(totals.families[family]) + 1;
-        if (action.food_at_origin) totals.foodOpportunities += 1;
-        if (family === "consume") totals.consumeSelections += 1;
-        totals.consumedEnergy += number(action.consumed_energy);
-      }
-      const frameIndex = eventIndex + 1;
-      this.metrics.push(this.measure(working, event, actionTotals));
-      if (frameIndex % CHECKPOINT_INTERVAL === 0) this.checkpoints.set(frameIndex, cloneState(working));
-    });
-  }
-
-  applyEvent(state, event) {
-    for (const patch of event.tiles ?? []) {
-      const previous = state.tiles[patch.index];
-      if (!previous) continue;
-      state.tiles[patch.index] = { ...previous, ...patch, signals: [...(patch.signals ?? previous.signals ?? [0, 0, 0, 0])] };
-    }
-    for (const patch of event.cells ?? []) {
-      const key = String(patch.key);
-      if (patch.alive === false || patch.remove === true) state.cells.delete(key);
-      else state.cells.set(key, { ...(state.cells.get(key) ?? {}), ...patch, key, team: this.teamForKey(key) });
-    }
-  }
-
-  measure(state, frame, actionTotals) {
-    const teams = new Map(this.bundle.teams.map((team) => {
-      const totals = actionTotals.get(String(team.id));
-      return [String(team.id), {
-        energy: 0,
-        population: 0,
-        actions: { ...(totals?.families ?? {}) },
-        foodOpportunities: number(totals?.foodOpportunities),
-        consumeSelections: number(totals?.consumeSelections),
-        consumedEnergy: number(totals?.consumedEnergy),
-      }];
-    }));
-    for (const cell of state.cells.values()) {
-      const value = teams.get(String(cell.team));
-      if (value) {
-        value.energy += totalCellEnergy(cell);
-        value.population += 1;
-      }
-    }
-    return {
-      time: number(frame.time),
-      actions: number(frame.actions),
-      births: (frame.births ?? []).length,
-      deaths: (frame.deaths ?? []).length,
-      environment: state.tiles.reduce((sum, tile) => sum + totalTileEnergy(tile), 0),
-      teams,
-    };
-  }
-
   seek(index, force = false) {
-    const target = Math.max(0, Math.min(this.frames.length - 1, number(index)));
+    if (!this.history) return;
+    const target = Math.max(0, Math.min(this.frames.length - 1, Math.trunc(number(index)) || 0));
     if (!force && target === this.frameIndex) return;
-    const checkpointIndex = Math.floor(target / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
-    let state = cloneState(this.checkpoints.get(checkpointIndex) ?? this.checkpoints.get(0));
-    for (let cursor = checkpointIndex + 1; cursor <= target; cursor += 1) this.applyEvent(state, this.frames[cursor]);
-    this.state = state;
+    this.state = this.history.seek(target);
     this.frameIndex = target;
-    if (this.selectedCell && !state.cells.has(this.selectedCell)) {
-      // Keep the identity selected so its death is visible in the inspector.
-    }
     this.updateFrame();
   }
 

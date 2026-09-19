@@ -119,7 +119,7 @@ impl ActionTelemetry {
             .saturating_add(u128::from(outcome.consumed_energy));
     }
 
-    fn merge(&mut self, other: &Self) {
+    pub(crate) fn merge(&mut self, other: &Self) {
         self.committed = self.committed.saturating_add(other.committed);
         self.accepted = self.accepted.saturating_add(other.accepted);
         self.rejected_at_commit = self

@@ -41,7 +41,7 @@ pub fn reference_mind_input_to_capnp(
     input: &ReferenceMindInput,
     limits: ReferenceMindLimits,
 ) -> capnp::Result<Vec<u8>> {
-    validate_input(input, limits)?;
+    validate_reference_mind_input(input, limits)?;
     let mut message = capnp::message::Builder::new_default();
     let mut root = message.init_root::<wire::reference_mind_input::Builder>();
     {
@@ -308,7 +308,7 @@ pub fn capnp_to_reference_mind_input(
         private_memory,
         randomness: PrivateRandom::from_bytes(randomness),
     };
-    validate_input(&input, limits)?;
+    validate_reference_mind_input(&input, limits)?;
     Ok(input)
 }
 
@@ -699,7 +699,11 @@ fn read_signal_energy(
     Ok(Some(values))
 }
 
-fn validate_input(input: &ReferenceMindInput, limits: ReferenceMindLimits) -> capnp::Result<()> {
+/// Validate an in-memory input with the same bounds and scalar rules as the wire ABI.
+pub fn validate_reference_mind_input(
+    input: &ReferenceMindInput,
+    limits: ReferenceMindLimits,
+) -> capnp::Result<()> {
     if input.slots.len() > limits.max_slots || input.slots.len() > REFERENCE_MAX_LOCAL_SLOTS {
         return Err(failed("reference Mind input has too many local slots"));
     }

@@ -174,16 +174,7 @@ pub fn publish_feeding_evaluation(
 }
 
 pub fn load_feeding_evaluation(path: &Path) -> Result<FeedingEvaluationArtifact, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > MAX_ARTIFACT_BYTES {
-        return Err(format!(
-            "feeding-evaluation artifact exceeds {MAX_ARTIFACT_BYTES} bytes"
-        ));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_ARTIFACT_BYTES)?;
     let artifact: FeedingEvaluationArtifact = serde_json::from_slice(&bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;
@@ -199,6 +190,11 @@ pub fn verify_feeding_evaluation_request(
     seeds: &[u64],
 ) -> Result<(), String> {
     artifact.validate()?;
+    if artifact.code_revision.as_deref() != option_env!("BLOB_CODE_REVISION") {
+        return Err(
+            "evaluation reuse requires the same source build and policy execution semantics".into(),
+        );
+    }
     if artifact.source_config_sha256 != source_config_sha256
         || artifact.behavior_clone_metadata_sha256 != behavior_clone_metadata_sha256
         || artifact.behavior_clone_model_sha256 != behavior_clone_model_sha256
@@ -220,6 +216,9 @@ pub fn merge_feeding_evaluations(
         .first()
         .ok_or_else(|| "feeding-evaluation merge requires at least one artifact".to_string())?;
     first.validate()?;
+    if first.code_revision.as_deref() != option_env!("BLOB_CODE_REVISION") {
+        return Err("merge requires evaluation shards from the current source build".into());
+    }
     let mut seeds = Vec::new();
     let mut seen_seeds = std::collections::HashSet::new();
     let mut stages = [
@@ -229,7 +228,8 @@ pub fn merge_feeding_evaluations(
 
     for artifact in artifacts {
         artifact.validate()?;
-        if artifact.source_config_sha256 != first.source_config_sha256
+        if artifact.code_revision != first.code_revision
+            || artifact.source_config_sha256 != first.source_config_sha256
             || artifact.behavior_clone_metadata_sha256 != first.behavior_clone_metadata_sha256
             || artifact.behavior_clone_model_sha256 != first.behavior_clone_model_sha256
             || artifact.config != first.config

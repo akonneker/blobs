@@ -263,16 +263,7 @@ pub fn validate_viability_gate_report(report: &ViabilityGateReport) -> Result<()
 }
 
 fn read_bounded(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {label} {}: {error}", path.display()))?
-        .len();
-    if length > limit {
-        return Err(format!(
-            "{label} {} is {length} bytes; limit is {limit}",
-            path.display()
-        ));
-    }
-    fs::read(path).map_err(|error| format!("failed to read {label} {}: {error}", path.display()))
+    crate::artifact_io::read_bounded(path, limit).map_err(|error| format!("{label}: {error}"))
 }
 
 fn all_actions(families: &ActionFamilyTelemetry) -> [&crate::telemetry::ActionTelemetry; 9] {

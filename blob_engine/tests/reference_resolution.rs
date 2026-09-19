@@ -55,6 +55,47 @@ fn statuses(report: &blob_engine::resolution::BatchReport) -> BTreeMap<CellKey, 
 }
 
 #[test]
+fn checkpoints_preserve_idle_cells_after_time_advances() {
+    use blob_engine::resolution::ReferenceCheckpoint;
+
+    let mut original = ReferenceSimulation::new(3, 2, uniform_rules()).unwrap();
+    let idle = original
+        .add_cell(original.tile(0, 0).unwrap(), 10, 100, 1)
+        .unwrap();
+    let active = original
+        .add_cell(original.tile(2, 1).unwrap(), 10, 100, 2)
+        .unwrap();
+    original.commit_action(active, ActionRequest::Wait).unwrap();
+    original.advance_clock_to(SimTime(64)).unwrap();
+
+    // Preserve both an overdue idle ready time and a still-pending action.
+    for resolve_first in [false, true] {
+        let mut source = original.clone();
+        if resolve_first {
+            source.resolve_next_batch().unwrap();
+        }
+        assert_eq!(source.cell(idle).unwrap().ready_at, SimTime(0));
+        let bytes = ReferenceCheckpoint::from_simulation(&source).to_bytes();
+        let checkpoint = ReferenceCheckpoint::from_bytes(&bytes).unwrap();
+        assert_eq!(checkpoint.to_bytes(), bytes);
+        let mut restored = checkpoint.into_simulation().unwrap();
+        assert_eq!(restored.canonical_state(), source.canonical_state());
+        assert_eq!(restored.state_hash(), source.state_hash());
+        assert_eq!(
+            restored.commit_action(idle, move_toward(EAST)),
+            source.commit_action(idle, move_toward(EAST))
+        );
+        assert_eq!(restored.resolve_next_batch(), source.resolve_next_batch());
+        assert_eq!(restored.canonical_state(), source.canonical_state());
+    }
+
+    // Relaxing idle readiness must still reject overdue pending completions.
+    let mut invalid = original.canonical_state();
+    invalid.now = SimTime(1025);
+    assert!(ReferenceSimulation::from_canonical_state(3, 2, uniform_rules(), invalid).is_err());
+}
+
+#[test]
 fn canonical_checkpoint_restore_validates_and_preserves_the_hash() {
     let mut original = ReferenceSimulation::new(3, 2, uniform_rules()).unwrap();
     original

@@ -17,6 +17,29 @@ in `blob_web/pkg`. The raw release WASM build is part of repository conformance;
 generating the JavaScript glue is kept out of conformance so the CLI is not an
 implicit development dependency.
 
+## Browser integration tests
+
+With the matching CLI and Chromium installed, prepare fresh native-signed test
+fixtures and the generated WASM package, then run the suite:
+
+```sh
+npm ci --prefix browser-tests
+npm exec --prefix browser-tests -- playwright install chromium
+npm run prepare:wasm --prefix browser-tests
+npm test --prefix browser-tests
+```
+
+CI runs this preparation on every browser job. Generated files under `pkg` and
+`browser-tests/fixtures/generated` are ignored and must be rebuilt after Rust or
+wrapper changes. The fixture uses a public, fixed test seed, native server
+re-execution and the real native signer. Chromium loads the actual generated
+module, replays/seeks across segments, checks BigInt/typed-array exports against
+native hashes, and verifies Ed25519 with real WebCrypto. It rejects wrong keys,
+altered signatures/signed messages, a different replay manifest, malformed
+bytes and over-budget seeks. A separate capability fault checks the explicit
+unverified result when WebCrypto is unavailable. No submitted guest is executed
+by these tests; cross-language Mind conformance remains a separate gate.
+
 ## Replay
 
 ```js
@@ -103,7 +126,7 @@ scripts/serve_telemetry_viewer.sh
 
 The match explorer is at `http://localhost:4173/?view=match`. It supports
 pan/zoom, selectable and followable cells, event stepping and playback, sparse
-seek checkpoints, field layers, per-team energy and population timelines,
+reversible history, field layers, per-team energy and population timelines,
 environmental energy, selected-cell mass-energy history, and current-resolution
 details. Resolver events also expose selected action families, outcome status,
 food present at each action origin, requested amounts, and exact consumed
@@ -123,6 +146,12 @@ until then browser-loaded bundles are always labeled local and unverified, and
 JSON that claims verification or a replay commitment is rejected. An enclosing
 site may call `setVerifiedMatch(bundle, verification)` only after the canonical
 replay and its presentation binding have been verified.
+
+History indexing lives in `viewer/match-history.js`. It stores undo values for
+changed tiles/cells and computes team metrics incrementally. Indexing yields
+between event chunks, and a newer load cancels the previous one. Loading also
+applies a combined retained-value budget; seeking costs the patches crossed.
+`setVerifiedMatch` returns a promise that resolves after indexing completes.
 
 The UI is the dependency-free Shadow-DOM custom element
 `<blob-match-explorer>` in `viewer/match-explorer.js`, so it can later be

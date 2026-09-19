@@ -1,5 +1,10 @@
 # RL training and rules-tuning plan
 
+For current priorities, start with the [project handoff](project-handoff.md) and
+[review cleanup](cleanup-2026-09-05.md). The [experiment index](experiment-index.md)
+summarizes all retained sweeps and their recorded dispositions. The history below
+is evidence; historical schema and behavior descriptions are not current defaults.
+
 ## Learned-policy randomness semantics
 
 Learned policies receive the same deterministic, cell-private 32-byte random

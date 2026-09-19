@@ -25,7 +25,7 @@ use crate::micro_combat::{MicroCombatEvaluationReport, MicroCombatRotationState}
 use crate::model::{PolicyValueNet, PolicyValueNetConfig};
 use crate::telemetry::TrainingTelemetryState;
 
-pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 44;
+pub const TRAINING_ARTIFACT_SCHEMA_VERSION: u32 = 46;
 const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_RESUME_STATE_BYTES: u64 = 512 * 1024 * 1024;
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -33,6 +33,7 @@ static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 /// Metadata stored beside an immutable model and optimizer record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointMetadata {
+    pub execution: crate::policy_artifact::PolicyExecutionIdentity,
     pub schema_version: u32,
     pub package_version: String,
     pub code_revision: Option<String>,
@@ -283,6 +284,9 @@ fn verified_metadata(directory: &Path) -> Result<CheckpointMetadata, String> {
             metadata.schema_version, TRAINING_ARTIFACT_SCHEMA_VERSION
         ));
     }
+    if metadata.execution != crate::policy_artifact::PolicyExecutionIdentity::current() {
+        return Err("checkpoint policy execution identity is incompatible".into());
+    }
     metadata
         .config
         .validate()
@@ -440,16 +444,7 @@ pub fn verify_checkpoint_metadata(directory: &Path) -> Result<CheckpointMetadata
 }
 
 fn read_bounded(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
-    let length = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len();
-    if length > max_bytes {
-        return Err(format!(
-            "{} is {length} bytes; limit is {max_bytes}",
-            path.display()
-        ));
-    }
-    fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))
+    crate::artifact_io::read_bounded(path, max_bytes)
 }
 
 fn write_json_file(path: &Path, value: &impl Serialize) -> Result<(), String> {
@@ -560,6 +555,7 @@ where
     sync_file(&model_path)?;
     sync_file(&optimizer_path)?;
     let metadata = CheckpointMetadata {
+        execution: crate::policy_artifact::PolicyExecutionIdentity::current(),
         schema_version: TRAINING_ARTIFACT_SCHEMA_VERSION,
         package_version: env!("CARGO_PKG_VERSION").to_string(),
         code_revision: option_env!("BLOB_CODE_REVISION").map(str::to_string),
@@ -621,6 +617,9 @@ where
     O: Optimizer<PolicyValueNet<B>, B>,
 {
     let metadata = verified_metadata(directory)?;
+    if metadata.code_revision.as_deref() != option_env!("BLOB_CODE_REVISION") {
+        return Err("exact resume requires the original source build; use a policy-only import for a different build".into());
+    }
     let current_backend = training_backend_id::<B>();
     if metadata.training_backend != current_backend {
         return Err(format!(
@@ -1108,6 +1107,27 @@ mod tests {
         .err()
         .expect("an exact cross-backend resume must be rejected");
         assert!(backend_error.contains("cannot be resumed exactly"));
+        write_json_file(&metadata_path, &metadata).unwrap();
+        let mut changed_build = metadata.clone();
+        changed_build.code_revision = Some("another-source-build".into());
+        write_json_file(&metadata_path, &changed_build).unwrap();
+        assert!(load_checkpoint::<TestBackend, _>(
+            &checkpoint,
+            &crate::model::PolicyValueNetConfig::new(),
+            AdamWConfig::new().init(),
+            &device,
+        )
+        .err()
+        .unwrap()
+        .contains("original source build"));
+        // A policy import does not claim exact continuation across builds.
+        load_policy_snapshot::<NdArray<f32>>(&checkpoint, &device).unwrap();
+        changed_build.execution.expert_routing = "incompatible-router".into();
+        write_json_file(&metadata_path, &changed_build).unwrap();
+        assert!(load_policy_snapshot::<NdArray<f32>>(&checkpoint, &device)
+            .err()
+            .unwrap()
+            .contains("execution identity"));
         write_json_file(&metadata_path, &metadata).unwrap();
         let snapshot = load_policy_snapshot::<NdArray<f32>>(&checkpoint, &device).unwrap();
         assert_eq!(snapshot.checkpoint, "checkpoint-00000007");

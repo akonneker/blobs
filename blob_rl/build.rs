@@ -1,49 +1,82 @@
-use std::env;
-use std::path::Path;
-use std::process::Command;
+mod build_support;
 
-fn command_output(program: &str, args: &[&str], workspace: &Path) -> Option<String> {
-    let output = Command::new(program)
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::{env, fs};
+
+fn git(root: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
         .args(args)
-        .current_dir(workspace)
+        .current_dir(root)
         .output()
         .ok()?;
     output
         .status
         .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn main() {
+    let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap())
+        .parent()
+        .unwrap()
+        .to_owned();
     println!("cargo:rerun-if-env-changed=BLOB_CODE_REVISION");
-    println!("cargo:rerun-if-changed=../.git/HEAD");
-    println!("cargo:rerun-if-changed=../.git/index");
-
-    if env::var_os("BLOB_CODE_REVISION").is_some() {
-        return;
+    // Resolve indirection for worktrees and packed branches as well as ordinary checkouts.
+    for name in [
+        "HEAD".to_owned(),
+        "index".to_owned(),
+        "packed-refs".to_owned(),
+    ]
+    .into_iter()
+    .chain(git(&root, &["symbolic-ref", "-q", "HEAD"]))
+    {
+        if let Some(path) = git(&root, &["rev-parse", "--git-path", &name]) {
+            let path = root.join(path);
+            if path.exists() {
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+        }
     }
-
-    let workspace = Path::new("..");
-    let Some(mut revision) = command_output("git", &["rev-parse", "HEAD"], workspace) else {
-        return;
-    };
-    if revision.is_empty() {
-        return;
+    if root.join(".git").is_file() {
+        println!("cargo:rerun-if-changed={}", root.join(".git").display());
     }
-
-    let dirty = Command::new("git")
-        .args([
-            "status",
-            "--porcelain",
-            "--untracked-files=normal",
-            "--",
-            ".",
-        ])
-        .current_dir(workspace)
-        .output()
-        .is_ok_and(|output| output.status.success() && !output.stdout.is_empty());
-    if dirty {
-        revision.push_str("+dirty");
+    let mut inputs: Vec<PathBuf> = [
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        ".cargo",
+        "blob_rl/build.rs",
+        "blob_rl/build_support.rs",
+        "blob_rl/config",
+        "blob_interface/interface",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .collect();
+    let crates = ["blob_engine", "blob_interface", "blob_rl", "blob_policy"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(
+            fs::read_dir(root.join("minds"))
+                .unwrap()
+                .map(|entry| PathBuf::from("minds").join(entry.unwrap().file_name())),
+        );
+    for directory in crates {
+        inputs.push(directory.join("Cargo.toml"));
+        inputs.push(directory.join("build.rs"));
+        inputs.push(directory.join("src"));
     }
-    println!("cargo:rustc-env=BLOB_CODE_REVISION={revision}");
+    for input in inputs.iter().filter(|input| root.join(input).exists()) {
+        println!("cargo:rerun-if-changed={}", root.join(input).display());
+    }
+    let files =
+        build_support::source_files(&root, &inputs).expect("cannot enumerate training sources");
+    let digest = build_support::source_digest(&root, &files).expect("cannot hash training sources");
+    let revision = env::var("BLOB_CODE_REVISION")
+        .ok()
+        .or_else(|| git(&root, &["rev-parse", "HEAD"]))
+        .unwrap_or_else(|| "unversioned".into());
+    // Always bind actual content, including dirty edits and builds without .git.
+    println!("cargo:rustc-env=BLOB_CODE_REVISION={revision}+source:{digest}");
 }

@@ -694,17 +694,9 @@ pub fn publish_feeding_transition(
 }
 
 pub fn load_feeding_transition(path: &Path) -> Result<FeedingTransitionArtifact, String> {
-    if fs::metadata(path)
-        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-        .len()
-        > MAX_ARTIFACT_BYTES
-    {
-        return Err("feeding transition artifact is too large".into());
-    }
-    let artifact: FeedingTransitionArtifact = serde_json::from_slice(
-        &fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?,
-    )
-    .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    let bytes = crate::artifact_io::read_bounded(path, MAX_ARTIFACT_BYTES)?;
+    let artifact: FeedingTransitionArtifact = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     artifact.validate()?;
     Ok(artifact)
 }
@@ -719,6 +711,11 @@ pub fn verify_feeding_transition_request(
     policy_randomness: PolicyRandomnessMode,
 ) -> Result<(), String> {
     artifact.validate()?;
+    if artifact.code_revision.as_deref() != option_env!("BLOB_CODE_REVISION") {
+        return Err(
+            "evaluation reuse requires the same source build and policy execution semantics".into(),
+        );
+    }
     if artifact.source_config_sha256 != source_config_sha256
         || artifact.behavior_clone_metadata_sha256 != behavior_clone_metadata_sha256
         || artifact.behavior_clone_model_sha256 != behavior_clone_model_sha256

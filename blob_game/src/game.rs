@@ -100,12 +100,13 @@ struct ReplayStreamConfigSaveState {
     max_checkpoint_bytes: u64,
     max_checkpoint_tiles: u64,
     max_checkpoint_cells: u64,
+    max_checkpoint_cell_slots: u64,
     max_checkpoint_private_memory_bytes: u64,
     max_manifest_bytes: u64,
     max_manifest_segments: u64,
 }
 const GAME_STATE_MAGIC: &[u8; 8] = b"BLBGST01";
-const GAME_STATE_VERSION: u16 = 11;
+const GAME_STATE_VERSION: u16 = 12;
 const MAX_GAME_STATE_BYTES: usize = 128 * 1024 * 1024;
 const PARALLEL_WASM_OBSERVATION_THRESHOLD: usize = 256;
 
@@ -231,6 +232,7 @@ impl ReplayStreamConfigSaveState {
             max_checkpoint_bytes: checkpoint.max_checkpoint_bytes as u64,
             max_checkpoint_tiles: checkpoint.max_tiles as u64,
             max_checkpoint_cells: checkpoint.max_cells as u64,
+            max_checkpoint_cell_slots: checkpoint.max_cell_slots as u64,
             max_checkpoint_private_memory_bytes: checkpoint.max_private_memory_bytes as u64,
             max_manifest_bytes: config.manifest_limits.max_manifest_bytes as u64,
             max_manifest_segments: config.manifest_limits.max_segments as u64,
@@ -271,6 +273,10 @@ impl ReplayStreamConfigSaveState {
                     )?,
                     max_tiles: saved_usize(self.max_checkpoint_tiles, "checkpoint tiles")?,
                     max_cells: saved_usize(self.max_checkpoint_cells, "checkpoint cells")?,
+                    max_cell_slots: saved_usize(
+                        self.max_checkpoint_cell_slots,
+                        "checkpoint cell slots",
+                    )?,
                     max_private_memory_bytes: saved_usize(
                         self.max_checkpoint_private_memory_bytes,
                         "checkpoint private memory",
@@ -1907,15 +1913,18 @@ mod tests {
 
         let mut bytes = fs::read(&path).unwrap();
         let version_start = GAME_STATE_MAGIC.len();
-        bytes[version_start..version_start + 2].copy_from_slice(&10_u16.to_le_bytes());
+        let previous_version = GAME_STATE_VERSION - 1;
+        bytes[version_start..version_start + 2].copy_from_slice(&previous_version.to_le_bytes());
         fs::write(&path, bytes).unwrap();
         let error = Game::load_state(path.to_str().unwrap(), false)
             .err()
-            .expect("v10 checkpoints must not be accepted")
+            .expect("previous-version checkpoints must not be accepted")
             .to_string();
         fs::remove_file(&path).unwrap();
 
-        assert!(error.contains("unsupported game state version 10; expected 11"));
+        assert!(error.contains(&format!(
+            "unsupported game state version {previous_version}; expected {GAME_STATE_VERSION}"
+        )));
     }
 
     #[test]

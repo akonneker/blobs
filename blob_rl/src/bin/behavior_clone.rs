@@ -1,19 +1,18 @@
 #![recursion_limit = "512"]
 //! Supervised warm-start training from immutable demonstration datasets.
 
+use blob_rl::behavior_cloning::seed_ledger::InheritedSeedLedger;
+use blob_rl::policy_artifact::load_behavior_clone;
+
 use std::path::PathBuf;
 
 use blob_rl::behavior_cloning::{
     behavior_clone_artifact_sha256, behavior_clone_from_model, load_dataset_directories,
-    publish_behavior_clone, verify_behavior_clone_artifact_with_schema, ActionBalancingStrategy,
-    BehaviorCloningConfig, BehaviorCloningFamilyMetrics, BehaviorCloningPhaseMetrics,
-    DatasetSamplingStrategy, ExpertRoutingStrategy, SupervisionPhase,
+    publish_behavior_clone, ActionBalancingStrategy, BehaviorCloningConfig,
+    BehaviorCloningFamilyMetrics, BehaviorCloningPhaseMetrics, DatasetSamplingStrategy,
+    ExpertRoutingStrategy, SupervisionPhase,
 };
-use blob_rl::config::{ModelConfig, TrainingConfig};
-use blob_rl::model::{PolicyValueNet, PolicyValueNetConfig};
-use burn::module::Module;
-use burn::prelude::Backend;
-use burn::record::CompactRecorder;
+use blob_rl::config::TrainingConfig;
 use clap::{Parser, ValueEnum};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -119,53 +118,6 @@ fn format_phase_metrics(metrics: &[BehaviorCloningPhaseMetrics]) -> String {
         .join(", ")
 }
 
-fn load_initial_model<B: Backend>(
-    directory: &std::path::Path,
-    artifact_sha256: &str,
-    model: &ModelConfig,
-    device: &B::Device,
-) -> Result<PolicyValueNet<B>, String> {
-    let (model_path, schema_version) =
-        verify_behavior_clone_artifact_with_schema(directory, artifact_sha256, model)?;
-    let config = PolicyValueNetConfig {
-        hidden1: model.hidden1,
-        hidden2: model.hidden2,
-        recurrent_size: model.recurrent_size,
-    };
-    if schema_version < 25 {
-        let legacy = config
-            .init_legacy::<B>(device)
-            .load_file(model_path, &CompactRecorder::new(), device)
-            .map_err(|error| format!("failed to load legacy behavior clone: {error}"))?;
-        Ok(config.migrate_legacy(legacy, device))
-    } else if schema_version < 28 {
-        let legacy = config
-            .init_foraging_adapter_legacy::<B>(device)
-            .load_file(model_path, &CompactRecorder::new(), device)
-            .map_err(|error| format!("failed to load foraging-adapter behavior clone: {error}"))?;
-        Ok(config.migrate_foraging_adapter(legacy, device))
-    } else if schema_version < 30 {
-        let legacy = config
-            .init_header_context_adapter_legacy::<B>(device)
-            .load_file(model_path, &CompactRecorder::new(), device)
-            .map_err(|error| format!("failed to load header-context-adapter clone: {error}"))?;
-        Ok(config.migrate_header_context_adapter(legacy, device))
-    } else if schema_version < 31 {
-        Err("experimental schema-30 slot-only clones are not migratable; retrain the unpromoted treatment from its verified schema-28/29 parent".into())
-    } else if schema_version < 34 {
-        let legacy = config
-            .init_slot_context_adapter_legacy::<B>(device)
-            .load_file(model_path, &CompactRecorder::new(), device)
-            .map_err(|error| format!("failed to load slot-context-adapter clone: {error}"))?;
-        Ok(config.migrate_slot_context_adapter(legacy, device))
-    } else {
-        config
-            .init::<B>(device)
-            .load_file(model_path, &CompactRecorder::new(), device)
-            .map_err(|error| format!("failed to load behavior clone: {error}"))
-    }
-}
-
 #[derive(Debug, Parser)]
 #[command(
     name = "blob_behavior_clone",
@@ -187,6 +139,22 @@ struct Args {
     /// Verified behavior-cloning artifact used to initialize this stage.
     #[arg(long)]
     initial_behavior_clone: Option<PathBuf>,
+
+    /// Reserve untouched final confirmation seeds; repeat or use comma-separated values.
+    #[arg(long, value_delimiter = ',')]
+    confirmation_seed: Vec<u64>,
+
+    /// Audit a pre-ledger parent; all historical corpus seeds become exposed training seeds.
+    #[arg(long, requires = "initial_behavior_clone")]
+    audit_legacy_lineage: bool,
+
+    /// Immutable ancestors required to audit a pre-ledger parent chain.
+    #[arg(long, requires = "audit_legacy_lineage")]
+    lineage_artifact: Vec<PathBuf>,
+
+    /// Every historical corpus required by the audited parent chain.
+    #[arg(long, requires = "audit_legacy_lineage")]
+    lineage_dataset: Vec<PathBuf>,
 
     #[arg(long, default_value_t = 10)]
     epochs: usize,
@@ -272,6 +240,10 @@ struct Args {
     #[arg(long)]
     target_query_head_only: bool,
 
+    /// Train only the private-random/local-slot target residual from a verified parent.
+    #[arg(long)]
+    target_residual_only: bool,
+
     /// Update only the action-kind-conditioned effort head.
     #[arg(long)]
     effort_head_only: bool,
@@ -315,9 +287,26 @@ fn main() {
             )
         })
     });
+    let inherited_seed_ledger = args.initial_behavior_clone.as_ref().map(|directory| {
+        let hash = initial_artifact_sha256.as_deref().unwrap();
+        let result = if args.audit_legacy_lineage {
+            InheritedSeedLedger::audit_legacy(
+                directory,
+                hash,
+                &training.model,
+                &args.lineage_artifact,
+                &args.lineage_dataset,
+            )
+        } else {
+            InheritedSeedLedger::from_artifact(directory, hash, &training.model)
+        };
+        result.unwrap_or_else(|error| panic!("invalid parent seed lineage: {error}"))
+    });
     let cloning = BehaviorCloningConfig {
         seed: args.seed,
         initial_artifact_sha256: initial_artifact_sha256.clone(),
+        inherited_seed_ledger,
+        confirmation_seeds: args.confirmation_seed,
         epochs: args.epochs,
         minibatch_size: args.minibatch_size,
         learning_rate: args.learning_rate,
@@ -338,6 +327,7 @@ fn main() {
         action_kind_margin: args.action_kind_margin,
         action_kind_margin_loss_weight: args.action_kind_margin_loss_weight,
         target_query_head_only: args.target_query_head_only,
+        target_residual_only: args.target_residual_only,
         effort_head_only: args.effort_head_only,
         recurrent_unroll_steps: args.recurrent_unroll_steps,
         exact_round_trip_only: args.exact_round_trip_only,
@@ -351,8 +341,11 @@ fn main() {
         use burn::backend::{Autodiff, Wgpu};
         type Backend = Autodiff<Wgpu>;
         let device = burn::backend::wgpu::WgpuDevice::default();
+        // Migration creates new adapter features; seed before loading so
+        // matched control/treatment runs receive the same initial residual.
+        <Backend as burn::prelude::Backend>::seed(&device, cloning.seed);
         let initial_model = args.initial_behavior_clone.as_ref().map(|directory| {
-            load_initial_model::<Backend>(
+            load_behavior_clone::<Backend>(
                 directory,
                 initial_artifact_sha256
                     .as_deref()
@@ -407,8 +400,11 @@ fn main() {
         use burn::backend::{Autodiff, NdArray};
         type Backend = Autodiff<NdArray<f32>>;
         let device = Default::default();
+        // Migration creates new adapter features; seed before loading so
+        // matched control/treatment runs receive the same initial residual.
+        <Backend as burn::prelude::Backend>::seed(&device, cloning.seed);
         let initial_model = args.initial_behavior_clone.as_ref().map(|directory| {
-            load_initial_model::<Backend>(
+            load_behavior_clone::<Backend>(
                 directory,
                 initial_artifact_sha256
                     .as_deref()

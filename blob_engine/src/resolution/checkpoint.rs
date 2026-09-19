@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 
 use super::hashing::CanonicalHash;
 #[cfg(not(target_arch = "wasm32"))]
-use super::hashing::IncrementalStateHashSeed;
+use super::hashing::{CellMerkleCache, IncrementalStateHashSeed};
 use super::neighborhood::{
     BoundaryRule, DiagonalCornerRule, LocalOffset, NeighborhoodSpec, ObservationMasks, SlotMask,
     TargetingAction, MAX_LOCAL_SLOTS,
@@ -40,6 +40,9 @@ pub struct CheckpointLimits {
     pub max_checkpoint_bytes: usize,
     pub max_tiles: usize,
     pub max_cells: usize,
+    /// Bounds lifetime key space, including dead cells and empty hash pages.
+    /// This is independent of the live-cell limit: old survivors keep their keys.
+    pub max_cell_slots: usize,
     pub max_private_memory_bytes: usize,
 }
 
@@ -49,6 +52,7 @@ impl Default for CheckpointLimits {
             max_checkpoint_bytes: 64 * 1024 * 1024,
             max_tiles: 4_000_000,
             max_cells: 1_000_000,
+            max_cell_slots: 4_000_000,
             max_private_memory_bytes: 64 * 1024,
         }
     }
@@ -230,8 +234,7 @@ struct PlannerHashSeed {
     tile_page_count: usize,
     tile_base: usize,
     tile_nodes: PlannerDerivedChunks<CanonicalHash>,
-    cell_page_count: usize,
-    cell_base: usize,
+    cell_tree: CellMerkleCache,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -241,8 +244,6 @@ impl PlannerHashSeed {
             parent.compiled_ruleset_hash == seed.compiled_ruleset_hash
                 && parent.tile_page_count == seed.tile_page_count
                 && parent.tile_base == seed.tile_base
-                && parent.cell_page_count == seed.cell_page_count
-                && parent.cell_base == seed.cell_base
         });
         Self {
             compiled_ruleset_hash: seed.compiled_ruleset_hash,
@@ -252,8 +253,7 @@ impl PlannerHashSeed {
                 &seed.tile_nodes[seed.tile_base..seed.tile_base + seed.tile_page_count],
                 compatible_parent.map(|parent| &parent.tile_nodes),
             ),
-            cell_page_count: seed.cell_page_count,
-            cell_base: seed.cell_base,
+            cell_tree: seed.cell_tree,
         }
     }
 
@@ -263,11 +263,7 @@ impl PlannerHashSeed {
             tile_page_count: self.tile_page_count,
             tile_base: self.tile_base,
             tile_nodes: self.tile_nodes.materialize(),
-            cell_page_count: self.cell_page_count,
-            cell_base: self.cell_base,
-            cell_nodes: Vec::new(),
-            cell_leaves: Vec::new(),
-            cell_memory_hashes: Vec::new(),
+            cell_tree: self.cell_tree.clone(),
         }
     }
 
@@ -277,18 +273,39 @@ impl PlannerHashSeed {
 
     fn allocation_bytes(&self) -> usize {
         self.tile_nodes.allocation_bytes()
+            + self
+                .cell_tree
+                .allocations()
+                .iter()
+                .map(|(_, bytes)| bytes)
+                .sum::<usize>()
     }
 
     fn allocations(&self) -> Vec<(*const u8, usize)> {
-        self.tile_nodes.allocations().collect()
+        self.tile_nodes
+            .allocations()
+            .chain(self.cell_tree.allocations())
+            .collect()
     }
 
     fn chunk_count(&self) -> usize {
-        self.tile_nodes.chunk_count()
+        self.tile_nodes.chunk_count() + self.cell_tree.allocations().len()
     }
 
     fn shared_chunk_count(&self, parent: &Self) -> usize {
+        let parent_allocations = parent
+            .cell_tree
+            .allocations()
+            .into_iter()
+            .map(|(pointer, _)| pointer)
+            .collect::<std::collections::BTreeSet<_>>();
         self.tile_nodes.shared_chunk_count(&parent.tile_nodes)
+            + self
+                .cell_tree
+                .allocations()
+                .iter()
+                .filter(|(pointer, _)| parent_allocations.contains(pointer))
+                .count()
     }
 }
 
@@ -573,8 +590,9 @@ impl ReferenceStateCheckpoint {
             (chunks, visited, false)
         };
         let live_hash_seed = simulation.incremental_hash_seed();
-        let hash_seed =
-            (live_hash_seed.tile_page_count >= PLANNER_HASH_SEED_MIN_TILE_PAGES).then(|| {
+        let hash_seed = (live_hash_seed.tile_page_count >= PLANNER_HASH_SEED_MIN_TILE_PAGES
+            || live_hash_seed.cell_tree.page_count() >= 2)
+            .then(|| {
                 Arc::new(PlannerHashSeed::from_seed(
                     live_hash_seed,
                     compatible_parent
@@ -1101,11 +1119,22 @@ impl ReferenceCheckpoint {
         }
         let width = read_usize(&mut reader, "width")?;
         let height = read_usize(&mut reader, "height")?;
+        let area = width
+            .checked_mul(height)
+            .filter(|area| *area > 0 && *area <= limits.max_tiles)
+            .ok_or(CheckpointError::InvalidField(
+                "world dimensions exceed tile limit",
+            ))?;
         let semantic_ruleset_hash = reader.hash()?;
         let compiled_ruleset_hash = reader.hash()?;
         let state_hash = reader.hash()?;
         let rules = decode_ruleset(&mut reader)?;
         let state = decode_state(&mut reader, limits)?;
+        if state.tiles.len() != area {
+            return Err(CheckpointError::InvalidField(
+                "tile count does not match dimensions",
+            ));
+        }
         if reader.remaining() != 0 {
             return Err(CheckpointError::TrailingBytes(reader.remaining()));
         }
@@ -1471,6 +1500,11 @@ fn decode_state(
 ) -> Result<SimulationState, CheckpointError> {
     let now = SimTime(reader.u64()?);
     let next_cell_key = reader.u64()?;
+    if u128::from(next_cell_key) > limits.max_cell_slots as u128 {
+        return Err(CheckpointError::InvalidField(
+            "cell key space exceeds slot limit",
+        ));
+    }
     let tiles = decode_vec(
         reader,
         "checkpoint tiles",
@@ -1478,8 +1512,14 @@ fn decode_state(
         decode_tile_state,
     )?;
     let cells = decode_vec(reader, "checkpoint cells", limits.max_cells, |reader| {
+        let key = reader.u64()?;
+        if key >= next_cell_key {
+            return Err(ReplayError::InvalidBatch(
+                "cell key exceeds allocated key space",
+            ));
+        }
         Ok((
-            CellKey(reader.u64()?),
+            CellKey(key),
             decode_cell_state(reader, limits.max_private_memory_bytes)?,
         ))
     })?;
@@ -1493,4 +1533,114 @@ fn decode_state(
 
 fn read_usize(reader: &mut Reader<'_>, field: &'static str) -> Result<usize, CheckpointError> {
     usize::try_from(reader.u64()?).map_err(|_| CheckpointError::InvalidField(field))
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod trusted_hash_tests {
+    use super::*;
+    use crate::resolution::{ActionRequest, TileIndex};
+
+    fn historical_simulation(pages: u64) -> ReferenceSimulation {
+        let rules = ReferenceRuleset {
+            metabolism_rate_numerator: 0,
+            diffusion_rate_numerator: 0,
+            ..ReferenceRuleset::default()
+        };
+        let mut simulation = ReferenceSimulation::new(4, 4, rules.clone()).unwrap();
+        simulation.add_cell(TileIndex(0), 10, 100, 1).unwrap();
+        simulation.add_cell(TileIndex(1), 10, 100, 2).unwrap();
+        let mut state = simulation.canonical_state();
+        state.next_cell_key = pages * super::super::hashing::STATE_CELL_PAGE_SIZE;
+        state.cells[1].0 = CellKey(state.next_cell_key - 1);
+        state.tiles[1].occupant = Some(state.cells[1].0);
+        ReferenceSimulation::from_canonical_state(4, 4, rules, state).unwrap()
+    }
+
+    fn restore(
+        checkpoint: &ReferenceStateCheckpoint,
+        simulation: &ReferenceSimulation,
+    ) -> Result<ReferenceSimulation, CheckpointError> {
+        checkpoint
+            .clone()
+            .into_simulation_profiled_with_topology(
+                simulation.rules().clone(),
+                simulation.semantic_ruleset_hash(),
+                simulation.compiled_ruleset_hash(),
+                simulation.compiled_topology(),
+            )
+            .map(|(simulation, _)| simulation)
+    }
+
+    #[test]
+    fn historical_small_world_checkpoints_share_hashes_and_isolate_branches() {
+        let mut simulation = historical_simulation(4097);
+        let root = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+        assert!(
+            root.hash_seed.is_some(),
+            "cell history needs a seed even on small boards"
+        );
+        let restored = restore(&root, &simulation).unwrap();
+        assert_eq!(restored.canonical_state(), simulation.canonical_state());
+        let roundtrip = ReferenceStateCheckpoint::from_simulation(&restored, Some(&root));
+        assert_eq!(
+            roundtrip.shared_hash_seed_chunk_count(&root),
+            root.hash_seed_chunk_count()
+        );
+        assert_eq!(
+            root.hash_seed_chunk_allocations().len(),
+            root.hash_seed_chunk_count()
+        );
+        assert!(root.hash_seed_chunk_count() < 64);
+        assert!(root.hash_seed.as_ref().unwrap().allocation_bytes() < 8192);
+
+        simulation
+            .commit_decision(CellKey(0), ActionRequest::Wait, vec![1, 2, 3])
+            .unwrap();
+        let child = ReferenceStateCheckpoint::from_simulation(&simulation, Some(&root));
+        assert!(child.shared_hash_seed_chunk_count(&root) > 0);
+        let mut child_restored = restore(&child, &simulation).unwrap();
+        assert_eq!(
+            child_restored.state_hash(),
+            child_restored
+                .canonical_state()
+                .hash_with_compiled_ruleset(child_restored.compiled_ruleset_hash())
+        );
+        assert_eq!(
+            child_restored.resolve_next_batch().unwrap(),
+            simulation.resolve_next_batch().unwrap()
+        );
+        let root_restored = restore(&root, &simulation).unwrap();
+        assert_eq!(root_restored.state_hash(), root.state_hash());
+        assert_ne!(root_restored.state_hash(), child_restored.state_hash());
+
+        // A stale trusted tree must not hide modified canonical cell content.
+        let mut corrupted = root.clone();
+        let mut cells = corrupted.materialize_cells();
+        cells[0].1.assimilated_energy += 1;
+        corrupted.cell_chunks = PlannerCellChunks::Single(Arc::from(cells));
+        assert!(matches!(
+            restore(&corrupted, &simulation),
+            Err(CheckpointError::StateHashMismatch)
+        ));
+    }
+
+    #[test]
+    #[ignore = "manual release comparison of seeded versus cold historical checkpoint restore"]
+    fn benchmark_historical_checkpoint_restore() {
+        let simulation = historical_simulation(65_536);
+        let checkpoint = ReferenceStateCheckpoint::from_simulation(&simulation, None);
+        let mut cold = checkpoint.clone();
+        cold.hash_seed = None;
+        let mut times = Vec::new();
+        for (label, checkpoint) in [("shared", &checkpoint), ("cold", &cold)] {
+            let started = std::time::Instant::now();
+            for _ in 0..64 {
+                let restored = restore(checkpoint, &simulation).unwrap();
+                assert_eq!(restored.state_hash(), simulation.state_hash());
+                std::hint::black_box(restored);
+            }
+            times.push((label, started.elapsed()));
+        }
+        println!("64 restores, 65,536 historical cell pages, 2 live cells, 4x4 board: shared {:.3} ms, cold {:.3} ms; retained hash allocations {} bytes", times[0].1.as_secs_f64()*1000.0, times[1].1.as_secs_f64()*1000.0, checkpoint.hash_seed.as_ref().unwrap().allocation_bytes());
+    }
 }
