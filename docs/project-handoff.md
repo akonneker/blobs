@@ -1,6 +1,6 @@
 # Project handoff
 
-Updated 2026-09-19. The `codex/learned-agent-minds` branch is the active integration branch.
+Updated 2026-09-23. The `codex/learned-agent-minds` branch is the active integration branch.
 The six-hour roadmap run has completed implementation and validation; see the
 [closeout](roadmap-closeout-2026-09-11.md) and [work log](roadmap-work-2026-09-11.md)
 for results, remaining work and evidence. The cleanup and learned-Mind follow-ups
@@ -9,6 +9,10 @@ revision and working-tree provenance. This document is the short operational ind
 versioned sweep notes remain the detailed evidence.
 The [experiment index](experiment-index.md) records dispositions and successors
 for all 50 retained sweep directories, including plans without result evidence.
+The [learning and environment roadmap](learning-and-environment-roadmap.md) is
+the current experiment order. It pairs environmental calibration with the bounded
+normalization diagnostic. The [harness analysis](harness-information-density.md)
+prioritizes verified compact summaries and actionable failure witnesses.
 
 Build caches, Python bytecode, local environments, training outputs and raw sweep
 artifacts are ignored. Frozen binaries, weights and detailed experiment evidence
@@ -120,9 +124,11 @@ The [hard-example follow-up](interaction-hard-2026-09-13.md) also fails all
 control fits 128/128 rows. Gradient checks pass at batches 2 and 128. The
 [matched standardization check](interaction-standardized-2026-09-13.md) now
 fits 128/128 in all three residual runs by 512 updates, with exact raw-control
-regression. Next is zero-state-preserving normalization and full-corpus
-training: fixture-derived centering otherwise produces extreme inputs for
-2,146 zero-memory states.
+regression. Next are two independent tracks: environment calibration of action
+value and legal observability, and zero-state-preserving normalization on the
+full training corpus. Fixture-derived centering otherwise produces extreme
+inputs for 2,146 zero-memory states. Legal attacks and an aggressive controller
+prove feasibility, but do not establish that combat is strategically profitable.
 A Move-target-only adapter cannot directly acquire Attack selection. Self-play
 remains gated.
 
@@ -229,43 +235,47 @@ to inherit its parent ledger or audit the historical chain, and reserve untouche
 final confirmation seeds. Legacy audits conservatively mark all old corpus seeds
 as exposed, so the next stage needs new validation seeds.
 
-The implementation gates are complete: exact-zero migration, slot permutation,
-row isolation, frozen inherited parameters, execution identity and the cumulative
-schema-37 seed ledger are covered. The remaining experiment gates are:
+The existing residual's implementation gates cover exact-zero migration, slot
+permutation, row isolation, frozen inherited parameters, execution identity and
+the cumulative schema-37 seed ledger. They do not qualify the proposed normalized
+context transform for deployment. Coverage and sampling follow-ups are already
+complete; their failures remain in the experiment index.
 
-1. Expand disjoint training-seed coverage for the fixed per-slot interaction
-   residual, with matched combat/feeding labels on frozen deployed prefixes.
-   The [relational residual](interaction-relational-2026-09-12.md) is implemented:
-   exact-zero migration and first-pair WASM checks pass, but all three treatments
-   fail development retention despite passing training-row thresholds. Keep
-   the architecture and parent fixed for the coverage experiment; preserve
-   the all-run gate, then require new-seed evaluation and deployed combat.
-   Do not select the strongest initialization from development results.
-   Carry the seed audit (61 training, 24 validation, two reserved confirmation
-   seeds); 1435600201/1435600202 remain exposed and excluded from training.
-   Deployed-Mind combat evaluation is implemented; all seven
-   frozen feeding candidates fail its activity/kill gate despite legal occupied
-   attack opportunities and a passing maintained baseline. The Move-target-only
-   utility cannot directly fix action kind. Fresh-development sustained feeding
-   passes all 140 episodes, but one uses 4,014 of 4,096 host steps; retain explicit
-   safety-cap checks. Keep final confirmation seeds
-   1434999901/1434999902 untouched. Broader seed, visibility, neighborhood-capacity
-   and resource-distribution coverage remain open.
-2. Keep execution identities and evidence attached to each imported artifact.
-   The current composite's feeding result does not qualify unrelated legacy
-   checkpoints, combat behavior or future migrations. Retain historical
-   code/container digests for reproduction and untouched confirmation seeds.
-3. Qualify fixed-opponent combat while checking feeding
-   retention, then consider self-play. Keep evaluation concurrency bounded. A
-   historical 256x256 evaluator retaining complete histories used roughly 3–9
-   GiB per process on `fitty`; do not run six such workers on its 60 GiB host.
+The [current roadmap](learning-and-environment-roadmap.md) orders the next work:
+
+1. Add a compact verified reporting pilot for the next experiments, retaining raw
+   logs, explicit coverage, scientific gate results and actionable failures.
+2. Calibrate the environment with fixed legal controllers, energy/time bounds and
+   paired resource/contact/combat/horizon variants. Separately finish the matched
+   zero-state-preserving normalization diagnostic on the frozen 8,312 training rows.
+3. Extend counterfactual branches beyond Guard/Move to measure profitable action
+   opportunities and whether an ordinary Mind can identify them. Keep the original
+   rules and teacher-label diagnostic distinct from any new scenario or corpus.
+4. Join useful-opportunity evidence with joint combat/feeding training retention,
+   then spend declared development gates. Qualify exported candidates through
+   native/WASM checks and autonomous combat, feeding retention and recovery before
+   self-play. Do not select the strongest initialization retrospectively.
+
+Carry cumulative exposure ledgers, including the coverage study's 63 training,
+24 validation and two reserved confirmation seeds. Seeds 1435600201/1435600202
+remain exposed and excluded from training; audit fresh seeds/configurations for
+new generalization claims. Keep confirmation seeds 1434999901/1434999902 untouched.
+Changing environment settings must not silently change the benchmark or retrain
+against development outcomes.
+
+Retain source/binary/execution identities for every imported artifact. Broader
+seed, visibility, neighborhood-capacity and resource-distribution coverage remain
+open. Keep evaluation concurrency bounded: historical full-history 256x256 workers
+used about 3–9 GiB each. The fresh sustained-feeding cohort passes, but one episode
+uses 4,014 of 4,096 host steps; safety aborts must remain explicit incomplete evidence.
 
 ## Remaining product work
 
 - Establish robust feeding and combat baselines, then introduce self-play only
   after fixed-opponent competence and retention gates pass.
-- Tune physics and victory criteria through paired viability sweeps rather than
-  co-adapting rules and policies in one experiment.
+- Establish useful incentives and locally identifiable opportunities through the
+  current environment calibration track; keep paired rule/scenario changes
+  independent of policy training and preserve the original benchmark.
 - Expand long-horizon 256/512/1024 training without retaining unnecessary full
   histories in evaluation workers.
 - Finish production upload authentication, sandboxed source compilation,

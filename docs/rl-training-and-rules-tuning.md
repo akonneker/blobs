@@ -1,7 +1,9 @@
 # RL training and rules-tuning plan
 
-For current priorities, start with the [project handoff](project-handoff.md) and
-[review cleanup](cleanup-2026-09-05.md). The [experiment index](experiment-index.md)
+For current priorities, start with the [learning and environment roadmap](learning-and-environment-roadmap.md)
+and [project handoff](project-handoff.md). The [harness analysis](harness-information-density.md)
+proposes compact verified reporting for the next studies. See the
+[review cleanup](cleanup-2026-09-05.md) for the earlier correctness work. The [experiment index](experiment-index.md)
 summarizes all retained sweeps and their recorded dispositions. The history below
 is evidence; historical schema and behavior descriptions are not current defaults.
 

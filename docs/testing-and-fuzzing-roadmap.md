@@ -39,6 +39,22 @@ run uses the trained frozen parent. Burn/export numerical fidelity has its own
 recorded tolerance and cannot be conflated with exact WASM parity. Direct PPO
 export, cross-host numerical qualification and deterministic fuel remain open.
 
+## Harness reporting priority (2026-09-23)
+
+The [information-density analysis](harness-information-density.md) proposes a
+small reporting pilot before the next large experiment matrix. It preserves all
+checks and full evidence while reducing repeated logs and ambiguous failures.
+Implement in order: bounded verified summaries with coverage and exit accounting;
+structured invariant failures with replayable witnesses; then compatible-baseline
+diffs and carefully keyed result reuse. Keep execution, evidence validity and
+scientific qualification separate. These reporting changes are not yet implemented.
+
+Use the [learning/environment roadmap](learning-and-environment-roadmap.md) for
+experimental priorities. The calibration harness must distinguish legal, successful
+and beneficial actions, and report incomplete/censored episodes explicitly.
+Reporter tests must reject zero-match, missing/truncated output, stale identity and
+unknown formats as passes, retain ignored/not-run gates, and preserve failure exits.
+
 ## Missing deterministic tests
 
 ### Implemented viability-sweep gates

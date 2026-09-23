@@ -1,6 +1,6 @@
 # Experiment index
 
-Updated 2026-09-13. Start with the [project handoff](project-handoff.md) for the
+Updated 2026-09-23. Start with the [project handoff](project-handoff.md) for the
 current task order. This index separates historical dispositions from runnable
 plans and points into all 50 retained sweep directories. Results below summarize
 the linked local evidence; they do not requalify old models under today's source
@@ -14,10 +14,13 @@ fail and reproduce their prior weights exactly. This is a training-only result.
 The full-corpus range audit identifies 2,146 zero-history states that need
 explicit handling before transferring the fixture-derived transform.
 
-Next: zero-state-preserving normalization and matched full-corpus training,
-then the unchanged all-run development gates and deployed combat/feeding
-outcomes. The original frozen Minds still lack qualified combat behavior.
-No diagnostic model is promoted, and self-play remains gated.
+Next: the [learning and environment roadmap](learning-and-environment-roadmap.md)
+runs fixed-controller environment calibration alongside zero-state-preserving
+normalization and matched full-corpus training. Counterfactual action-value and
+legal-observability checks then inform qualification: attack feasibility alone
+does not establish strategic benefit. Retain all-run development and deployed
+combat/feeding gates. These are planned studies, not new results; no diagnostic
+model is promoted, and self-play remains gated.
 
 | Current evidence | Disposition |
 | --- | --- |
@@ -30,7 +33,7 @@ No diagnostic model is promoted, and self-play remains gated.
 | [Error-balanced sampling](interaction-sampling-2026-09-12.md) | Feeding improves by losing combat, including on training rows; all three treatments fail. Superseded by the direct-context probe. |
 | [Direct private context](interaction-context-2026-09-13.md) | Nine fits, 27 training checkpoints; none passes. Superseded by the hard-example follow-up. |
 | [Hard-example fixture](interaction-hard-2026-09-13.md) | Residual fails all 24 checkpoints; gradients pass and a linear observation-plus-memory control fits 128/128. Superseded by the matched standardization check. |
-| [Standardized memory](interaction-standardized-2026-09-13.md) | All three residual fits reach 128/128 by 512 updates; raw controls reproduce exactly. Next is zero-state handling and full-corpus training. |
+| [Standardized memory](interaction-standardized-2026-09-13.md) | All three residual fits reach 128/128 by 512 updates; raw controls reproduce exactly. Next is zero-state handling and full-corpus training alongside environment calibration. |
 
 The remaining sections retain historical experiment dispositions.
 
