@@ -43,10 +43,12 @@ for profitability and observability; do not treat a declared stage as proof.
 
 ### 0. Make each run answer a bounded question
 
-Implement the first reporting slice in the [harness analysis](harness-information-density.md):
-retain full logs and produce a bounded verified summary with distinct execution,
-verification and scientific outcomes. Use the next calibration and normalization
-studies as pilots. Do not build a general experiment platform before these runs.
+The [first reporting pilot](harness-usage.md) now retains full logs and produces
+bounded verified summaries for named Rust groups and the existing hard/standardized
+audits, with distinct execution, verification and scientific outcomes. Extend its
+study adapters to the next calibration and full-corpus normalization producers once
+their plans are frozen. Cache reuse and broader reporting work remain deferred; see
+the [harness analysis](harness-information-density.md).
 
 Before spending development seeds, freeze each study's question, variants,
 controllers, metrics, thresholds, state/seed selection, horizons, safety limits

@@ -243,8 +243,9 @@ complete; their failures remain in the experiment index.
 
 The [current roadmap](learning-and-environment-roadmap.md) orders the next work:
 
-1. Add a compact verified reporting pilot for the next experiments, retaining raw
-   logs, explicit coverage, scientific gate results and actionable failures.
+1. Use the [implemented reporting pilot](harness-usage.md) for focused tests and
+   existing hard/standardized audits. Extend its adapters to the next experiments
+   while retaining raw logs, coverage and distinct scientific gate results.
 2. Calibrate the environment with fixed legal controllers, energy/time bounds and
    paired resource/contact/combat/horizon variants. Separately finish the matched
    zero-state-preserving normalization diagnostic on the frozen 8,312 training rows.

@@ -41,13 +41,14 @@ export, cross-host numerical qualification and deterministic fuel remain open.
 
 ## Harness reporting priority (2026-09-23)
 
-The [information-density analysis](harness-information-density.md) proposes a
-small reporting pilot before the next large experiment matrix. It preserves all
+The [reporting pilot](harness-usage.md) implements the first slice of the
+[information-density analysis](harness-information-density.md). It preserves all
 checks and full evidence while reducing repeated logs and ambiguous failures.
 Implement in order: bounded verified summaries with coverage and exit accounting;
 structured invariant failures with replayable witnesses; then compatible-baseline
 diffs and carefully keyed result reuse. Keep execution, evidence validity and
-scientific qualification separate. These reporting changes are not yet implemented.
+scientific qualification separate. Named Rust groups and hard/standardized audit
+adapters are implemented; baseline diffs and result reuse remain deferred.
 
 Use the [learning/environment roadmap](learning-and-environment-roadmap.md) for
 experimental priorities. The calibration harness must distinguish legal, successful

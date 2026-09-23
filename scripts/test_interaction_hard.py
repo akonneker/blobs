@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Semantic mutation checks for the hard-example fixture audit."""
+from audit_checks import AuditFailure, equal
 import argparse
 from copy import deepcopy
 from functools import lru_cache
@@ -7,6 +8,9 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 import verify_interaction_hard as verifier
+
+
+EXPECTED = {'fixture_membership': 'hard.fixture_selection', 'validation_in_training': 'hard.inherited_plan', 'decoder_sanity': 'fit.decoder_sanity', 'unmatched_initialization': 'fit.initialization', 'forged_loss': 'fit.scalar_loss', 'forged_training_count': 'fit.metrics'}
 
 
 def check(root):
@@ -29,7 +33,9 @@ def check(root):
             return value
         with patch.object(verifier,'read',side_effect=mutated):
             try:verifier.verify(root)
-            except AssertionError:result.append({'case':name,'rejected':True})
+            except AuditFailure as error:
+                equal(error.invariant, EXPECTED[name], 'mutation.wrong_invariant', case=name)
+                result.append({'case':name,'rejected':True,'invariant':error.invariant})
             else:raise AssertionError(f'audit accepted {name}')
     return {'complete':True,'checks':result,'scope':'Decoded JSON mutations in memory exercise semantic checks beyond file hashes; retained evidence is unchanged.'}
 

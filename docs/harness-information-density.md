@@ -1,7 +1,9 @@
 # Test harness information density and token spend
 
-Analysis date: 2026-09-23. This is an implementation proposal based on the current
-harnesses and retained local artifacts, not an implemented reporting system.
+Analysis date: 2026-09-23. The [first pilot](harness-usage.md) now implements
+named test groups, bounded summaries, study adapters and structured audit failures.
+The analysis below records the design and measured baseline; cache reuse, baseline
+diffs and adapters for future experiments remain proposals.
 The objective is fewer model-visible tokens and fewer follow-up reads per correct
 diagnosis, while preserving the complete scientific and regression evidence.
 

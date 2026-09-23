@@ -40,6 +40,7 @@ jobs:
         with:
           node-version: "24.3.0"
       - run: python3 scripts/check_schema_registry.py
+      - run: python3 -B scripts/test_harness.py
       - run: python3 -B scripts/test_feeding_cohort.py
       - run: node --check blob_web/web/blob_web.js
       - run: node --check blob_web/viewer/match-explorer.js
