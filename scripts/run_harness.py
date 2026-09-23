@@ -25,24 +25,24 @@ def group_steps(group, directory, study=None, plan_sha256=None):
                 for name, selection in cases]
     artifact = directory / "study.json"
     return [{"id": group, "adapter": "study", "kind": group, "plan_sha256": plan_sha256, "study_root": str(study),
-             "artifact": str(artifact), "argv": [sys.executable, "-B", str(ROOT / "scripts" / f"verify_interaction_{group}.py"),
+             "artifact": str(artifact), "argv": [sys.executable, "-B", str(ROOT / "scripts" / f"verify_interaction_{group.replace('-', '_')}.py"),
              str(study), "--harness-output", str(artifact), "--plan-sha256", plan_sha256]}]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--group", choices=["core", "rl-probes", "hard", "standardized"], required=True)
+    parser.add_argument("--group", choices=["core", "rl-probes", "hard", "standardized", "zero-state"], required=True)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--study", type=Path)
     parser.add_argument("--plan-sha256")
     parser.add_argument("--timeout", type=float, default=1800, help="seconds per command")
     parser.add_argument("--require-scientific-pass", action="store_true")
     a = parser.parse_args()
-    is_study = a.group in ("hard", "standardized")
+    is_study = a.group in ("hard", "standardized", "zero-state")
     if not math.isfinite(a.timeout) or a.timeout <= 0:
         parser.error("--timeout must be positive and finite")
     if is_study != bool(a.study) or (not is_study and (a.plan_sha256 or a.require_scientific_pass)):
-        parser.error("study arguments and scientific gate apply only to hard/standardized groups; --study is required there")
+        parser.error("study arguments and scientific gate apply only to study groups; --study is required there")
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     directory = (a.out or ROOT / "training-output" / "harness" / (a.group + "-" + run_id)).resolve()
     if not directory.is_relative_to(ROOT / "training-output") or directory == ROOT / "training-output":
@@ -56,7 +56,8 @@ def main():
     scope = {"core": "Native interface/engine/policy library tests only; integration, RL, WASM, browser and fuzz gates not run.",
              "rl-probes": "NdArray numerical/lineage and four example unit suites; full workspace, GPU, WASM and ecology not run.",
              "hard": "Audit existing hard-fixture evidence; no training, development or deployment qualification.",
-             "standardized": "Audit existing normalization evidence; no new training, development or deployment qualification."}[a.group]
+             "standardized": "Audit existing normalization evidence; no new training, development or deployment qualification.",
+             "zero-state": "Audit full training-corpus conditioning evidence; no action-value, development or deployment qualification."}[a.group]
     steps = group_steps(a.group, directory, a.study, a.plan_sha256)
     return run(ROOT, a.group, directory, steps, scope, a.timeout, a.require_scientific_pass)
 

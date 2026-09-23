@@ -11,15 +11,17 @@ build, repair historical seed exposure or authorize retrying immutable failures.
 Standardizing direct private-memory input now lets all three residual fits
 classify the hard training fixture exactly by 512 updates; raw controls still
 fail and reproduce their prior weights exactly. This is a training-only result.
-The full-corpus range audit identifies 2,146 zero-history states that need
-explicit handling before transferring the fixture-derived transform.
+The [full-corpus follow-up](interaction-zero-state-2026-09-23.md) now handles all
+2,146 zero-history states explicitly. It removes the range extremes but none of
+three normalized runs passes joint training fit; feeding remains 97.95–98.11%.
+All 149,616 checkpoint predictions replay and raw controls reproduce exactly.
 
 Next: the [learning and environment roadmap](learning-and-environment-roadmap.md)
-runs fixed-controller environment calibration alongside zero-state-preserving
-normalization and matched full-corpus training. Counterfactual action-value and
+runs environment bounds and fixed-controller calibration. The bounded
+normalization track is closed with a negative result. Counterfactual action-value and
 legal-observability checks then inform qualification: attack feasibility alone
 does not establish strategic benefit. Retain all-run development and deployed
-combat/feeding gates. These are planned studies, not new results; no diagnostic
+combat/feeding gates. Calibration and action-value studies remain planned; no diagnostic
 model is promoted, and self-play remains gated.
 
 | Current evidence | Disposition |
@@ -33,7 +35,8 @@ model is promoted, and self-play remains gated.
 | [Error-balanced sampling](interaction-sampling-2026-09-12.md) | Feeding improves by losing combat, including on training rows; all three treatments fail. Superseded by the direct-context probe. |
 | [Direct private context](interaction-context-2026-09-13.md) | Nine fits, 27 training checkpoints; none passes. Superseded by the hard-example follow-up. |
 | [Hard-example fixture](interaction-hard-2026-09-13.md) | Residual fails all 24 checkpoints; gradients pass and a linear observation-plus-memory control fits 128/128. Superseded by the matched standardization check. |
-| [Standardized memory](interaction-standardized-2026-09-13.md) | All three residual fits reach 128/128 by 512 updates; raw controls reproduce exactly. Next is zero-state handling and full-corpus training alongside environment calibration. |
+| [Standardized memory](interaction-standardized-2026-09-13.md) | All three residual fits reach 128/128 by 512 updates; raw controls reproduce exactly. Full-corpus successor below. |
+| [Full-corpus zero-state normalization](interaction-zero-state-2026-09-23.md) | Range extremes removed, but all three fits fail feeding retention; 0/18 checkpoint gates pass. Raw regression and replay verify. No promotion; next is environment calibration and action value. |
 
 The remaining sections retain historical experiment dispositions.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit the training-only context diagnostic without loading development corpora."""
 import argparse
+from audit_checks import equal
 import hashlib
 import json
 import math
@@ -63,6 +64,10 @@ def preflight(root):
 
 def verify(root):
     p, combat, feeding, files = preflight(root)
+    return verify_fits(root, p, combat, feeding, files)
+
+
+def verify_fits(root, p, combat, feeding, files):
     assert read(root/'fits/corpus-audit.json') == {'training':files,'combat_rows':len(combat),'feeding_rows':len(feeding),'validation_rows_loaded':0}
     provenance = read(root/'provenance.json')
     assert provenance['plan_sha256'] == sha(root/'plan.json')
@@ -85,19 +90,22 @@ def verify(root):
         metrics = {}
         for name, rows in [('combat',combat),('feeding',feeding)]:
             m = fit['metrics'][name]; c = check['metrics'][name]
-            assert m['predictions'] == c['predictions'] and len(m['predictions']) == len(rows)
+            equal(m['predictions'], c['predictions'], 'context.predictions', seed=seed, arm=arm, step=step, domain=name)
+            equal(len(m['predictions']), len(rows), 'context.prediction_coverage')
             assert all(0 <= k < 10 and row['legal_kinds'][k] for row,k in zip(rows,m['predictions']))
             labels = [r['teacher_kind'] if name == 'combat' else r['selected_kind'] for r in rows]
             correct = sum(k == label for k,label in zip(m['predictions'],labels)); attacks = labels.count(4)
             hits = sum(k == label == 4 for k,label in zip(m['predictions'],labels))
             for key,value in [('rows',len(rows)),('correct',correct),('attack_labels',attacks),('attack_correct',hits),('agreement',correct/len(rows)),('attack_agreement',hits/attacks if attacks else 1.)]:
-                assert m[key] == c[key] == value
+                equal(m[key], value, 'context.metrics', seed=seed, arm=arm, step=step, domain=name, key=key)
+                equal(c[key], value, 'context.replay_metrics', seed=seed, arm=arm, step=step, domain=name, key=key)
             assert isinstance(m['scalar_burn_mismatches'],int) and 0 <= m['scalar_burn_mismatches'] <= len(rows)
             mismatches += m['scalar_burn_mismatches']
             metrics[name] = m['agreement']
             if name == 'combat': metrics['attack'] = m['attack_agreement']
         met = all(metrics[k] >= p['thresholds'][k] for k in p['thresholds'])
-        assert fit['metrics']['training_fit_thresholds_met'] == check['metrics']['training_fit_thresholds_met'] == met
+        equal(fit['metrics']['training_fit_thresholds_met'], met, 'context.joint_gate')
+        equal(check['metrics']['training_fit_thresholds_met'], met, 'context.replay_joint_gate')
         summary.append({'seed':seed,'arm':arm,'step':step,**metrics,'training_fit_thresholds_met':met})
     return {'complete':True,'plan_sha256':sha(root/'plan.json'),'training_rows':len(combat)+len(feeding),'validation_rows_loaded':0,'checkpoints':len(expected),'scalar_replayed_predictions':len(expected)*(len(combat)+len(feeding)),'scalar_burn_kind_mismatches':mismatches,'all_arms_initialization_and_batch_streams_match':True,'results':summary,'scope':'Training-only direct-context diagnostic. Parent scores already depend on actual private state. Equal nominal parameters; observation arm has zero context features. No deployment export, new seed, validation fit or promotion.'}
 

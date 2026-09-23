@@ -11,7 +11,8 @@ The [experiment index](experiment-index.md) records dispositions and successors
 for all 50 retained sweep directories, including plans without result evidence.
 The [learning and environment roadmap](learning-and-environment-roadmap.md) is
 the current experiment order. It pairs environmental calibration with the bounded
-normalization diagnostic. The [harness analysis](harness-information-density.md)
+normalization diagnostic, now [completed with a negative result](interaction-zero-state-2026-09-23.md).
+The [harness analysis](harness-information-density.md)
 prioritizes verified compact summaries and actionable failure witnesses.
 
 Build caches, Python bytecode, local environments, training outputs and raw sweep
@@ -124,10 +125,12 @@ The [hard-example follow-up](interaction-hard-2026-09-13.md) also fails all
 control fits 128/128 rows. Gradient checks pass at batches 2 and 128. The
 [matched standardization check](interaction-standardized-2026-09-13.md) now
 fits 128/128 in all three residual runs by 512 updates, with exact raw-control
-regression. Next are two independent tracks: environment calibration of action
-value and legal observability, and zero-state-preserving normalization on the
-full training corpus. Fixture-derived centering otherwise produces extreme
-inputs for 2,146 zero-memory states. Legal attacks and an aggressive controller
+regression. The [full-corpus zero-state follow-up](interaction-zero-state-2026-09-23.md)
+now removes the extremes for 2,146 zero-memory states, but fails joint training
+fit in all three normalized runs: feeding remains 97.95–98.11%. All 149,616
+predictions replay and the nine raw checkpoints/weights reproduce exactly.
+Track 1B is closed; next are environment calibration, action value and legal
+observability. Legal attacks and an aggressive controller
 prove feasibility, but do not establish that combat is strategically profitable.
 A Move-target-only adapter cannot directly acquire Attack selection. Self-play
 remains gated.
@@ -244,11 +247,12 @@ complete; their failures remain in the experiment index.
 The [current roadmap](learning-and-environment-roadmap.md) orders the next work:
 
 1. Use the [implemented reporting pilot](harness-usage.md) for focused tests and
-   existing hard/standardized audits. Extend its adapters to the next experiments
+   existing hard/standardized/zero-state audits. Extend its adapters to calibration
    while retaining raw logs, coverage and distinct scientific gate results.
 2. Calibrate the environment with fixed legal controllers, energy/time bounds and
-   paired resource/contact/combat/horizon variants. Separately finish the matched
-   zero-state-preserving normalization diagnostic on the frozen 8,312 training rows.
+   paired resource/contact/combat/horizon variants. Bind effective base, feeding
+   and combat-assay settings separately. The matched normalization diagnostic on
+   8,312 training rows is complete and negative; do not launch a wider fit sweep.
 3. Extend counterfactual branches beyond Guard/Move to measure profitable action
    opportunities and whether an ordinary Mind can identify them. Keep the original
    rules and teacher-label diagnostic distinct from any new scenario or corpus.

@@ -20,6 +20,9 @@ def inputs(root):
 
 
 def scientific(result, kind):
+    if kind == "zero-state":
+        from .full_corpus import scientific as full_corpus
+        return full_corpus(result)
     rows = result["results"]
     require(bool(rows), "study.empty_results")
     keys = [(r["seed"], r["arm"], r["step"]) for r in rows]
@@ -67,7 +70,15 @@ def validate(envelope, kind, plan_sha256, study_root):
     plan = json.loads(plan_path.read_text())
     expected = [(seed, arm, step) for seed in plan["sampling_seeds"] for arm in plan["arms"] for step in plan["checkpoints"]]
     equal([(r["seed"], r["arm"], r["step"]) for r in envelope["result"]["results"]], expected, "study.checkpoint_coverage")
-    equal(envelope["result"]["checkpoint_predictions"], len(expected) * 128, "study.prediction_coverage")
+    nrows = 128
+    if kind == "zero-state":
+        nrows = sum(r['combat'] + r['feeding'] for r in plan['training_counts'])
+        equal(envelope['result']['training_rows'], nrows, 'study.training_coverage')
+        equal(envelope['result']['thresholds'], plan['thresholds'], 'study.thresholds')
+        for row in envelope['result']['results']:
+            for domain in ('combat', 'feeding'):
+                equal(row['counts'][domain]['rows'], sum(r[domain] for r in plan['training_counts']), 'study.domain_coverage')
+    equal(envelope["result"]["checkpoint_predictions"], len(expected) * nrows, "study.prediction_coverage")
     equal(envelope["scientific"], scientific(envelope["result"], kind), "study.summary")
     require(bool(envelope["inputs"]), "study.missing_inputs")
     for path, digest in envelope["inputs"].items():
@@ -95,7 +106,10 @@ def cli(kind, verify, preflight):
         if a.preflight:
             value = preflight(root)
             result = {"complete": True, "plan_sha256": sha(root / "plan.json"), "validation_rows_loaded": 0}
-            result.update({"context_audit": value[2]} if kind == "standardized" else {"fixture_rows": len(value[1])})
+            if kind == 'zero-state':
+                result = value[4]
+            else:
+                result.update({"context_audit": value[2]} if kind == "standardized" else {"fixture_rows": len(value[1])})
         else:
             result = verify(root)
         if a.harness_output:

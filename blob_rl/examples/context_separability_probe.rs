@@ -5,6 +5,8 @@ mod data;
 mod evaluation;
 #[path = "context_fit/model.rs"]
 mod model;
+#[path = "context_fit/normalization.rs"]
+mod normalization;
 #[path = "interaction_fit/partition.rs"]
 mod partition;
 #[path = "context_fit/scalar.rs"]
@@ -18,7 +20,7 @@ use burn::{
 };
 use clap::Parser;
 use data::read;
-use evaluation::{background, scores, Evaluation};
+use evaluation::{background, scores, scores_with_contexts, Evaluation};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde_json::json;
@@ -37,7 +39,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = Args::parse();
     assert_eq!(sha(&fs::read(a.study.join("plan.json"))?), a.plan_sha256);
     let p = read(&a.study.join("plan.json"));
-    assert_eq!(p["arms"], json!(["observation", "memory", "shuffled"]));
+    let normalized = p.get("normalization").is_some();
+    assert_eq!(
+        p["arms"],
+        if normalized {
+            json!(["memory", "zero-state"])
+        } else {
+            json!(["observation", "memory", "shuffled"])
+        }
+    );
+    let arms: Vec<String> = serde_json::from_value(p["arms"].clone())?;
     assert_eq!(p["steps"], 2048);
     assert_eq!(p["checkpoints"], json!([512, 1024, 2048]));
     assert_eq!(p["batch"], 128);
@@ -85,6 +96,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(t.raw_kind, background(r));
         assert_eq!(t.hidden, r.hidden);
     }
+    let transformed = if normalized {
+        let config = &p["normalization"];
+        assert_eq!(config["file"], "memory-normalizer.json");
+        assert_eq!(
+            config["zero_state"],
+            "all-zero incoming memory maps to positive zero residual context"
+        );
+        let path = a.study.join("memory-normalizer.json");
+        assert_eq!(sha(&fs::read(&path)?), config["sha256"]);
+        let value = read(&path);
+        let normalizer = normalization::MemoryNormalizer::new(
+            serde_json::from_value(value["means"].clone())?,
+            serde_json::from_value(value["scales"].clone())?,
+        )?;
+        Some(
+            rows.iter()
+                .map(|r| normalizer.apply_preserving_zero(&r.memory))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        None
+    };
+    let contexts = |arm: &str| {
+        if arm == "zero-state" {
+            transformed.as_deref()
+        } else {
+            None
+        }
+    };
+    let context_audit = transformed.as_ref().map(|values| {
+        let mut original = Sha256::new();
+        let mut transformed = Sha256::new();
+        for (row, context) in rows.iter().zip(values) {
+            for v in &row.memory { original.update(v.to_le_bytes()); }
+            for v in context { transformed.update(v.to_le_bytes()); }
+        }
+        json!({"rows":rows.len(),"context_width":128,"zero_memory_rows":rows.iter().filter(|r|r.memory.iter().all(|&v|v==0.)).count(),
+            "parent_memory_sha256":format!("{:x}",original.finalize()),"transformed_context_sha256":format!("{:x}",transformed.finalize())})
+    });
     let e = Evaluation {
         rows: &rows,
         combat,
@@ -92,6 +142,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         parent: parent.parent(),
     };
     if a.verify {
+        if let Some(ref expected) = context_audit {
+            assert_eq!(&read(&a.study.join("fits/context-audit.json")), expected);
+        }
         let report = read(&a.study.join("fits/report.json"));
         let mut checks = vec![];
         for fit in report["results"].as_array().unwrap() {
@@ -106,7 +159,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
                     .collect(),
             )?;
-            let metrics = e.evaluate(&frozen, None, arm);
+            let metrics = if contexts(arm).is_some() {
+                e.evaluate_with_contexts(&frozen, None, arm, contexts(arm))
+            } else {
+                e.evaluate(&frozen, None, arm)
+            };
             for kind in ["combat", "feeding"] {
                 for key in [
                     "rows",
@@ -134,6 +191,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let out = a.study.join("fits");
     fs::create_dir(&out)?;
+    if let Some(audit) = context_audit {
+        fs::write(
+            out.join("context-audit.json"),
+            serde_json::to_vec_pretty(&audit)?,
+        )?;
+    }
     fs::write(
         out.join("corpus-audit.json"),
         serde_json::to_vec_pretty(
@@ -144,7 +207,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seeds: Vec<u64> = serde_json::from_value(p["sampling_seeds"].clone())?;
     let mut results = vec![];
     for seed in seeds {
-        for arm in ["observation", "memory", "shuffled"] {
+        for arm in &arms {
+            let arm = arm.as_str();
             NdArray::<f32>::seed(&device, seed);
             let mut m = model::Residual::<Autodiff<NdArray>>::new(&device);
             assert_eq!(m.num_params(), scalar::PARAMETERS);
@@ -181,7 +245,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &device,
                 );
                 let loss = burn::tensor::activation::log_softmax(
-                    scores(&m, &rows, &ids, arm, &donors, true),
+                    if let Some(values) = contexts(arm) {
+                        scores_with_contexts(&m, &rows, &ids, arm, &donors, true, Some(values))
+                    } else {
+                        scores(&m, &rows, &ids, arm, &donors, true)
+                    },
                     1,
                 )
                 .gather(1, labels)
@@ -200,7 +268,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let bytes: Vec<u8> = values.iter().flat_map(|x| x.to_le_bytes()).collect();
                     let file = format!("fits/{seed}-{arm}-{step}.f32");
                     fs::write(a.study.join(&file), &bytes)?;
-                    let metrics = e.evaluate(&scalar::Frozen::new(values)?, Some(&valid), arm);
+                    let metrics = e.evaluate_with_contexts(
+                        &scalar::Frozen::new(values)?,
+                        Some(&valid),
+                        arm,
+                        contexts(arm),
+                    );
                     println!(
                         "{seed}-{arm}-{step}: combat={} feeding={}",
                         metrics["combat"]["agreement"], metrics["feeding"]["agreement"]

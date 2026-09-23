@@ -4,6 +4,18 @@ pub struct MemoryNormalizer {
     scales: Vec<f32>,
 }
 impl MemoryNormalizer {
+    // This shared module is also compiled into the historical hard-fixture probe.
+    #[allow(dead_code)]
+    pub fn apply_preserving_zero(&self, memory: &[f32]) -> Result<Vec<f32>, String> {
+        if memory.len() != 128 || !memory.iter().all(|v| v.is_finite()) {
+            return Err("invalid incoming memory".into());
+        }
+        if memory.iter().all(|&v| v == 0.) {
+            Ok(vec![0.; 128])
+        } else {
+            self.apply(memory)
+        }
+    }
     pub fn new(means: Vec<f32>, scales: Vec<f32>) -> Result<Self, String> {
         if means.len() != 128
             || scales.len() != 128
@@ -33,6 +45,23 @@ impl MemoryNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preserves_only_the_whole_zero_state_and_validates_before_bypass() {
+        let n = MemoryNormalizer::new(vec![0.25; 128], vec![0.125; 128]).unwrap();
+        assert_eq!(n.apply_preserving_zero(&[0.; 128]).unwrap(), vec![0.; 128]);
+        assert_eq!(n.apply_preserving_zero(&[-0.; 128]).unwrap(), vec![0.; 128]);
+        assert!(n.apply_preserving_zero(&[0.; 127]).is_err());
+        assert!(n.apply_preserving_zero(&[f32::NAN; 128]).is_err());
+        let mut mixed = vec![0.; 128];
+        mixed[0] = 0.5;
+        let before = mixed.clone();
+        assert_eq!(
+            n.apply_preserving_zero(&mixed).unwrap(),
+            n.apply(&mixed).unwrap()
+        );
+        assert_eq!(mixed, before);
+        assert_eq!(n.apply_preserving_zero(&mixed).unwrap()[1], -2.);
+    }
     #[test]
     fn standardizes_without_clipping_or_changing_input() {
         let memory = vec![0.5; 128];

@@ -1,7 +1,7 @@
 # Learning and environment calibration roadmap
 
 Updated 2026-09-23. This is the current experiment order, superseding the task
-order in older study reports. It is a plan, not new experimental evidence.
+order in older study reports. Completed steps link their experimental evidence.
 The [handoff](project-handoff.md) records implementation status and the
 [experiment index](experiment-index.md) preserves historical dispositions.
 
@@ -21,9 +21,10 @@ the strategic profitability of combat. Feeding against waiting opponents does
 not establish competitive ecology.
 
 The standardized residual fits all 128 hard training examples in all three
-initializations. This establishes a bounded learning result, not useful combat
-on autonomous trajectories. Both environmental incentives and learning remain
-live explanations for the broader failure.
+initializations. The [full-corpus follow-up](interaction-zero-state-2026-09-23.md)
+now removes zero-state range extremes but fails joint training fit in all three
+runs; feeding agreement remains 97.95–98.11%. Track 1B is closed with a negative
+result. Both environmental incentives and learning remain live explanations.
 
 ## Evidence ladder
 
@@ -44,10 +45,10 @@ for profitability and observability; do not treat a declared stage as proof.
 ### 0. Make each run answer a bounded question
 
 The [first reporting pilot](harness-usage.md) now retains full logs and produces
-bounded verified summaries for named Rust groups and the existing hard/standardized
-audits, with distinct execution, verification and scientific outcomes. Extend its
-study adapters to the next calibration and full-corpus normalization producers once
-their plans are frozen. Cache reuse and broader reporting work remain deferred; see
+bounded verified summaries for named Rust groups and hard/standardized/zero-state
+audits, with distinct execution, verification and scientific outcomes. The first
+full-corpus follow-up has used it; extend its adapters to calibration producers
+once their plans are frozen. Cache reuse and broader reporting work remain deferred; see
 the [harness analysis](harness-information-density.md).
 
 Before spending development seeds, freeze each study's question, variants,
@@ -61,7 +62,9 @@ a separately identified environment, never a silent change to the canonical game
    food replenishment versus maintenance, travel cost, attack affordability and
    damage, guard cost, split affordability, encounter frequency, and time to the
    evaluation boundary. Check that reward components agree with the intended
-   outcome; a shaped reward may favor behavior that loses the match.
+   outcome; a shaped reward may favor behavior that loses the match. Bind the
+   effective base, feeding and contact/skirmish configurations separately: the
+   deployed assays override resources, cohort size, opponents and time horizons.
 2. Run fixed controls: Wait as a floor, collision-aware forager, aggressor,
    defender, explorer and the frozen learned candidate. Use existing legal
    maintained profiles where available; label adapters and any new conditional
@@ -85,7 +88,12 @@ the environment forbids the behavior. A flat matrix may also indicate weak contr
 
 ### 1B. Complete the bounded normalization diagnostic
 
-This can proceed independently of 1A using the already frozen training corpus.
+**Complete, negative:** [all-run evidence](interaction-zero-state-2026-09-23.md).
+All 18 checkpoints were replayed; raw controls reproduce exactly. None passes
+the joint gate. Do not start an unplanned architecture/budget sweep or spend
+development seeds. Next work is 1A and 2. The frozen protocol is retained below.
+
+This proceeds independently of 1A using the already frozen training corpus.
 Predeclare zero incoming memory -> zero residual context; nonzero memory -> the
 frozen standardization. Preserve the parent's actual memory. Audit transformed
 ranges, then compare raw and normalized inputs on all 8,312 training rows using

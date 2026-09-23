@@ -16,6 +16,9 @@ python3 -B scripts/run_harness.py --group hard \
   --study training-output/interaction-hard-2026-09-13-v1
 python3 -B scripts/run_harness.py --group standardized \
   --study training-output/interaction-standardized-2026-09-13-v1
+python3 -B scripts/run_harness.py --group zero-state \
+  --study training-output/interaction-zero-state-2026-09-23-v1 \
+  --require-scientific-pass
 ```
 
 Each invocation creates a new ignored directory under `training-output/harness/`.
@@ -31,6 +34,7 @@ its children. Independent later steps still run; an interrupt marks them not-run
 | `rl-probes` | NdArray backend numerics and seed-lineage integrations; context, hard-fixture, target-set and feeding-utility example unit tests | Full RL/workspace suite, GPU, WASM, ecology |
 | `hard` | Full hard-fixture verification, including prior replay and linear control | New training and model qualification |
 | `standardized` | Full normalizer, parent-memory, saved-fit and raw-control regression audit | New training, full-corpus transfer and model qualification |
+| `zero-state` | Full-corpus transform, count/threshold, replay and nine-checkpoint raw-control regression audit | Action value, development, deployment and self-play qualification |
 
 Rust groups set `CARGO_INCREMENTAL=0`, disable output color, and use four test
 threads. They use locked dependencies and explicit suite selections. The Cargo
@@ -64,6 +68,10 @@ exit 2 indicates invalid invocation/setup; exit 130 records interruption. Inspec
 the separate execution, verification and scientific fields, not only the exit.
 A valid negative study can therefore exit 0 and clearly say `science=rejected`.
 Add `--require-scientific-pass` to a study invocation to make that rejection exit 1.
+The zero-state command above is such a retained negative study. Its summary uses
+the joint combat/attack/feeding thresholds and actual domain denominators rather
+than the fixture studies' 64-row exact-fit criterion. Finish publishing all study
+artifacts before auditing; evidence must remain immutable during and after a run.
 
 For the historical fixture studies, the displayed scientific result is descriptive:
 all target-arm initializations must fit both 64-row domains at the final declared

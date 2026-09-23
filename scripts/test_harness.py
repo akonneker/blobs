@@ -2,6 +2,7 @@
 """Fail-closed reporting contracts, independent of Rust or archived experiments."""
 from contextlib import redirect_stdout
 import io
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
@@ -206,10 +207,75 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(caught.exception.details['expected'], '4')
 
     def test_optimized_python_is_rejected(self):
-        for script in ['verify_interaction_hard.py', 'verify_interaction_standardized.py', 'run_harness.py']:
+        for script in ['verify_interaction_hard.py', 'verify_interaction_standardized.py', 'verify_interaction_zero_state.py', 'run_harness.py']:
             result = subprocess.run([sys.executable, '-O', str(Path(__file__).parent/script), '--help'], capture_output=True)
             self.assertEqual(result.returncode, 2)
             self.assertIn(b'audit.optimized_python_unsupported', result.stderr)
+
+
+class FullCorpusTests(unittest.TestCase):
+    def result(self):
+        rows = []
+        for seed in (1, 2, 3):
+            for arm in ('memory', 'zero-state'):
+                for step in (512, 2048):
+                    good = arm == 'zero-state'
+                    rows.append({'seed': seed, 'arm': arm, 'step': step, 'combat': .96, 'attack': .9,
+                                 'feeding': 1. if good else .98, 'training_fit_thresholds_met': good,
+                                 'counts': {'combat': dict(rows=100, correct=96, attack_labels=50, attack_correct=45),
+                                            'feeding': dict(rows=100, correct=100 if good else 98, attack_labels=0, attack_correct=0)}})
+        return dict(results=rows, thresholds=dict(combat=.95, attack=.9, feeding=.99), checkpoint_predictions=2400,
+                    raw_nine_checkpoints_and_weights_identical=True)
+
+    def test_joint_gate_keeps_all_initializations_and_denominators(self):
+        r = self.result()
+        s = scientific(r, 'zero-state')
+        self.assertEqual(s['outcome'], 'passed')
+        self.assertEqual(s['arms'][0]['passed'], 0)
+        self.assertEqual(s['arms'][1]['passed'], 3)
+        r['results'][-1]['feeding'] = .98
+        r['results'][-1]['counts']['feeding']['correct'] = 98
+        r['results'][-1]['training_fit_thresholds_met'] = False
+        s = scientific(r, 'zero-state')
+        self.assertEqual(s['outcome'], 'rejected')
+        self.assertEqual(s['arms'][1]['passed'], 2)
+        self.assertEqual(s['arms'][1]['worst']['margin'], -1)
+
+    def test_forged_rates_gates_counts_and_duplicate_records_rejected(self):
+        base = self.result()
+        for mutation in ('rate', 'gate', 'counts', 'duplicate', 'threshold'):
+            r = deepcopy(base)
+            if mutation == 'rate': r['results'][0]['combat'] = 1.
+            elif mutation == 'gate': r['results'][0]['training_fit_thresholds_met'] = True
+            elif mutation == 'counts': r['results'][0]['counts']['combat']['correct'] = True
+            elif mutation == 'duplicate': r['results'].append(r['results'][0])
+            else: r['thresholds']['feeding'] = .98
+            with self.subTest(mutation=mutation), self.assertRaises(AuditFailure):
+                scientific(r, 'zero-state')
+
+    def test_plan_binds_full_corpus_prediction_and_domain_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            plan = root / 'plan.json'
+            plan.write_text(json.dumps(dict(sampling_seeds=[1, 2, 3], arms=['memory', 'zero-state'],
+                                            checkpoints=[512, 2048], training_counts=[dict(combat=100, feeding=100)],
+                                            thresholds=dict(combat=.95, attack=.9, feeding=.99))))
+            digest = sha(plan)
+            result = self.result()
+            result.update(complete=True, plan_sha256=digest, training_rows=200)
+            envelope = dict(protocol=PROTOCOL, kind='zero-state', plan_sha256=digest, study_root=str(root),
+                            verification='passed', result=result, scientific=scientific(result, 'zero-state'),
+                            inputs={str(plan): digest})
+            self.assertEqual(validate(envelope, 'zero-state', digest, root)['outcome'], 'passed')
+            result['checkpoint_predictions'] = 128 * 12
+            with self.assertRaises(AuditFailure) as caught:
+                validate(envelope, 'zero-state', digest, root)
+            self.assertEqual(caught.exception.invariant, 'study.prediction_coverage')
+            result['checkpoint_predictions'] = 2400
+            result['results'][0]['counts']['feeding']['rows'] = 99
+            with self.assertRaises(AuditFailure) as caught:
+                validate(envelope, 'zero-state', digest, root)
+            self.assertEqual(caught.exception.invariant, 'study.domain_coverage')
 
 
 class RunTests(unittest.TestCase):

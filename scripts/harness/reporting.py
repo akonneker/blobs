@@ -25,7 +25,7 @@ def render(report):
         if "arms" in scientific:
             for arm in scientific["arms"]:
                 worst = arm["worst"]
-                lines.append(f"  {arm['arm']} final exact={arm['passed']}/{arm['runs']}; "
+                lines.append(f"  {arm['arm']} final {scientific.get('gate_label', 'exact')}={arm['passed']}/{arm['runs']}; "
                              f"worst={worst['correct']}/{worst['rows']} {worst['domain']} "
                              f"seed={worst['seed']} margin={worst['margin']}")
             lines.append(f"  checkpoints={scientific['checkpoints_completed']}/{scientific['checkpoints_requested']} "

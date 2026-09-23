@@ -106,6 +106,11 @@ or deployed artifact are introduced. Reserved confirmation seeds
 
 ## Next gate
 
+Update 2026-09-23: the [full-corpus successor](interaction-zero-state-2026-09-23.md)
+has completed the protocol below. Zero-state range handling passes, but all three
+normalized fits fail the joint training gate. No development or deployment
+evaluation was spent; environment calibration and action value are next.
+
 Predeclare a zero-state-preserving transform: zero incoming memory produces a
 zero residual-context block; nonzero memory receives the frozen standardization.
 Compare raw and transformed inputs on the full training corpus, preserving
